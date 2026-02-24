@@ -1,36 +1,136 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GRAND LINE v8.0
 
-## Getting Started
+E-commerce Command Center for Dropshipping Analytics
 
-First, run the development server:
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 20+ installed
+- Firebase project created
+
+### Installation
 
 ```bash
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.local.example .env.local
+
+# Add your Firebase credentials to .env.local
+
+# Run development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit `http://localhost:3000`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📁 Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+grand-line-v8/
+├── app/                    # Next.js App Router pages
+│   ├── dashboard/         # Global dashboard
+│   ├── logpose/           # Projection tool
+│   ├── [country]/         # Dynamic country routes
+│   └── page.tsx           # Landing page
+├── lib/
+│   ├── firebase/          # Firebase config & helpers
+│   │   ├── config.ts      # Client SDK
+│   │   ├── admin.ts       # Admin SDK
+│   │   └── firestore.ts   # Database helpers
+│   ├── calculations/      # Business logic
+│   │   └── kpis.ts        # KPI formulas
+│   └── utils/             # Utilities
+│       ├── status.ts      # Order status classification
+│       └── currency.ts    # Currency conversion
+├── components/            # React components
+└── public/               # Static assets
+```
 
-## Learn More
+## 🔧 Tech Stack
 
-To learn more about Next.js, take a look at the following resources:
+- **Framework**: Next.js 16 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Database**: Firebase Firestore
+- **Auth**: Firebase Authentication
+- **Storage**: Firebase Storage
+- **Charts**: Recharts
+- **AI**: Google Gemini 2.5 Pro
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📊 Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Implemented
+- ✅ Firebase configuration (client + admin)
+- ✅ Firestore helpers (app_data, order_files, user_profiles)
+- ✅ KPI calculation engine
+  - Utilidad Real (Real Profit)
+  - ROAS (Return on Ad Spend)
+  - Proyección Financiera (Financial Projection)
+- ✅ Currency conversion with live exchange rates
+- ✅ Order status classification
+- ✅ Country detection from city names
+- ✅ Product name normalization
 
-## Deploy on Vercel
+### In Progress
+- 🔄 Firebase Authentication
+- 🔄 File upload & parsing
+- 🔄 Dashboard UI
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Planned
+- ⏳ Campaign mapping (AI-powered)
+- ⏳ Facebook/TikTok API integration
+- ⏳ PDF report generation
+- ⏳ User management
+- ⏳ SUNNY campaign launcher
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 🔐 Environment Variables
+
+See `.env.local.example` for required variables.
+
+### Firebase
+- `NEXT_PUBLIC_FIREBASE_*` - Client SDK config
+- `FIREBASE_ADMIN_*` - Server SDK config
+
+### APIs
+- `FACEBOOK_ACCESS_TOKEN` - Facebook Graph API
+- `TIKTOK_ACCESS_TOKEN` - TikTok Business API
+- `GEMINI_API_KEY` - Google Gemini AI
+
+## 📖 Documentation
+
+- [Firebase Setup Guide](./FIREBASE_SETUP.md)
+- [Technical Specification](../brain/.../technical_spec.md)
+- [Implementation Plan](../brain/.../implementation_plan.md)
+
+## 🧪 Testing
+
+```bash
+# Run tests (coming soon)
+npm test
+
+# Type check
+npm run type-check
+
+# Lint
+npm run lint
+```
+
+## 🚢 Deployment
+
+```bash
+# Build for production
+npm run build
+
+# Deploy to Firebase Hosting
+firebase deploy
+```
+
+## 📝 License
+
+Private - GRAND LINE v8.0
+
+---
+
+Built with ⚓ by Antigravity AI

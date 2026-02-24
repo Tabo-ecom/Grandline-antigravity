@@ -1,26 +1,73 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Default Light Theme */
+  --background: #f8f9fa;
+  --foreground: #1a1a1a;
+  --card-bg: #ffffff;
+  --card-border: rgba(0, 0, 0, 0.08);
+  --sidebar-bg: #ffffff;
+  --sidebar-border: rgba(0, 0, 0, 0.1);
+  --accent: #d75c33;
+  --muted: #6c757d;
+  --table-header-bg: #f1f3f5;
+  --hover-bg: rgba(0, 0, 0, 0.04);
 }
 
-@theme inline {
+.dark {
+  /* Dark Theme */
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card-bg: #0d0d0d;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --sidebar-bg: #0c0c0c;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --accent: #d75c33;
+  --muted: #888;
+  --table-header-bg: #111;
+  --hover-bg: rgba(255, 255, 255, 0.05);
+}
+
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-accent: var(--accent);
+  --color-muted: var(--muted);
+  --color-hover-bg: var(--hover-bg);
+  --color-table-header-bg: var(--table-header-bg);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom Utilities based on theme variables */
+.bg-card {
+  background-color: var(--card-bg);
+}
+
+.border-card {
+  border-color: var(--card-border);
+}
+
+.bg-sidebar {
+  background-color: var(--sidebar-bg);
+}
+
+.border-sidebar {
+  border-color: var(--sidebar-border);
+}
+
+.text-muted {
+  color: var(--muted);
 }
