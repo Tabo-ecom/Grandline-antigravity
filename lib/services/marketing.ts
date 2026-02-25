@@ -462,6 +462,7 @@ export interface BulkAdSpendRow {
     campaignName: string;
     userId: string;
     metrics?: Record<string, any>;
+    importId?: string;
 }
 
 export async function saveBulkAdSpend(rows: BulkAdSpendRow[]): Promise<number> {
@@ -493,6 +494,7 @@ export async function saveBulkAdSpend(rows: BulkAdSpendRow[]): Promise<number> {
                 userId: row.userId,
                 id: deterministicId,
                 timestamp: Timestamp.now(),
+                ...(row.importId ? { importId: row.importId } : {}),
                 ...(row.metrics || {}),
             }, { merge: true });
         }
@@ -509,6 +511,35 @@ export async function saveBulkAdSpend(rows: BulkAdSpendRow[]): Promise<number> {
  */
 export async function clearAdSpendHistory(userId: string): Promise<number> {
     const q = query(collection(db, 'marketing_history'), where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return 0;
+
+    const BATCH_SIZE = 450;
+    let deleted = 0;
+    const docs = snapshot.docs;
+
+    for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+        const chunk = docs.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const d of chunk) {
+            batch.delete(d.ref);
+        }
+        await batch.commit();
+        deleted += chunk.length;
+    }
+    return deleted;
+}
+
+/**
+ * Delete all marketing_history entries for a specific platform.
+ * Useful for cleaning up and re-importing TikTok or Facebook data.
+ */
+export async function clearPlatformAdSpend(userId: string, platform: 'facebook' | 'tiktok'): Promise<number> {
+    const q = query(
+        collection(db, 'marketing_history'),
+        where('userId', '==', userId),
+        where('platform', '==', platform)
+    );
     const snapshot = await getDocs(q);
     if (snapshot.empty) return 0;
 

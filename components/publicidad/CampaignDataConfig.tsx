@@ -38,6 +38,7 @@ import {
     getAdSettings,
     saveBulkAdSpend,
     clearAdSpendHistory,
+    clearPlatformAdSpend,
     type BulkAdSpendRow,
     getAdSpendImportHistory,
     deleteAdSpendImport,
@@ -650,6 +651,15 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                         const dateIdx = findColumnIndex(headers, COLUMN_VARIANTS.date);
                         const currencyIdx = findColumnIndex(headers, COLUMN_VARIANTS.currency);
 
+                        // Metric columns
+                        const impressionsIdx = findColumnIndex(headers, COLUMN_VARIANTS.impressions);
+                        const clicksIdx = findColumnIndex(headers, COLUMN_VARIANTS.clicks);
+                        const ctrIdx = findColumnIndex(headers, COLUMN_VARIANTS.ctr);
+                        const cpcIdx = findColumnIndex(headers, COLUMN_VARIANTS.cpc);
+                        const conversionsIdx = findColumnIndex(headers, COLUMN_VARIANTS.conversions);
+                        const reachIdx = findColumnIndex(headers, COLUMN_VARIANTS.reach);
+                        const revenueIdx = findColumnIndex(headers, COLUMN_VARIANTS.revenue);
+
                         if (campaignIdx === -1 || spendIdx === -1 || dateIdx === -1) {
                             alert(`⚠️ No se encontraron las columnas necesarias.\n\nColumnas detectadas:\n${headers.join(', ')}`);
                             resolve();
@@ -661,7 +671,10 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                         let skippedZeroSpend = 0;
                         let skippedBadData = 0;
                         let mappedCount = 0;
+                        let totalSpend = 0;
                         const bulkRows: BulkAdSpendRow[] = [];
+                        const unmappedCampaigns = new Map<string, number>(); // name → total spend
+                        const mappedCampaigns = new Map<string, number>();
 
                         for (const row of dataRows) {
                             if (!Array.isArray(row) || row.every(c => c === undefined || c === null || c === '')) {
@@ -689,22 +702,38 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                             );
 
                             if (existingMapping) {
+                                mappedCount++;
+                                mappedCampaigns.set(cleanName, (mappedCampaigns.get(cleanName) || 0) + spend);
                                 const product = availableProducts.find(p => p.id === existingMapping.productId);
                                 if (product?.country && product.country !== 'Todos') {
                                     rowTargetCountry = product.country;
-                                    mappedCount++;
                                 } else if (selectedCountry !== 'Todos') {
                                     rowTargetCountry = selectedCountry;
                                 }
-                            } else if (selectedCountry !== 'Todos') {
-                                rowTargetCountry = selectedCountry;
                             } else {
-                                const detected = detectCountryFromCampaign(cleanName);
-                                if (detected) rowTargetCountry = detected;
+                                unmappedCampaigns.set(cleanName, (unmappedCampaigns.get(cleanName) || 0) + spend);
+                                if (selectedCountry !== 'Todos') {
+                                    rowTargetCountry = selectedCountry;
+                                } else {
+                                    const detected = detectCountryFromCampaign(cleanName);
+                                    if (detected) rowTargetCountry = detected;
+                                }
                             }
 
                             const formattedDate = parseDate(dateStr);
                             if (!formattedDate) { skippedBadData++; continue; }
+
+                            totalSpend += spend;
+
+                            // Build metrics object from detected columns
+                            const metrics: Record<string, number> = {};
+                            if (impressionsIdx !== -1) metrics.impressions = parseNumber(row[impressionsIdx]);
+                            if (clicksIdx !== -1) metrics.clicks = parseNumber(row[clicksIdx]);
+                            if (ctrIdx !== -1) metrics.ctr = parseNumber(row[ctrIdx]);
+                            if (cpcIdx !== -1) metrics.cpc = parseNumber(row[cpcIdx]);
+                            if (conversionsIdx !== -1) metrics.conversions = parseNumber(row[conversionsIdx]);
+                            if (reachIdx !== -1) metrics.reach = parseNumber(row[reachIdx]);
+                            if (revenueIdx !== -1) metrics.revenue_attributed = parseNumber(row[revenueIdx]);
 
                             bulkRows.push({
                                 country: rowTargetCountry,
@@ -714,12 +743,35 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                 platform: 'tiktok',
                                 campaignName: cleanName,
                                 userId: effectiveUid || '',
+                                ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
                             });
                             importedCount++;
                         }
 
-                        if (bulkRows.length > 0) {
-                            await saveBulkAdSpend(bulkRows);
+                        // Pre-aggregate: sum amounts for same campaign+date to prevent overwrites in Firebase
+                        const aggregated = new Map<string, BulkAdSpendRow>();
+                        for (const row of bulkRows) {
+                            const key = `${row.date}_${row.campaignName}`.toLowerCase();
+                            const existing = aggregated.get(key);
+                            if (existing) {
+                                existing.amount += row.amount;
+                                if (row.metrics && existing.metrics) {
+                                    for (const [k, v] of Object.entries(row.metrics)) {
+                                        existing.metrics[k] = (existing.metrics[k] || 0) + (v as number);
+                                    }
+                                } else if (row.metrics) {
+                                    existing.metrics = { ...row.metrics };
+                                }
+                            } else {
+                                aggregated.set(key, { ...row, metrics: row.metrics ? { ...row.metrics } : undefined });
+                            }
+                        }
+                        const finalRows = Array.from(aggregated.values()).map(r => ({ ...r, importId }));
+
+                        if (finalRows.length > 0) {
+                            // Clear old TikTok data first, then save fresh
+                            await clearPlatformAdSpend(effectiveUid || '', 'tiktok');
+                            await saveBulkAdSpend(finalRows);
                         }
 
                         if (importedCount > 0) {
@@ -739,15 +791,58 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                         const iHistory = await getAdSpendImportHistory(effectiveUid || '');
                         setImportHistory(iHistory);
 
+                        // Build detailed summary
+                        const fmtSpend = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
                         const totalSkipped = skippedBlank + skippedZeroSpend + skippedBadData;
-                        let msg = `✅ Se procesaron ${importedCount} registros de TikTok.`;
-                        if (mappedCount > 0) msg += `\n(${mappedCount} asignados automáticamente por mapeos previos)`;
+                        const uniqueMapped = mappedCampaigns.size;
+                        const uniqueUnmapped = unmappedCampaigns.size;
+
+                        const aggregatedCount = finalRows.length;
+                        const wasAggregated = importedCount > aggregatedCount;
+
+                        let msg = `✅ TikTok Import: ${importedCount} filas → ${aggregatedCount} registros guardados${wasAggregated ? ' (agregados por campaña+fecha)' : ''}`;
+                        msg += `\n\n💰 Gasto total importado: ${fmtSpend(totalSpend)}`;
+                        msg += `\n📊 Campañas únicas: ${uniqueMapped + uniqueUnmapped} (${uniqueMapped} mapeadas, ${uniqueUnmapped} sin mapear)`;
+
+                        if (mappedCount > 0) {
+                            msg += `\n✅ ${mappedCount} filas asignadas por mapeos previos`;
+                        }
+
                         if (totalSkipped > 0) {
                             const details = [];
                             if (skippedZeroSpend > 0) details.push(`${skippedZeroSpend} con $0`);
                             if (skippedBlank > 0) details.push(`${skippedBlank} vacías/totales`);
-                            msg += `\n\n${totalSkipped} filas omitidas: ${details.join(', ')}.`;
+                            if (skippedBadData > 0) details.push(`${skippedBadData} con datos inválidos`);
+                            msg += `\n\n⏭️ ${totalSkipped} filas omitidas: ${details.join(', ')}`;
                         }
+
+                        // Show detected columns
+                        const detectedMetrics = [];
+                        if (impressionsIdx !== -1) detectedMetrics.push('Impressions');
+                        if (clicksIdx !== -1) detectedMetrics.push('Clicks');
+                        if (ctrIdx !== -1) detectedMetrics.push('CTR');
+                        if (cpcIdx !== -1) detectedMetrics.push('CPC');
+                        if (conversionsIdx !== -1) detectedMetrics.push('Conversions');
+                        if (reachIdx !== -1) detectedMetrics.push('Reach');
+                        if (revenueIdx !== -1) detectedMetrics.push('Revenue');
+                        msg += `\n\n📋 Columnas detectadas: Campaign, Cost, Date${detectedMetrics.length > 0 ? ', ' + detectedMetrics.join(', ') : ''}`;
+
+                        if (unmappedCampaigns.size > 0) {
+                            msg += `\n\n⚠️ Campañas SIN mapear (${unmappedCampaigns.size}):`;
+                            const sortedUnmapped = [...unmappedCampaigns.entries()].sort((a, b) => b[1] - a[1]);
+                            sortedUnmapped.forEach(([name, s]) => {
+                                msg += `\n• ${name}: ${fmtSpend(s)}`;
+                            });
+                        }
+
+                        // Log detailed data for debugging
+                        console.log('[TikTok Import] Headers:', headers);
+                        console.log('[TikTok Import] Column indices:', { campaignIdx, spendIdx, dateIdx, currencyIdx, impressionsIdx, clicksIdx, ctrIdx, cpcIdx, conversionsIdx, reachIdx, revenueIdx });
+                        console.log('[TikTok Import] Mapped campaigns:', Object.fromEntries(mappedCampaigns));
+                        console.log('[TikTok Import] Unmapped campaigns:', Object.fromEntries(unmappedCampaigns));
+                        console.log('[TikTok Import] Total spend:', totalSpend);
+                        console.log('[TikTok Import] Sample rows:', bulkRows.slice(0, 3));
+
                         alert(msg);
                         resolve();
                     } catch (innerErr) {

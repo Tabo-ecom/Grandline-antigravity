@@ -64,10 +64,24 @@ export function parseDate(dateStr: any): string | null {
         return raw.slice(0, 10);
     }
 
-    // DD/MM/YYYY format
+    // Slash-separated format: DD/MM/YYYY or MM/DD/YYYY
     if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(raw)) {
         const parts = raw.split('/');
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        const a = parseInt(parts[0], 10);
+        const b = parseInt(parts[1], 10);
+        // If first part > 12, it must be the day (DD/MM/YYYY)
+        // If second part > 12, it must be the day (MM/DD/YYYY)
+        // Otherwise default to MM/DD/YYYY (TikTok/US format)
+        if (a > 12) {
+            // DD/MM/YYYY
+            return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        } else if (b > 12) {
+            // MM/DD/YYYY
+            return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        } else {
+            // Ambiguous (both <= 12) — default MM/DD/YYYY (US/TikTok standard)
+            return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        }
     }
 
     // Excel serial date number
@@ -104,4 +118,11 @@ export const COLUMN_VARIANTS = {
     spend: ['Cost', 'Gasto', 'Spend', 'Coste', 'Costo', 'Importe gastado'],
     date: ['Date', 'Fecha', 'Day', 'By Day', 'Reporting date', 'Fecha de inicio'],
     currency: ['Currency', 'Divisa', 'Moneda'],
+    impressions: ['Impressions', 'Impression', 'Impresiones', 'Impr.', 'impressions', 'impression'],
+    clicks: ['Clicks', 'Click', 'Clics', 'clicks', 'click'],
+    ctr: ['CTR', 'CTR(%)', 'CTR (%)', 'Click-Through Rate', 'ctr', 'Click-through rate'],
+    cpc: ['CPC', 'CPC (Cost per Click)', 'CPC(USD)', 'CPC (USD)', 'Costo por clic', 'cpc', 'Average cost per click'],
+    conversions: ['Conversions', 'Conversion', 'Conversiones', 'Total conversion', 'conversions', 'conversion', 'Result', 'Resultado', 'Results', 'Resultados', 'Complete payment'],
+    reach: ['Reach', 'Alcance', 'reach'],
+    revenue: ['Total purchase amount', 'Revenue', 'Ingresos', 'total_purchase_amount', 'Total complete payment ROAS', 'Total complete payment', 'Purchase amount'],
 } as const;
