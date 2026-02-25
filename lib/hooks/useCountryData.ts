@@ -53,10 +53,13 @@ export function useCountryData() {
 
     // Load order data + exchange rates
     useEffect(() => {
+        if (!effectiveUid) return;
+
         async function loadData() {
+            setLoading(true);
             try {
                 const [files, exchangeRates] = await Promise.all([
-                    getAllOrderFiles(effectiveUid || ''),
+                    getAllOrderFiles(effectiveUid!),
                     fetchExchangeRates()
                 ]);
                 setRates(exchangeRates);
@@ -98,7 +101,7 @@ export function useCountryData() {
             }
         }
         loadData();
-    }, [countryName]);
+    }, [countryName, effectiveUid]);
 
     // Load ad spend history
     useEffect(() => {
