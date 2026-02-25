@@ -1,5 +1,5 @@
 import { db } from '../firebase/config';
-import { doc, getDoc, setDoc, query, collection, where, getDocs, Timestamp, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, query, collection, where, getDocs, Timestamp, deleteDoc, writeBatch } from 'firebase/firestore';
 import { getAppData, setAppData, COLLECTIONS } from '../firebase/firestore';
 import { toCOP, type ExchangeRates, isMatchingCountry, normalizeCountry } from '../utils/currency';
 import { ProductGroup, getEffectiveProductId } from './productGroups';
@@ -446,6 +446,86 @@ export async function saveAdSpend(
         }
     });
     await Promise.all(cleanupPromises);
+}
+
+/**
+ * Bulk save ad spend rows using Firestore writeBatch for performance.
+ * Writes only to marketing_history (skips app_data and cleanup for speed).
+ * ~3000x fewer Firestore operations than individual saveAdSpend calls.
+ */
+export interface BulkAdSpendRow {
+    country: string;
+    date: string;
+    amount: number;
+    currency: string;
+    platform: 'facebook' | 'tiktok';
+    campaignName: string;
+    userId: string;
+    metrics?: Record<string, any>;
+}
+
+export async function saveBulkAdSpend(rows: BulkAdSpendRow[]): Promise<number> {
+    if (rows.length === 0) return 0;
+    const BATCH_SIZE = 450;
+    let saved = 0;
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+        const chunk = rows.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+
+        for (const row of chunk) {
+            const normalizedDate = normalizeDate(row.date);
+            const sanitizedCampaign = (row.campaignName || 'global').replace(/\W/g, '');
+            const deterministicId = `${row.userId}_${normalizedDate}_${row.platform}_${sanitizedCampaign}`;
+            const historyRef = doc(db, 'marketing_history', deterministicId);
+
+            batch.set(historyRef, {
+                amount: row.amount,
+                currency: row.currency,
+                source: 'api',
+                platform: row.platform,
+                updatedAt: Date.now(),
+                productId: 'global',
+                date: normalizedDate,
+                country: row.country,
+                campaignName: row.campaignName,
+                creator: 'admin',
+                userId: row.userId,
+                id: deterministicId,
+                timestamp: Timestamp.now(),
+                ...(row.metrics || {}),
+            }, { merge: true });
+        }
+
+        await batch.commit();
+        saved += chunk.length;
+    }
+    return saved;
+}
+
+/**
+ * Delete all marketing_history entries for a user (to allow clean re-sync).
+ * Campaign mappings in app_data are NOT affected.
+ */
+export async function clearAdSpendHistory(userId: string): Promise<number> {
+    const q = query(collection(db, 'marketing_history'), where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return 0;
+
+    const BATCH_SIZE = 450;
+    let deleted = 0;
+    const docs = snapshot.docs;
+
+    for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+        const chunk = docs.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const d of chunk) {
+            batch.delete(d.ref);
+        }
+        await batch.commit();
+        deleted += chunk.length;
+    }
+    return deleted;
 }
 
 /**

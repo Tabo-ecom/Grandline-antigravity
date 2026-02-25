@@ -146,6 +146,7 @@ interface MetaAdAccount {
     id: string;
     account_id: string;
     name: string;
+    currency?: string;
 }
 
 export async function fetchMetaAdAccounts(token: string): Promise<MetaAdAccount[]> {
@@ -156,7 +157,7 @@ export async function fetchMetaAdAccounts(token: string): Promise<MetaAdAccount[
     if (cached) return cached;
 
     const data = await metaFetchWithRetry(
-        `https://graph.facebook.com/${META_API_VERSION}/me/adaccounts?fields=name,account_id&access_token=${token}&limit=100`,
+        `https://graph.facebook.com/${META_API_VERSION}/me/adaccounts?fields=name,account_id,currency&access_token=${token}&limit=100`,
         undefined,
         'Fetch ad accounts'
     );
@@ -164,6 +165,31 @@ export async function fetchMetaAdAccounts(token: string): Promise<MetaAdAccount[
     const accounts = data.data || [];
     setCache(cacheKey, accounts);
     return accounts;
+}
+
+/**
+ * Fetch the currency for a specific ad account from Meta API.
+ * This is the authoritative source — more reliable than user settings.
+ */
+export async function fetchAccountCurrency(token: string, accountId: string): Promise<string> {
+    if (!token || !accountId) return 'USD';
+
+    const cacheKey = `currency_${accountId}`;
+    const cached = getCached<string>(cacheKey);
+    if (cached) return cached;
+
+    try {
+        const data = await metaFetchWithRetry(
+            `https://graph.facebook.com/${META_API_VERSION}/${accountId}?fields=currency&access_token=${token}`,
+            undefined,
+            'Fetch account currency'
+        );
+        const currency = data.currency || 'USD';
+        setCache(cacheKey, currency);
+        return currency;
+    } catch {
+        return 'USD';
+    }
 }
 
 export async function fetchMetaAdSpend(token: string, accountId: string, startDate: string, endDate: string): Promise<any[]> {

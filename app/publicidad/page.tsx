@@ -49,6 +49,8 @@ import {
     type AISuggestion,
     getAdSettings,
     saveAdSpend,
+    saveBulkAdSpend,
+    type BulkAdSpendRow,
     getAdSpendImportHistory,
     deleteAdSpendImport,
     getAISuggestions,
@@ -56,7 +58,7 @@ import {
     deleteAISuggestion,
     clearAllAISuggestions
 } from '@/lib/services/marketing';
-import { fetchMetaAdSpend, fetchMetaAdCreatives, fetchMetaAdThumbnails, MetaTokenExpiredError } from '@/lib/services/meta';
+import { fetchMetaAdSpend, fetchMetaAdCreatives, fetchMetaAdThumbnails, fetchAccountCurrency, MetaTokenExpiredError } from '@/lib/services/meta';
 import { fetchTikTokAdCreatives, fetchTikTokAdThumbnails } from '@/lib/services/tiktok';
 import { useAuth } from '@/lib/context/AuthContext';
 import { resolveProductName } from '@/lib/services/productResolution';
@@ -479,81 +481,72 @@ export default function AdvertisingPage() {
             const fbAccounts = adSettings?.fb_account_ids || [];
 
             if (fbToken && fbAccounts.length > 0) {
+                const bulkRows: BulkAdSpendRow[] = [];
                 for (const account of fbAccounts) {
                     try {
                         setSyncStatus(`Descargando datos de FB: ${account.name || account.id}...`);
-                        const rows = await fetchMetaAdSpend(
-                            fbToken,
-                            account.id,
-                            startDate,
-                            endDate
-                        );
+                        // Fetch the REAL currency from Meta API (not user settings)
+                        const accountCurrency = await fetchAccountCurrency(fbToken, account.id);
+                        const rows = await fetchMetaAdSpend(fbToken, account.id, startDate, endDate);
 
-                        if (rows.length > 0) {
-                            setSyncStatus(`Guardando ${rows.length} registros de Facebook...`);
-                            await Promise.all(rows.map(row => {
-                                const spend = parseFloat(row.spend || 0);
-                                if (spend <= 0) return Promise.resolve();
+                        for (const row of rows) {
+                            const spend = parseFloat(row.spend || 0);
+                            if (spend <= 0) continue;
 
-                                // ── Smart Country Detection (Same as TikTok) ───────────────────
-                                let targetCountry = 'Desconocido';
-                                const cleanName = String(row.campaign_name).trim();
-
-                                const existingMapping = mappings.find(m =>
-                                    m.campaignName.trim().toLowerCase() === cleanName.toLowerCase() &&
-                                    m.platform === 'facebook'
-                                );
-
-                                if (existingMapping) {
-                                    const product = availableProducts.find(p => p.id === existingMapping.productId);
-                                    if (product?.country && product.country !== 'Todos') {
-                                        targetCountry = product.country;
-                                    } else if (selectedCountry && selectedCountry !== 'Todos') {
-                                        targetCountry = selectedCountry;
-                                    }
+                            let targetCountry = 'Desconocido';
+                            const cleanName = String(row.campaign_name).trim();
+                            const existingMapping = mappings.find(m =>
+                                m.campaignName.trim().toLowerCase() === cleanName.toLowerCase() &&
+                                m.platform === 'facebook'
+                            );
+                            if (existingMapping) {
+                                const product = availableProducts.find(p => p.id === existingMapping.productId);
+                                if (product?.country && product.country !== 'Todos') {
+                                    targetCountry = product.country;
                                 } else if (selectedCountry && selectedCountry !== 'Todos') {
                                     targetCountry = selectedCountry;
                                 }
+                            } else if (selectedCountry && selectedCountry !== 'Todos') {
+                                targetCountry = selectedCountry;
+                            }
+                            if (targetCountry === 'Desconocido' || targetCountry === 'Todos') {
+                                const upperCam = cleanName.toUpperCase();
+                                if (upperCam.includes('COLOMBIA') || upperCam.includes('CO-')) targetCountry = 'Colombia';
+                                else if (upperCam.includes('ECUADOR') || upperCam.includes('EC-')) targetCountry = 'Ecuador';
+                                else if (upperCam.includes('GUATEMALA') || upperCam.includes('GT-')) targetCountry = 'Guatemala';
+                                else if (upperCam.includes('PANAMA') || upperCam.includes('PA-')) targetCountry = 'Panamá';
+                                else targetCountry = 'Desconocido';
+                            }
 
-                                if (targetCountry === 'Desconocido' || targetCountry === 'Todos') {
-                                    const upperCam = cleanName.toUpperCase();
-                                    if (upperCam.includes('COLOMBIA') || upperCam.includes('CO-')) targetCountry = 'Colombia';
-                                    else if (upperCam.includes('ECUADOR') || upperCam.includes('EC-')) targetCountry = 'Ecuador';
-                                    else if (upperCam.includes('GUATEMALA') || upperCam.includes('GT-')) targetCountry = 'Guatemala';
-                                    else if (upperCam.includes('PANAMA') || upperCam.includes('PA-')) targetCountry = 'Panamá';
-                                    else targetCountry = 'Desconocido';
-                                }
-
-                                return saveAdSpend(
-                                    targetCountry,
-                                    row.date_start,
-                                    spend,
-                                    adSettings?.fb_currency || 'USD',
-                                    'facebook',
-                                    'global',
-                                    row.campaign_name,
-                                    'admin',
-                                    'api',
-                                    'admin',
-                                    {
-                                        impressions: parseInt(row.impressions || 0),
-                                        clicks: parseInt(row.clicks || 0),
-                                        ctr: parseFloat(row.inline_link_click_ctr || 0),
-                                        cpc: parseFloat(row.cpc || 0),
-                                        conversions: row.purchases || 0,
-                                        revenue_attributed: row.revenue || 0,
-                                        page_visits: parseInt(row.page_visits || 0),
-                                        add_to_cart: parseInt(row.add_to_cart || 0),
-                                    }
-                                );
-                            }));
-                            totalSaved += rows.filter(r => parseFloat(r.spend || 0) > 0).length;
+                            bulkRows.push({
+                                country: targetCountry,
+                                date: row.date_start,
+                                amount: spend,
+                                currency: accountCurrency,
+                                platform: 'facebook',
+                                campaignName: cleanName,
+                                userId: effectiveUid || '',
+                                metrics: {
+                                    impressions: parseInt(row.impressions || 0),
+                                    clicks: parseInt(row.clicks || 0),
+                                    ctr: parseFloat(row.inline_link_click_ctr || 0),
+                                    cpc: parseFloat(row.cpc || 0),
+                                    conversions: row.purchases || 0,
+                                    revenue_attributed: row.revenue || 0,
+                                    page_visits: parseInt(row.page_visits || 0),
+                                    add_to_cart: parseInt(row.add_to_cart || 0),
+                                },
+                            });
                         }
                     } catch (accErr: any) {
                         const msg = accErr?.message || String(accErr);
                         console.error(`[Sync FB] Error en cuenta ${account.id}:`, accErr);
                         errors.push(`FB ${account.name || account.id}: ${msg}`);
                     }
+                }
+                if (bulkRows.length > 0) {
+                    setSyncStatus(`Guardando ${bulkRows.length} registros de Facebook (batch)...`);
+                    totalSaved += await saveBulkAdSpend(bulkRows);
                 }
             } else if (!fbToken) {
                 console.warn('[Sync] Sin token de Facebook configurado.');
@@ -779,7 +772,7 @@ export default function AdvertisingPage() {
                                 'tiktok',
                                 'global',
                                 cleanName,
-                                'admin',
+                                effectiveUid || '',
                                 'api',
                                 'admin',
                                 {},

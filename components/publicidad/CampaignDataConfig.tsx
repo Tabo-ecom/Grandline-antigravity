@@ -37,6 +37,9 @@ import {
     getEffectiveProductId,
     getAdSettings,
     saveAdSpend,
+    saveBulkAdSpend,
+    clearAdSpendHistory,
+    type BulkAdSpendRow,
     getAdSpendImportHistory,
     deleteAdSpendImport,
     getAISuggestions,
@@ -50,7 +53,7 @@ import {
     type AdSpendImportLog,
     type AISuggestion
 } from '@/lib/services/marketing';
-import { fetchMetaAdSpend, MetaTokenExpiredError } from '@/lib/services/meta';
+import { fetchMetaAdSpend, fetchAccountCurrency, MetaTokenExpiredError } from '@/lib/services/meta';
 import { useAuth } from '@/lib/context/AuthContext';
 import { resolveProductName } from '@/lib/services/productResolution';
 import {
@@ -79,6 +82,9 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
     const {
         selectedCountry,
         selectedProduct,
+        dateRange,
+        startDateCustom,
+        endDateCustom,
     } = useGlobalFilters();
 
     // Section toggle
@@ -491,12 +497,32 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                 alert('ℹ️ Historial recargado. Configura token FB en Ajustes para sincronizar.');
                 return;
             }
-            let totalSaved = 0;
-            const today = new Date().toISOString().split('T')[0];
-            const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+            // Use the global date filter instead of hardcoding 30 days
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            let syncStart = todayStr;
+            if (dateRange === 'Personalizado' && startDateCustom) {
+                syncStart = startDateCustom;
+            } else if (dateRange === 'Mes Pasado') {
+                syncStart = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split('T')[0];
+            } else if (dateRange === 'Este Mes') {
+                syncStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+            } else if (dateRange === 'Últimos 30 Días') {
+                syncStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+            } else if (dateRange === 'Últimos 7 Días') {
+                syncStart = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+            } else {
+                syncStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+            }
+            const syncEnd = (dateRange === 'Personalizado' && endDateCustom) ? endDateCustom
+                : (dateRange === 'Mes Pasado') ? new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split('T')[0]
+                : todayStr;
+            const bulkRows: BulkAdSpendRow[] = [];
             for (const account of fbAccounts) {
                 setSyncStatus(`Descargando FB: ${account.name || account.id}...`);
-                const rows = await fetchMetaAdSpend(fbToken, account.id, thirtyDaysAgo, today);
+                // Fetch the REAL currency from Meta API (not user settings)
+                const accountCurrency = await fetchAccountCurrency(fbToken, account.id);
+                const rows = await fetchMetaAdSpend(fbToken, account.id, syncStart, syncEnd);
                 for (const row of rows) {
                     const spend = parseFloat(row.spend || '0');
                     if (spend <= 0) continue;
@@ -519,26 +545,27 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                         else if (upper.includes('GUATEMALA') || upper.includes('GT-')) targetCountry = 'Guatemala';
                         else if (upper.includes('PANAMA') || upper.includes('PA-')) targetCountry = 'Panamá';
                     }
-                    await saveAdSpend(
-                        targetCountry,
-                        row.date_start,
-                        spend,
-                        adSettings?.fb_currency || 'USD',
-                        'facebook',
-                        'global',
-                        cleanName,
-                        effectiveUid || '',
-                        'api',
-                        'admin',
-                        {
+                    bulkRows.push({
+                        country: targetCountry,
+                        date: row.date_start,
+                        amount: spend,
+                        currency: accountCurrency,
+                        platform: 'facebook',
+                        campaignName: cleanName,
+                        userId: effectiveUid || '',
+                        metrics: {
                             impressions: parseInt(row.impressions || '0'),
                             clicks: parseInt(row.clicks || '0'),
                             ctr: parseFloat(row.inline_link_click_ctr || '0'),
                             cpc: parseFloat(row.cpc || '0'),
-                        }
-                    );
-                    totalSaved++;
+                        },
+                    });
                 }
+            }
+            let totalSaved = 0;
+            if (bulkRows.length > 0) {
+                setSyncStatus(`Guardando ${bulkRows.length} registros (batch)...`);
+                totalSaved = await saveBulkAdSpend(bulkRows);
             }
             const h = await getAdSpendHistory(effectiveUid || '');
             setHistory(h);
@@ -550,6 +577,22 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                 alert('❌ Error: ' + (error?.message || 'Error desconocido'));
             }
         } finally {
+            setSyncingAPI(false);
+            setSyncStatus('');
+        }
+    };
+
+    const handleClearAndResync = async () => {
+        if (!confirm('⚠️ Esto eliminará TODOS los datos de publicidad y volverá a sincronizar desde Facebook.\n\nLos mapeos de campañas NO se pierden.\n\n¿Continuar?')) return;
+        setSyncingAPI(true);
+        setSyncStatus('Eliminando datos antiguos...');
+        try {
+            const deleted = await clearAdSpendHistory(effectiveUid || '');
+            setSyncStatus(`${deleted} registros eliminados. Re-sincronizando...`);
+            // Now trigger the normal sync
+            await handleReloadCampaigns();
+        } catch (error: any) {
+            alert('❌ Error: ' + (error?.message || 'Error desconocido'));
             setSyncingAPI(false);
             setSyncStatus('');
         }
@@ -854,8 +897,15 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                     </>
                                 )}
                             </button>
+                            <button
+                                onClick={handleClearAndResync}
+                                disabled={syncingAPI}
+                                className="flex items-center gap-2 px-6 py-4 bg-amber-600/10 border border-amber-500/30 hover:bg-amber-600/20 text-amber-300 disabled:opacity-60 disabled:cursor-not-allowed rounded-2xl transition-all text-[10px] font-black uppercase tracking-[0.2em]"
+                            >
+                                {syncingAPI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Limpiar y Re-sync
+                            </button>
                             <button onClick={handleClearAll} className="flex items-center gap-3 px-8 py-4 bg-red-600/10 border border-red-500/20 hover:bg-red-600/20 text-red-400 rounded-2xl transition-all text-[10px] font-black uppercase tracking-[0.2em]">
-                                {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Limpiar
+                                {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Limpiar Mapeos
                             </button>
                         </div>
                     </div>
