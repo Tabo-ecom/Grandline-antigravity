@@ -110,7 +110,13 @@ export default function CountryOperationPage() {
         localCurrency, countryName,
     } = useCountryData();
 
-    const { dateRange, startDateCustom, endDateCustom, selectedProduct } = useGlobalFilters();
+    const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
+
+    // Sync global filters to match this territory on mount
+    useEffect(() => {
+        setSelectedCountry(countryName);
+        setSelectedProduct('Todos');
+    }, [countryName]);
 
     // Map state
     const [activeMetric, setActiveMetric] = useState<MetricType>('tasaEntrega');

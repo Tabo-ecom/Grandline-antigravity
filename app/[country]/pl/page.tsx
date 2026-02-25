@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useCountryData } from '@/lib/hooks/useCountryData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import FilterHeader from '@/components/FilterHeader';
@@ -133,7 +133,13 @@ export default function CountryPLPage() {
         calculatedAdSpend,
     } = useCountryData();
 
-    const { dateRange, startDateCustom, endDateCustom, selectedProduct } = useGlobalFilters();
+    const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
+
+    // Sync global filters to match this territory on mount
+    useEffect(() => {
+        setSelectedCountry(countryName);
+        setSelectedProduct('Todos');
+    }, [countryName]);
 
     const filteredOrders = useMemo(() => {
         let orders = filterByGlobalDate(countryOrders, dateRange, startDateCustom, endDateCustom);
