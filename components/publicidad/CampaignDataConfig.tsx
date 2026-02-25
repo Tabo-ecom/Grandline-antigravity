@@ -63,6 +63,9 @@ import {
 } from '@/lib/utils/currency';
 import { ALL_COUNTRIES_MASTER } from '@/lib/utils/status';
 import { getAllOrderFiles } from '@/lib/firebase/firestore';
+import { collection, doc, setDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
+import { detectHeaderRow, findColumnIndex, parseNumber, parseDate, detectCountryFromCampaign, COLUMN_VARIANTS } from '@/lib/utils/csv-parser';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import { useCurrency } from '@/lib/hooks/useCurrency';
 
@@ -570,7 +573,131 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
     const handleTikTokCSVUpload = async (file: File) => {
         setImportingCSV(true);
         try {
-            alert('Funcionalidad próximamente');
+            const importId = `import_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+            await new Promise<void>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+                reader.onload = async (e) => {
+                    try {
+                        const data = e.target?.result;
+                        const XLSX = await import('xlsx');
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const rawRows: any[][] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                        if (rawRows.length === 0) {
+                            alert('⚠️ El archivo está vacío o no se pudo leer.');
+                            resolve();
+                            return;
+                        }
+
+                        const headerRowIdx = detectHeaderRow(rawRows);
+                        const headers: string[] = (rawRows[headerRowIdx] || []).map((h: any) => String(h ?? '').trim());
+                        const dataRows = rawRows.slice(headerRowIdx + 1);
+
+                        const campaignIdx = findColumnIndex(headers, COLUMN_VARIANTS.campaign);
+                        const spendIdx = findColumnIndex(headers, COLUMN_VARIANTS.spend);
+                        const dateIdx = findColumnIndex(headers, COLUMN_VARIANTS.date);
+                        const currencyIdx = findColumnIndex(headers, COLUMN_VARIANTS.currency);
+
+                        if (campaignIdx === -1 || spendIdx === -1 || dateIdx === -1) {
+                            alert(`⚠️ No se encontraron las columnas necesarias.\n\nColumnas detectadas:\n${headers.join(', ')}`);
+                            resolve();
+                            return;
+                        }
+
+                        let importedCount = 0;
+                        let skippedBlank = 0;
+                        let skippedZeroSpend = 0;
+                        let skippedBadData = 0;
+                        let mappedCount = 0;
+
+                        for (const row of dataRows) {
+                            if (!Array.isArray(row) || row.every(c => c === undefined || c === null || c === '')) {
+                                skippedBlank++;
+                                continue;
+                            }
+
+                            const campaignName = row[campaignIdx];
+                            const spendRaw = row[spendIdx];
+                            const dateStr = row[dateIdx];
+
+                            if (!campaignName || !dateStr) { skippedBadData++; continue; }
+                            if (String(campaignName).toLowerCase().includes('total')) { skippedBlank++; continue; }
+
+                            const spend = parseNumber(spendRaw);
+                            if (spend <= 0) { skippedZeroSpend++; continue; }
+
+                            const rowCurrency = currencyIdx !== -1 ? String(row[currencyIdx] || 'USD').toUpperCase() : 'USD';
+                            let rowTargetCountry = 'Desconocido';
+                            const cleanName = String(campaignName).trim();
+
+                            const existingMapping = mappings.find(m =>
+                                m.campaignName.trim().toLowerCase() === cleanName.toLowerCase() &&
+                                m.platform === 'tiktok'
+                            );
+
+                            if (existingMapping) {
+                                const product = availableProducts.find(p => p.id === existingMapping.productId);
+                                if (product?.country && product.country !== 'Todos') {
+                                    rowTargetCountry = product.country;
+                                    mappedCount++;
+                                } else if (selectedCountry !== 'Todos') {
+                                    rowTargetCountry = selectedCountry;
+                                }
+                            } else if (selectedCountry !== 'Todos') {
+                                rowTargetCountry = selectedCountry;
+                            } else {
+                                const detected = detectCountryFromCampaign(cleanName);
+                                if (detected) rowTargetCountry = detected;
+                            }
+
+                            const formattedDate = parseDate(dateStr);
+                            if (!formattedDate) { skippedBadData++; continue; }
+
+                            await saveAdSpend(
+                                rowTargetCountry, formattedDate, spend, rowCurrency,
+                                'tiktok', 'global', cleanName, effectiveUid || '',
+                                'api', 'admin', {}, importId
+                            );
+                            importedCount++;
+                        }
+
+                        if (importedCount > 0) {
+                            const logsCol = collection(db, 'import_logs');
+                            await setDoc(doc(logsCol, importId), {
+                                fileName: file.name,
+                                platform: 'tiktok',
+                                uploaded_at: Timestamp.now(),
+                                rowCount: importedCount,
+                                userId: effectiveUid || 'admin',
+                                logType: 'ad_spend'
+                            });
+                        }
+
+                        const h = await getAdSpendHistory(effectiveUid || '');
+                        setHistory(h);
+                        const iHistory = await getAdSpendImportHistory(effectiveUid || '');
+                        setImportHistory(iHistory);
+
+                        const totalSkipped = skippedBlank + skippedZeroSpend + skippedBadData;
+                        let msg = `✅ Se procesaron ${importedCount} registros de TikTok.`;
+                        if (mappedCount > 0) msg += `\n(${mappedCount} asignados automáticamente por mapeos previos)`;
+                        if (totalSkipped > 0) {
+                            const details = [];
+                            if (skippedZeroSpend > 0) details.push(`${skippedZeroSpend} con $0`);
+                            if (skippedBlank > 0) details.push(`${skippedBlank} vacías/totales`);
+                            msg += `\n\n${totalSkipped} filas omitidas: ${details.join(', ')}.`;
+                        }
+                        alert(msg);
+                        resolve();
+                    } catch (innerErr) {
+                        reject(innerErr);
+                    }
+                };
+                reader.readAsBinaryString(file);
+            });
         } catch (error: any) {
             alert('Error: ' + error.message);
         } finally {

@@ -102,7 +102,7 @@ export const Lanzador: React.FC = () => {
     const [launchError, setLaunchError] = useState<string | null>(null);
     const [launchProgress, setLaunchProgress] = useState('');
     const [videoProgress, setVideoProgress] = useState<Map<string, number>>(new Map());
-    const [launchResult, setLaunchResult] = useState<MetaLaunchResult | null>(null);
+    const [launchResults, setLaunchResults] = useState<(MetaLaunchResult & { accountName: string })[]>([]);
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
     const [metaToken, setMetaToken] = useState<string | null>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -249,6 +249,16 @@ export const Lanzador: React.FC = () => {
         }
     };
 
+    // Force 'new' campaign mode when multiple accounts are selected
+    // (campaign/adset IDs are account-specific and can't be reused across accounts)
+    useEffect(() => {
+        if (selectedAccountIds.length > 1 && campaignMode === 'existing') {
+            setCampaignMode('new');
+            setSelectedCampaignId('');
+            setSelectedAdSetId('');
+        }
+    }, [selectedAccountIds]);
+
     useEffect(() => {
         if (campaignMode === 'existing') {
             loadExistingCampaigns();
@@ -369,6 +379,7 @@ export const Lanzador: React.FC = () => {
             }
 
             const genders = demographics.gender === 'male' ? [1] : demographics.gender === 'female' ? [2] : undefined;
+            const allLaunchResults: (MetaLaunchResult & { accountName: string })[] = [];
 
             for (const acc of fbAccounts) {
                 const accountId = acc.id.startsWith('act_') ? acc.id : `act_${acc.id}`;
@@ -534,7 +545,7 @@ export const Lanzador: React.FC = () => {
                     };
 
                     const adId = await createMetaFlexibleAd(metaToken, flexConfig);
-                    setLaunchResult({ campaignId, adSetId, adId });
+                    allLaunchResults.push({ campaignId, adSetId, adId, accountName: acc.name });
 
                 } else if (adStructure === 'isolated') {
                     let lastAdId = '';
@@ -565,7 +576,7 @@ export const Lanzador: React.FC = () => {
 
                         lastAdId = await createMetaAd(metaToken, adConfig);
                     }
-                    setLaunchResult({ campaignId, adSetId, adId: lastAdId || '' });
+                    allLaunchResults.push({ campaignId, adSetId, adId: lastAdId || '', accountName: acc.name });
 
                 } else {
                     // Grouped (default): all ads in one adset, one ad per creative
@@ -592,10 +603,11 @@ export const Lanzador: React.FC = () => {
                         };
                         lastAdId = await createMetaAd(metaToken, adConfig);
                     }
-                    setLaunchResult({ campaignId, adSetId, adId: lastAdId });
+                    allLaunchResults.push({ campaignId, adSetId, adId: lastAdId, accountName: acc.name });
                 }
             }
 
+            setLaunchResults(allLaunchResults);
             setLaunchProgress('');
             setIsLaunched(true);
         } catch (error: any) {
@@ -664,16 +676,23 @@ export const Lanzador: React.FC = () => {
                     <div className="p-4 bg-card border border-card-border rounded-2xl font-mono text-xs text-muted">
                         {campaignName}
                     </div>
-                    {launchResult && (
-                        <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-left space-y-1">
-                            <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Campaign ID:</span> {launchResult.campaignId}</p>
-                            <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Ad Set ID:</span> {launchResult.adSetId}</p>
-                            <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Ad ID:</span> {launchResult.adId}</p>
-                            <p className="text-xs text-amber-400 font-bold mt-2">Estado: PAUSADA (actívala desde el Ads Manager)</p>
+                    {launchResults.length > 0 && (
+                        <div className="space-y-3">
+                            {launchResults.map((result, i) => (
+                                <div key={i} className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-left space-y-1">
+                                    {launchResults.length > 1 && (
+                                        <p className="text-[10px] font-black text-accent uppercase tracking-widest mb-2">{result.accountName}</p>
+                                    )}
+                                    <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Campaign ID:</span> {result.campaignId}</p>
+                                    <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Ad Set ID:</span> {result.adSetId}</p>
+                                    <p className="text-xs text-muted"><span className="text-emerald-400 font-bold">Ad ID:</span> {result.adId}</p>
+                                </div>
+                            ))}
+                            <p className="text-xs text-amber-400 font-bold">Estado: PAUSADA (actívala desde el Ads Manager)</p>
                         </div>
                     )}
                     <button
-                        onClick={() => { setIsLaunched(false); setLaunchResult(null); }}
+                        onClick={() => { setIsLaunched(false); setLaunchResults([]); }}
                         className="px-8 py-3 bg-card hover:bg-hover-bg text-foreground font-black uppercase text-xs rounded-xl transition-all border border-card-border"
                     >
                         Volver al Lanzador
@@ -869,15 +888,22 @@ export const Lanzador: React.FC = () => {
                             <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">Crear campaña desde cero</p>
                         </button>
                         <button
-                            onClick={() => setCampaignMode('existing')}
+                            onClick={() => { if (selectedAccountIds.length <= 1) setCampaignMode('existing'); }}
+                            disabled={selectedAccountIds.length > 1}
                             className={`p-5 rounded-2xl border transition-all text-left ${campaignMode === 'existing'
                                 ? 'bg-accent/10 border-accent/30'
-                                : 'bg-background border-card-border hover:border-accent/20'
+                                : selectedAccountIds.length > 1
+                                    ? 'bg-background border-card-border opacity-40 cursor-not-allowed'
+                                    : 'bg-background border-card-border hover:border-accent/20'
                                 }`}
                         >
                             <Layers className={`w-5 h-5 mb-3 ${campaignMode === 'existing' ? 'text-accent' : 'text-muted'}`} />
                             <h4 className="text-sm font-black uppercase tracking-tighter">Campaña Existente</h4>
-                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">Agregar ads a una campaña activa</p>
+                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">
+                                {selectedAccountIds.length > 1
+                                    ? 'Solo disponible con 1 cuenta'
+                                    : 'Agregar ads a una campaña activa'}
+                            </p>
                         </button>
                     </div>
 
