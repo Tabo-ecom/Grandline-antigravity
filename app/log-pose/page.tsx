@@ -12,6 +12,7 @@ import {
     BarChart3, Percent, Shield, AlertTriangle, Check, Save, Trash2, Clock, History, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { isEntregado, isCancelado } from '@/lib/utils/status';
+import InfoTooltip from '@/components/common/InfoTooltip';
 
 export default function LogPosePage() {
     const { effectiveUid } = useAuth();
@@ -444,11 +445,11 @@ export default function LogPosePage() {
                                     <select
                                         value={simState.selectedProductId}
                                         onChange={(e) => handleSelectProduct(e.target.value)}
-                                        className="w-full bg-hover-bg border border-card-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground focus:outline-none focus:border-accent transition-colors"
+                                        className="w-full bg-hover-bg border border-card-border rounded-2xl px-4 py-3 text-sm font-bold text-foreground focus:outline-none focus:border-accent transition-colors [&>option]:bg-card [&>option]:text-foreground"
                                     >
-                                        <option value="">Selecciona un producto...</option>
+                                        <option value="" className="bg-card text-muted">Selecciona un producto...</option>
                                         {Object.entries(productCatalog).map(([id, p]) => (
-                                            <option key={id} value={id}>{p.name}</option>
+                                            <option key={id} value={id} className="bg-card text-foreground">{p.name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -517,69 +518,96 @@ export default function LogPosePage() {
                         {/* ─── Results ─────────────── */}
                         <div className="lg:col-span-8 space-y-5">
                             {/* KPI Cards */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <StatCard title="ROAS Proyectado" value={`${projection.roas.toFixed(2)}x`} icon={TrendingUp} color={projection.roas >= 2 ? 'emerald' : projection.roas >= 1 ? 'amber' : 'rose'} />
-                                <StatCard title="Margen Neto" value={`${projection.margenNeto.toFixed(1)}%`} icon={Percent} color={projection.margenNeto >= 15 ? 'emerald' : projection.margenNeto > 0 ? 'amber' : 'rose'} />
-                                <StatCard title="Inversion Ads" value={formatCurrency(projection.inversionAds)} subtitle={`${projection.percAdsDesp.toFixed(1)}% s/ despachado`} icon={Zap} color={projection.percAdsDesp <= 20 ? 'emerald' : projection.percAdsDesp <= 30 ? 'amber' : 'rose'} />
-                                <StatCard title="Utilidad Neta" value={formatCurrency(projection.utilidadNeta)} icon={BarChart3} color={projection.utilidadNeta >= 0 ? 'emerald' : 'rose'} />
+                            <div className="grid grid-cols-3 gap-3">
+                                <StatCard title="ROAS Proyectado" value={`${projection.roas.toFixed(2)}x`} icon={TrendingUp} color={projection.roas >= 2 ? 'emerald' : projection.roas >= 1 ? 'amber' : 'rose'} tooltip="Retorno sobre inversión en ads proyectado a entrega. Mayor a 2x es bueno." />
+                                <StatCard title="Margen Neto" value={`${projection.margenNeto.toFixed(1)}%`} icon={Percent} color={projection.margenNeto >= 15 ? 'emerald' : projection.margenNeto > 0 ? 'amber' : 'rose'} tooltip="Porcentaje de ganancia neta sobre la venta despachada, descontando todos los costos." />
+                                <StatCard title="Inversion Ads" value={formatCurrency(projection.inversionAds)} subtitle={`${projection.percAdsDesp.toFixed(1)}% s/ despachado`} icon={Zap} color={projection.percAdsDesp <= 20 ? 'emerald' : projection.percAdsDesp <= 30 ? 'amber' : 'rose'} tooltip="Gasto total en publicidad. El % indica cuánto representan los ads sobre la venta despachada." />
                             </div>
 
-                            {/* P&L Waterfall Breakdown */}
-                            <div className="bg-card border border-card-border rounded-3xl p-6 shadow-sm">
-                                <h3 className="text-[10px] font-black text-muted uppercase tracking-[0.3em] mb-5 flex items-center gap-2">
-                                    <BarChart3 className="w-4 h-4 text-accent" /> Desglose de Proyeccion P&L
-                                </h3>
+                            {/* P&L Waterfall + Utilidad Neta side by side */}
+                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                                {/* P&L Waterfall Breakdown */}
+                                <div className="lg:col-span-3 bg-card border border-card-border rounded-3xl p-6 shadow-sm">
+                                    <h3 className="text-[10px] font-black text-muted uppercase tracking-[0.3em] mb-5 flex items-center gap-2">
+                                        <BarChart3 className="w-4 h-4 text-accent" /> Desglose de Proyeccion P&L <InfoTooltip text="Cascada de pérdidas y ganancias: desde ventas totales hasta utilidad neta, pasando por cancelaciones, devoluciones y costos." />
+                                    </h3>
 
-                                {/* Orders funnel */}
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-                                    <FunnelStep label="Ventas Totales" value={projection.ventasTotales} unit="uds" color="text-foreground" />
-                                    <FunnelStep label="Canceladas" value={projection.canceladas} unit="uds" color="text-amber-400" prefix="-" />
-                                    <FunnelStep label="Despachadas" value={projection.despachadas} unit="uds" color="text-blue-400" />
-                                    <FunnelStep label="Entregadas" value={projection.entregadas} unit="uds" color="text-emerald-400" />
-                                    <FunnelStep label="No Entregadas" value={projection.noEntregadas} unit="uds" color="text-rose-400" />
+                                    {/* Orders funnel */}
+                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                                        <FunnelStep label="Ventas Totales" value={projection.ventasTotales} unit="uds" color="text-foreground" />
+                                        <FunnelStep label="Canceladas" value={projection.canceladas} unit="uds" color="text-amber-400" prefix="-" />
+                                        <FunnelStep label="Despachadas" value={projection.despachadas} unit="uds" color="text-blue-400" />
+                                        <FunnelStep label="Entregadas" value={projection.entregadas} unit="uds" color="text-emerald-400" />
+                                        <FunnelStep label="No Entregadas" value={projection.noEntregadas} unit="uds" color="text-rose-400" />
+                                    </div>
+
+                                    {/* Financial waterfall */}
+                                    <div className="space-y-0 border border-card-border rounded-2xl overflow-hidden">
+                                        {/* Collapsible revenue group */}
+                                        <button
+                                            onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
+                                            className="w-full flex items-center justify-between px-4 py-3 bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <p className="text-xs font-black text-foreground">Ingreso Entregado</p>
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">{projection.entregadas} uds</span>
+                                                {showRevenueBreakdown
+                                                    ? <ChevronUp className="w-3.5 h-3.5 text-muted" />
+                                                    : <ChevronDown className="w-3.5 h-3.5 text-muted" />
+                                                }
+                                            </div>
+                                            <p className="text-sm font-black font-mono shrink-0 ml-4 text-emerald-400">{formatCurrency(projection.ingresoEntregado)}</p>
+                                        </button>
+                                        {showRevenueBreakdown && (
+                                            <div className="border-t border-card-border bg-foreground/[0.02]">
+                                                <WaterfallRow label="Facturacion Total" sublabel={`${projection.ventasTotales} uds x ${formatCurrency(simState.customPrice)}`} value={projection.facturacionTotal} type="neutral" />
+                                                <WaterfallRow label="Facturacion Despachada" sublabel={`${projection.despachadas} uds despachadas`} value={projection.facturacionDespachada} type="neutral" />
+                                                <WaterfallRow label="Ingreso Entregado" sublabel={`${projection.entregadas} uds entregadas`} value={projection.ingresoEntregado} type="income" />
+                                            </div>
+                                        )}
+
+                                        <div className="h-px bg-card-border" />
+
+                                        <WaterfallRow label="Costo de Producto" sublabel={`${projection.entregadas} uds x ${formatCurrency(simState.customCost)}`} value={-projection.costoProducto} type="expense" />
+                                        <WaterfallRow label="Flete Entregados" sublabel={`${projection.entregadas} uds x ${formatCurrency(simState.customShipping)}`} value={-projection.fleteEntregados} type="expense" />
+                                        <WaterfallRow label="Flete Devoluciones" sublabel={`${projection.noEntregadas} uds x ${formatCurrency(simState.customShipping)} x 1.4`} value={-projection.fleteDevoluciones} type="expense" />
+                                        <WaterfallRow
+                                            label="Inversion en Ads"
+                                            sublabel={`${projection.ventasTotales} uds x ${formatCurrency(simState.targetCpa)} CPA`}
+                                            value={-projection.inversionAds}
+                                            type="expense"
+                                            badge={`${projection.percAdsDesp.toFixed(1)}% s/ despachado`}
+                                        />
+
+                                        <div className="h-px bg-card-border" />
+
+                                        <WaterfallRow label="UTILIDAD NETA PROYECTADA" value={projection.utilidadNeta} type={projection.utilidadNeta >= 0 ? 'profit' : 'loss'} highlight />
+                                    </div>
                                 </div>
 
-                                {/* Financial waterfall */}
-                                <div className="space-y-0 border border-card-border rounded-2xl overflow-hidden">
-                                    {/* Collapsible revenue group */}
-                                    <button
-                                        onClick={() => setShowRevenueBreakdown(!showRevenueBreakdown)}
-                                        className="w-full flex items-center justify-between px-4 py-3 bg-foreground/[0.04] hover:bg-foreground/[0.06] transition-colors cursor-pointer"
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <p className="text-xs font-black text-foreground">Ingreso Entregado</p>
-                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">{projection.entregadas} uds</span>
-                                            {showRevenueBreakdown
-                                                ? <ChevronUp className="w-3.5 h-3.5 text-muted" />
-                                                : <ChevronDown className="w-3.5 h-3.5 text-muted" />
-                                            }
+                                {/* Utilidad Neta Proyectada - highlighted card */}
+                                <div className="lg:col-span-2 relative bg-gradient-to-br from-emerald-500/10 to-accent/10 rounded-3xl p-8 border-2 flex flex-col items-center justify-center text-center overflow-hidden ring-1 shadow-lg"
+                                    style={{
+                                        borderColor: projection.utilidadNeta >= 0 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)',
+                                        ['--tw-ring-color' as any]: projection.utilidadNeta >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+                                        ['--tw-shadow-color' as any]: projection.utilidadNeta >= 0 ? 'rgba(16, 185, 129, 0.05)' : 'rgba(244, 63, 94, 0.05)',
+                                    }}>
+                                    <div className="absolute inset-0 pointer-events-none" style={{ background: projection.utilidadNeta >= 0 ? 'linear-gradient(135deg, rgba(16,185,129,0.06) 0%, transparent 100%)' : 'linear-gradient(135deg, rgba(244,63,94,0.06) 0%, transparent 100%)' }} />
+                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 blur-[80px] opacity-[0.12] pointer-events-none" style={{ backgroundColor: projection.utilidadNeta >= 0 ? '#10b981' : '#f43f5e' }} />
+                                    <div className="relative">
+                                        <div className="w-16 h-16 rounded-2xl flex items-center justify-center border mb-3 mx-auto shadow-sm"
+                                            style={{
+                                                backgroundColor: projection.utilidadNeta >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                                                borderColor: projection.utilidadNeta >= 0 ? 'rgba(16,185,129,0.25)' : 'rgba(244,63,94,0.25)',
+                                            }}>
+                                            <BarChart3 className="w-8 h-8" style={{ color: projection.utilidadNeta >= 0 ? '#10b981' : '#f43f5e' }} />
                                         </div>
-                                        <p className="text-sm font-black font-mono shrink-0 ml-4 text-emerald-400">{formatCurrency(projection.ingresoEntregado)}</p>
-                                    </button>
-                                    {showRevenueBreakdown && (
-                                        <div className="border-t border-card-border bg-foreground/[0.02]">
-                                            <WaterfallRow label="Facturacion Total" sublabel={`${projection.ventasTotales} uds x ${formatCurrency(simState.customPrice)}`} value={projection.facturacionTotal} type="neutral" />
-                                            <WaterfallRow label="Facturacion Despachada" sublabel={`${projection.despachadas} uds despachadas`} value={projection.facturacionDespachada} type="neutral" />
-                                            <WaterfallRow label="Ingreso Entregado" sublabel={`${projection.entregadas} uds entregadas`} value={projection.ingresoEntregado} type="income" />
-                                        </div>
-                                    )}
-
-                                    <div className="h-px bg-card-border" />
-
-                                    <WaterfallRow label="Costo de Producto" sublabel={`${projection.entregadas} uds x ${formatCurrency(simState.customCost)}`} value={-projection.costoProducto} type="expense" />
-                                    <WaterfallRow label="Flete Entregados" sublabel={`${projection.entregadas} uds x ${formatCurrency(simState.customShipping)}`} value={-projection.fleteEntregados} type="expense" />
-                                    <WaterfallRow label="Flete Devoluciones" sublabel={`${projection.noEntregadas} uds x ${formatCurrency(simState.customShipping)} x 1.4`} value={-projection.fleteDevoluciones} type="expense" />
-                                    <WaterfallRow
-                                        label="Inversion en Ads"
-                                        sublabel={`${projection.ventasTotales} uds x ${formatCurrency(simState.targetCpa)} CPA`}
-                                        value={-projection.inversionAds}
-                                        type="expense"
-                                        badge={`${projection.percAdsDesp.toFixed(1)}% s/ despachado`}
-                                    />
-
-                                    <div className="h-px bg-card-border" />
-
-                                    <WaterfallRow label="UTILIDAD NETA PROYECTADA" value={projection.utilidadNeta} type={projection.utilidadNeta >= 0 ? 'profit' : 'loss'} highlight />
+                                        <h4 className="text-sm font-black uppercase tracking-widest mb-2 flex items-center justify-center gap-1.5" style={{ color: projection.utilidadNeta >= 0 ? 'rgba(16,185,129,0.7)' : 'rgba(244,63,94,0.7)' }}>Utilidad Neta Proyectada <InfoTooltip text="Ganancia final proyectada después de descontar todos los costos: producto, flete, ads, devoluciones y cancelaciones." /></h4>
+                                        <p className="text-5xl font-black text-foreground tracking-tighter">{formatCurrency(projection.utilidadNeta)}</p>
+                                        <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-3">
+                                            Margen {projection.margenNeto.toFixed(1)}% · ROAS {projection.roas.toFixed(2)}x · {projection.entregadas} uds entregadas
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -587,7 +615,7 @@ export default function LogPosePage() {
                             {getRecommendations().length > 0 && (
                                 <div className="bg-card border border-card-border p-5 rounded-3xl space-y-3 shadow-sm">
                                     <h3 className="text-[10px] font-black text-muted uppercase tracking-[0.3em] flex items-center gap-2">
-                                        <Zap className="w-4 h-4 text-amber-500" /> Recomendaciones
+                                        <Zap className="w-4 h-4 text-amber-500" /> Recomendaciones <InfoTooltip text="Alertas y sugerencias automáticas basadas en los parámetros de tu simulación." />
                                     </h3>
                                     <div className="space-y-2">
                                         {getRecommendations().map((rec, i) => (
@@ -667,47 +695,51 @@ export default function LogPosePage() {
                         <div className="lg:col-span-8 space-y-5">
                             {/* Result cards */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <StatCard title="Precio Sugerido" value={formatCurrency(calculatorResults.precioSugerido)} icon={DollarSign} color="indigo" />
-                                <StatCard title="Utilidad p/ Unidad" value={formatCurrency(calculatorResults.utilidadPorUnidad)} icon={TrendingUp} color="emerald" />
-                                <StatCard title="CPA Breakeven" value={formatCurrency(calculatorResults.cpaBreakeven)} icon={Zap} color="rose" />
-                                <StatCard title="ROAS Breakeven" value={`${calculatorResults.breakevenRoas.toFixed(2)}x`} icon={Target} color="amber" />
+                                <StatCard title="Precio Sugerido" value={formatCurrency(calculatorResults.precioSugerido)} icon={DollarSign} color="indigo" tooltip="Precio mínimo para cubrir costos y alcanzar el margen deseado." />
+                                <StatCard title="Utilidad p/ Unidad" value={formatCurrency(calculatorResults.utilidadPorUnidad)} icon={TrendingUp} color="emerald" tooltip="Ganancia neta por cada unidad vendida y entregada exitosamente." />
+                                <StatCard title="CPA Breakeven" value={formatCurrency(calculatorResults.cpaBreakeven)} icon={Zap} color="rose" tooltip="CPA máximo que puedes pagar sin perder dinero. Si tu CPA supera esto, estás en pérdida." />
+                                <StatCard title="ROAS Breakeven" value={`${calculatorResults.breakevenRoas.toFixed(2)}x`} icon={Target} color="amber" tooltip="ROAS mínimo necesario para no perder dinero. Por debajo de esto, la operación es negativa." />
                             </div>
 
-                            {/* Price breakdown waterfall */}
-                            <div className="bg-card border border-card-border rounded-3xl p-6 shadow-sm">
-                                <h3 className="text-[10px] font-black text-muted uppercase tracking-[0.3em] mb-5 flex items-center gap-2">
-                                    <BarChart3 className="w-4 h-4 text-accent" /> Desglose del Precio
-                                </h3>
+                            {/* Price breakdown + Final Price side by side */}
+                            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                                {/* Price breakdown waterfall */}
+                                <div className="lg:col-span-3 bg-card border border-card-border rounded-3xl p-6 shadow-sm">
+                                    <h3 className="text-[10px] font-black text-muted uppercase tracking-[0.3em] mb-5 flex items-center gap-2">
+                                        <BarChart3 className="w-4 h-4 text-accent" /> Desglose del Precio <InfoTooltip text="Composición del precio final: costo de producto, flete, otros gastos, seguro de devolución, CPA y margen de ganancia." />
+                                    </h3>
 
-                                <div className="space-y-0 border border-card-border rounded-2xl overflow-hidden">
-                                    <WaterfallRow label="Costo de Producto" value={calcState.costo} type="expense" />
-                                    <WaterfallRow label="Flete Promedio" value={calcState.flete} type="expense" />
-                                    <WaterfallRow label="Otros Gastos" value={calcState.otros} type="expense" />
-                                    <div className="h-px bg-card-border" />
-                                    <WaterfallRow label="Costo Base" value={calculatorResults.costoBase} type="neutral" highlight />
-                                    <div className="h-px bg-card-border" />
-                                    <WaterfallRow label={`Seguro Devolucion (${calcState.seguroDevolucion}%)`} sublabel="Colchon para cubrir perdidas por devoluciones" value={calculatorResults.montoSeguro} type="expense" />
-                                    <WaterfallRow label="CPA Proyectado (Ads)" sublabel="Costo de adquisicion por unidad" value={calcState.cpaProyectado} type="expense" />
-                                    <div className="h-px bg-card-border" />
-                                    <WaterfallRow label="Costo Total por Unidad" value={calculatorResults.costoTotalUnidad} type="neutral" highlight />
-                                    <WaterfallRow label={`Margen Deseado (${calcState.margenDeseado}%)`} value={calculatorResults.utilidadPorUnidad} type="income" />
-                                    <div className="h-px bg-card-border" />
-                                    <WaterfallRow label="PRECIO SUGERIDO" value={calculatorResults.precioSugerido} type="profit" highlight />
-                                </div>
-                            </div>
-
-                            {/* Final Price */}
-                            <div className="relative bg-gradient-to-br from-accent/5 to-purple-500/5 rounded-3xl p-8 border border-accent/10 flex flex-col items-center justify-center text-center space-y-4 overflow-hidden">
-                                <div className="absolute inset-0 bg-gradient-to-r from-accent/5 to-transparent pointer-events-none" />
-                                <div className="relative">
-                                    <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center border border-accent/20 mb-3 mx-auto">
-                                        <DollarSign className="w-7 h-7 text-accent" />
+                                    <div className="space-y-0 border border-card-border rounded-2xl overflow-hidden">
+                                        <WaterfallRow label="Costo de Producto" value={calcState.costo} type="expense" />
+                                        <WaterfallRow label="Flete Promedio" value={calcState.flete} type="expense" />
+                                        <WaterfallRow label="Otros Gastos" value={calcState.otros} type="expense" />
+                                        <div className="h-px bg-card-border" />
+                                        <WaterfallRow label="Costo Base" value={calculatorResults.costoBase} type="neutral" highlight />
+                                        <div className="h-px bg-card-border" />
+                                        <WaterfallRow label={`Seguro Devolucion (${calcState.seguroDevolucion}%)`} sublabel="Colchon para cubrir perdidas por devoluciones" value={calculatorResults.montoSeguro} type="expense" />
+                                        <WaterfallRow label="CPA Proyectado (Ads)" sublabel="Costo de adquisicion por unidad" value={calcState.cpaProyectado} type="expense" />
+                                        <div className="h-px bg-card-border" />
+                                        <WaterfallRow label="Costo Total por Unidad" value={calculatorResults.costoTotalUnidad} type="neutral" highlight />
+                                        <WaterfallRow label={`Margen Deseado (${calcState.margenDeseado}%)`} value={calculatorResults.utilidadPorUnidad} type="income" />
+                                        <div className="h-px bg-card-border" />
+                                        <WaterfallRow label="PRECIO SUGERIDO" value={calculatorResults.precioSugerido} type="profit" highlight />
                                     </div>
-                                    <h4 className="text-sm font-black uppercase tracking-widest text-muted mb-2">Precio Final Recomendado</h4>
-                                    <p className="text-5xl font-black text-foreground tracking-tighter">{formatCurrency(calculatorResults.precioFinal)}</p>
-                                    <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-3">
-                                        Incluye seguro de devolucion ({calcState.seguroDevolucion}%) + CPA ({formatCurrency(calcState.cpaProyectado)}) + margen ({calcState.margenDeseado}%)
-                                    </p>
+                                </div>
+
+                                {/* Final Price */}
+                                <div className="lg:col-span-2 relative bg-gradient-to-br from-accent/10 to-purple-500/10 rounded-3xl p-8 border-2 border-accent/25 flex flex-col items-center justify-center text-center overflow-hidden ring-1 ring-accent/10 shadow-lg shadow-accent/5">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-accent/8 via-transparent to-purple-500/5 pointer-events-none" />
+                                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 blur-[80px] opacity-[0.12] bg-accent pointer-events-none" />
+                                    <div className="relative">
+                                        <div className="w-16 h-16 rounded-2xl bg-accent/15 flex items-center justify-center border border-accent/25 mb-3 mx-auto shadow-sm shadow-accent/10">
+                                            <DollarSign className="w-8 h-8 text-accent" />
+                                        </div>
+                                        <h4 className="text-sm font-black uppercase tracking-widest text-accent/70 mb-2 flex items-center justify-center gap-1.5">Precio Final Recomendado <InfoTooltip text="Precio de venta que cubre todos los costos, incluye seguro de devolución, CPA y el margen de ganancia deseado." /></h4>
+                                        <p className="text-5xl font-black text-foreground tracking-tighter">{formatCurrency(calculatorResults.precioFinal)}</p>
+                                        <p className="text-[10px] text-muted font-bold uppercase tracking-widest mt-3">
+                                            Incluye seguro de devolucion ({calcState.seguroDevolucion}%) + CPA ({formatCurrency(calcState.cpaProyectado)}) + margen ({calcState.margenDeseado}%)
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -802,7 +834,7 @@ function WaterfallRow({ label, sublabel, value, type, highlight, badge }: {
     );
 }
 
-function StatCard({ title, value, subtitle, icon: Icon, color }: { title: string; value: string; subtitle?: string; icon: any; color: string }) {
+function StatCard({ title, value, subtitle, icon: Icon, color, highlight, tooltip }: { title: string; value: string; subtitle?: string; icon: any; color: string; highlight?: boolean; tooltip?: string }) {
     const themeColors: Record<string, string> = {
         emerald: '#10b981', blue: '#3182ce', indigo: '#6366f1',
         amber: '#f59e0b', rose: '#f43f5e', purple: '#a855f7', cyan: '#06b6d4'
@@ -810,16 +842,18 @@ function StatCard({ title, value, subtitle, icon: Icon, color }: { title: string
     const textColor = themeColors[color] || '#6366f1';
 
     return (
-        <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-foreground/10 transition-all group shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 blur-[60px] opacity-[0.05] group-hover:opacity-[0.1] transition-opacity pointer-events-none" style={{ backgroundColor: textColor }} />
-            <div className="flex items-center justify-between mb-3">
-                <span className="text-[9px] font-black text-muted uppercase tracking-[0.2em]">{title}</span>
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${textColor}15` }}>
-                    <Icon className="w-3.5 h-3.5" style={{ color: textColor }} />
+        <div className={`rounded-2xl p-4 transition-all group shadow-sm relative overflow-hidden ${highlight ? 'bg-gradient-to-br from-card to-card border-2 ring-1 ring-offset-0' : 'bg-card border border-card-border hover:border-foreground/10'}`}
+            style={highlight ? { borderColor: `${textColor}40`, ['--tw-ring-color' as any]: `${textColor}20` } : undefined}>
+            <div className={`absolute top-0 right-0 w-24 h-24 blur-[60px] transition-opacity pointer-events-none ${highlight ? 'opacity-[0.15]' : 'opacity-[0.05] group-hover:opacity-[0.1]'}`} style={{ backgroundColor: textColor }} />
+            {highlight && <div className="absolute inset-0 bg-gradient-to-br from-transparent to-transparent pointer-events-none" style={{ background: `linear-gradient(135deg, ${textColor}08 0%, ${textColor}03 100%)` }} />}
+            <div className="flex items-center justify-between mb-3 relative">
+                <span className="text-[9px] font-black text-muted uppercase tracking-[0.2em] flex items-center gap-1">{title} {tooltip && <InfoTooltip text={tooltip} />}</span>
+                <div className={`${highlight ? 'w-8 h-8' : 'w-7 h-7'} rounded-lg flex items-center justify-center`} style={{ backgroundColor: `${textColor}${highlight ? '20' : '15'}` }}>
+                    <Icon className={`${highlight ? 'w-4 h-4' : 'w-3.5 h-3.5'}`} style={{ color: textColor }} />
                 </div>
             </div>
-            <p className="text-xl font-black tracking-tight" style={{ color: textColor }}>{value}</p>
-            {subtitle && <p className="text-[10px] font-bold text-muted mt-1">{subtitle}</p>}
+            <p className={`${highlight ? 'text-2xl' : 'text-xl'} font-black tracking-tight relative`} style={{ color: textColor }}>{value}</p>
+            {subtitle && <p className="text-[10px] font-bold text-muted mt-1 relative">{subtitle}</p>}
         </div>
     );
 }

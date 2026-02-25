@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, query, collection, where, getDocs, Timestamp, dele
 import { getAppData, setAppData, COLLECTIONS } from '../firebase/firestore';
 import { toCOP, type ExchangeRates, isMatchingCountry, normalizeCountry } from '../utils/currency';
 import { ProductGroup, getEffectiveProductId } from './productGroups';
+import { authFetch } from '../api/client';
 export * from './productGroups';
 
 // Cache to persist data across navigation within the same session (SPA navigation)
@@ -99,6 +100,7 @@ export interface CampaignMapping {
     productId: string;
     productName?: string;
     platform: 'facebook' | 'tiktok';
+    country?: string;
     updatedAt: number;
 }
 
@@ -629,7 +631,7 @@ export async function deleteCampaignMapping(campaignName: string, platform: 'fac
     clearAdCenterCache();
 }
 
-export async function updateCampaignMapping(campaignName: string, platform: 'facebook' | 'tiktok', newProductId: string, userId: string) {
+export async function updateCampaignMapping(campaignName: string, platform: 'facebook' | 'tiktok', newProductId: string, userId: string, country?: string) {
     if (!userId) return;
     const current = await getCampaignMappings(userId);
     const filtered = current.filter(m => !(m.campaignName === campaignName && m.platform === platform));
@@ -637,6 +639,7 @@ export async function updateCampaignMapping(campaignName: string, platform: 'fac
         campaignName,
         platform,
         productId: newProductId,
+        country,
         updatedAt: Date.now()
     };
     await setAppData('campaign_mappings', [...filtered, newMapping], userId);
@@ -644,11 +647,21 @@ export async function updateCampaignMapping(campaignName: string, platform: 'fac
 }
 
 /**
- * Save ad settings to app_data
+ * Save ad settings via server API (tokens encrypted server-side).
+ * Falls back to direct Firestore write if API fails.
  */
-export async function saveAdSettings(settings: AdSettings, userId: string): Promise<void> {
-    if (!userId) return;
-    await setAppData('ad_settings', settings, userId);
+export async function saveAdSettings(settings: AdSettings, _userId?: string): Promise<void> {
+    try {
+        const res = await authFetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings }),
+        });
+        if (!res.ok) throw new Error('API save failed');
+    } catch {
+        // Fallback: direct Firestore write (no encryption)
+        if (_userId) await setAppData('ad_settings', settings, _userId);
+    }
 }
 
 export async function clearAllMappings(userId: string) {
@@ -742,49 +755,65 @@ export async function generateMappingSuggestions(
     });
 }
 
+/** Normalize account arrays from legacy string format to object format */
+function mapAccounts(list: any[]): AdAccount[] {
+    if (!Array.isArray(list)) return [];
+    const results: Record<string, { acc: AdAccount, isObject: boolean }> = {};
+
+    list.forEach(item => {
+        const isObject = typeof item === 'object' && item !== null;
+        const acc: AdAccount = isObject
+            ? item
+            : { id: String(item), name: String(item).replace('act_', '') };
+
+        const existing = results[acc.id];
+        const hasLetters = /[a-zA-Z]/.test(acc.name);
+        const existingHasLetters = existing ? /[a-zA-Z]/.test(existing.acc.name) : false;
+
+        if (!existing || (isObject && !existing.isObject) || (hasLetters && !existingHasLetters)) {
+            results[acc.id] = { acc, isObject };
+        }
+    });
+
+    return Object.values(results).map(r => r.acc);
+}
+
+/** Normalize raw settings data into AdSettings */
+function normalizeSettings(settings: any): AdSettings {
+    return {
+        fb_token: settings.fb_token || '',
+        fb_account_ids: mapAccounts(settings.fb_account_ids),
+        tt_token: settings.tt_token || '',
+        tt_account_ids: mapAccounts(settings.tt_account_ids),
+        fb_currency: settings.fb_currency || 'USD',
+        tt_currency: settings.tt_currency || 'USD',
+        ai_provider: settings.ai_provider || 'none',
+        ai_api_key: settings.ai_api_key || '',
+        ai_auto_map: settings.ai_auto_map !== undefined ? settings.ai_auto_map : false,
+        google_api_key: settings.google_api_key || '',
+        google_client_id: settings.google_client_id || '',
+        custom_metrics: settings.custom_metrics,
+    };
+}
+
 /**
- * Get ad settings from app_data
+ * Get ad settings via server API (tokens decrypted server-side).
+ * Falls back to direct Firestore read if API fails.
  */
 export async function getAdSettings(userId: string = ''): Promise<AdSettings | null> {
-    const settings = await getAppData<any>('ad_settings', userId);
-    if (settings) {
-        // Map old string array format to new object format for backward compatibility
-        const mapAccounts = (list: any[]): AdAccount[] => {
-            if (!Array.isArray(list)) return [];
-            const results: Record<string, { acc: AdAccount, isObject: boolean }> = {};
-
-            list.forEach(item => {
-                const isObject = typeof item === 'object' && item !== null;
-                const acc: AdAccount = isObject
-                    ? item
-                    : { id: String(item), name: String(item).replace('act_', '') };
-
-                const existing = results[acc.id];
-                const hasLetters = /[a-zA-Z]/.test(acc.name);
-                const existingHasLetters = existing ? /[a-zA-Z]/.test(existing.acc.name) : false;
-
-                // Priority: Object format > String format, and Named > Numeric ID
-                if (!existing || (isObject && !existing.isObject) || (hasLetters && !existingHasLetters)) {
-                    results[acc.id] = { acc, isObject };
-                }
-            });
-
-            return Object.values(results).map(r => r.acc);
-        };
-
-        return {
-            fb_token: settings.fb_token || '',
-            fb_account_ids: mapAccounts(settings.fb_account_ids),
-            tt_token: settings.tt_token || '',
-            tt_account_ids: mapAccounts(settings.tt_account_ids),
-            fb_currency: settings.fb_currency || 'USD',
-            tt_currency: settings.tt_currency || 'USD',
-            ai_provider: settings.ai_provider || 'none',
-            ai_api_key: settings.ai_api_key || '',
-            ai_auto_map: settings.ai_auto_map !== undefined ? settings.ai_auto_map : false,
-            google_api_key: settings.google_api_key || '',
-            google_client_id: settings.google_client_id || ''
-        };
+    try {
+        const res = await authFetch('/api/settings');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.settings) return normalizeSettings(data.settings);
+            return null;
+        }
+    } catch {
+        // Fallback below
     }
+
+    // Fallback: direct Firestore read (for cases where API is unavailable)
+    const settings = await getAppData<any>('ad_settings', userId);
+    if (settings) return normalizeSettings(settings);
     return null;
 }

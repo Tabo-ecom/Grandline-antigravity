@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { vegaGenerateReport } from '@/lib/services/vega/gemini';
 import { getReportHistory, saveReport } from '@/lib/services/vega/reports';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
+import { checkRateLimit, rateLimitResponse } from '@/lib/api/rate-limit';
 import type { VegaReport } from '@/lib/types/vega';
 
 export async function GET(req: NextRequest) {
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest) {
     try {
         const auth = await verifyAuth(req);
         if (!auth) return unauthorizedResponse();
+
+        const rl = checkRateLimit(`${auth.uid}:vega-reports`, { max: 5 });
+        if (!rl.success) return rateLimitResponse();
 
         const { type, dataContext, period, kpiTargets } = await req.json();
 

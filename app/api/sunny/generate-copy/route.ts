@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
+import { checkRateLimit, rateLimitResponse } from '@/lib/api/rate-limit';
 
 const COPY_SYSTEM_PROMPT = `Eres un copywriter experto en e-commerce COD (Cash on Delivery) para Latinoamérica. Tu tarea es generar contenido publicitario para Meta Ads.
 
@@ -95,6 +96,9 @@ export async function POST(request: NextRequest) {
     try {
         const auth = await verifyAuth(request);
         if (!auth) return unauthorizedResponse();
+
+        const rl = checkRateLimit(`${auth.uid}:sunny-copy`, { max: 10 });
+        if (!rl.success) return rateLimitResponse();
 
         const { product, country, destinationUrl } = await request.json();
 

@@ -11,6 +11,7 @@ import { getCountryCode } from '@/lib/data/geo/departments';
 import { CountryMap } from '@/components/territories/CountryMap';
 import type { MetricType } from '@/components/territories/CountryMap';
 import { listCarriers, saveCarrier, deleteCarrier, TerritoryCarrier } from '@/lib/firebase/firestore';
+import InfoTooltip from '@/components/common/InfoTooltip';
 import {
     TrendingUp,
     Package,
@@ -426,7 +427,7 @@ export default function CountryOperationPage() {
             <div className="bg-card rounded-2xl border border-card-border shadow-lg overflow-hidden">
                 {/* Status Distribution Bar */}
                 <div className="p-5 border-b border-card-border">
-                    <p className="text-xs font-bold text-muted uppercase tracking-widest mb-3">Distribución de Estados <span className="text-muted/50">(sin cancelados)</span></p>
+                    <p className="text-xs font-bold text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">Distribución de Estados <span className="text-muted/50">(sin cancelados)</span> <InfoTooltip text="Proporción de órdenes despachadas según su estado actual: entregadas, en tránsito o devueltas. No incluye canceladas." /></p>
                     <div className="flex h-9 rounded-lg overflow-hidden gap-0.5 mb-3">
                         {[
                             { label: 'Entregado', count: statusStats.entregados, perc: statusStats.percents.entregados, bg: 'bg-emerald-500' },
@@ -591,7 +592,7 @@ export default function CountryOperationPage() {
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                             <MapPin className="w-4 h-4 text-accent" />
-                            <h3 className="text-xs font-black text-foreground uppercase tracking-widest">Mapa Logístico</h3>
+                            <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Mapa Logístico <InfoTooltip text="Visualización geográfica de métricas por departamento. Cambia la métrica para ver tasa de entrega, flete promedio u otras." /></h3>
                         </div>
                         <div className="flex items-center gap-1 bg-hover-bg p-1 rounded-lg border border-card-border">
                             {([
@@ -623,7 +624,7 @@ export default function CountryOperationPage() {
                 <div className="px-5 py-3 border-b border-card-border bg-hover-bg flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Truck className="w-4 h-4 text-accent" />
-                        <h3 className="text-xs font-black text-foreground uppercase tracking-widest">Transportadoras</h3>
+                        <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Transportadoras <InfoTooltip text="Rendimiento de cada transportadora: órdenes, tasa de entrega, devoluciones, tránsito y flete promedio." /></h3>
                         <span className="text-xs font-mono text-muted ml-2">{autoCarrierKpis.length} detectadas</span>
                     </div>
                 </div>
@@ -673,7 +674,7 @@ export default function CountryOperationPage() {
             {/* === ROW 4: Department Ranking Table (sortable + collapsible) === */}
             <div className="bg-card rounded-2xl border border-card-border overflow-hidden shadow-xl">
                 <div className="p-5 border-b border-card-border bg-hover-bg flex items-center justify-between">
-                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest">Ranking de Departamentos</h3>
+                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Ranking de Departamentos <InfoTooltip text="Ranking de departamentos por volumen de órdenes con métricas de entrega, devolución, tránsito y flete." /></h3>
                     <span className="text-xs font-bold text-muted uppercase tracking-widest">{departmentMetrics.length} regiones</span>
                 </div>
                 <div className="overflow-x-auto custom-scrollbar">
@@ -742,7 +743,7 @@ export default function CountryOperationPage() {
             {/* === ROW 5: Product Summary Table (sortable + collapsible) === */}
             <div className="bg-card rounded-2xl border border-card-border overflow-hidden shadow-xl">
                 <div className="p-5 border-b border-card-border bg-hover-bg flex items-center justify-between">
-                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest">Resumen por Producto</h3>
+                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Resumen por Producto <InfoTooltip text="Desglose de cada producto con métricas de entrega, cancelación, flete y valor promedio de venta." /></h3>
                     <span className="text-xs font-bold text-muted uppercase tracking-widest">{productBreakdown.length} productos</span>
                 </div>
                 <div className="overflow-x-auto custom-scrollbar">

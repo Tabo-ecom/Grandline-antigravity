@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, AlertTriangle, AlertOctagon, DollarSign } from 'lucide-react';
+import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, AlertTriangle, AlertOctagon, DollarSign, Target, Sparkles } from 'lucide-react';
 import { parseDropiFile, ParseResult } from '@/lib/utils/parser';
 import { saveOrderFile, getImportHistory, deleteImportLog, findOverlappingImports } from '@/lib/firebase/firestore';
 import { clearAdCenterCache } from '@/lib/services/marketing';
@@ -10,8 +10,9 @@ import { useAuth } from '@/lib/context/AuthContext';
 import dynamic from 'next/dynamic';
 
 const PriceCorrections = dynamic(() => import('@/components/import/PriceCorrections'), { ssr: false });
+const CampaignDataConfig = dynamic(() => import('@/components/publicidad/CampaignDataConfig'), { ssr: false, loading: () => <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div> });
 
-type ActiveTab = 'import' | 'corrections';
+type ActiveTab = 'import' | 'corrections' | 'mapeo' | 'grupos';
 
 export default function ImportPage() {
     const { user, effectiveUid } = useAuth();
@@ -201,14 +202,14 @@ export default function ImportPage() {
     };
 
     return (
-        <div className="space-y-8 max-w-5xl mx-auto">
+        <div className={`space-y-8 mx-auto ${activeTab === 'mapeo' || activeTab === 'grupos' ? 'max-w-[1600px] px-4 sm:px-6' : 'max-w-5xl'}`}>
             <div>
-                <h1 className="text-3xl font-bold tracking-tight font-['Space_Grotesk']">Importar Datos</h1>
-                <p className="text-muted mt-1">Sube tus archivos de órdenes de Dropi para actualizar el Grand Line.</p>
+                <h1 className="text-3xl font-bold tracking-tight font-['Space_Grotesk']">Configuración de Datos</h1>
+                <p className="text-muted mt-1">Gestiona tus importaciones, mapeos de campañas y grupos de productos.</p>
             </div>
 
             {/* Tab Toggle */}
-            <div className="flex gap-2 bg-card border border-card-border rounded-2xl p-1.5 w-fit">
+            <div className="flex flex-wrap gap-2 bg-card border border-card-border rounded-2xl p-1.5 w-fit">
                 <button
                     onClick={() => setActiveTab('import')}
                     className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'import'
@@ -229,10 +230,31 @@ export default function ImportPage() {
                     <DollarSign className="w-4 h-4" />
                     Corrección de Precios
                 </button>
+                <button
+                    onClick={() => setActiveTab('mapeo')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'mapeo'
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                        : 'text-muted hover:text-foreground hover:bg-hover-bg'
+                    }`}
+                >
+                    <Target className="w-4 h-4" />
+                    Mapeo de Campañas
+                </button>
+                <button
+                    onClick={() => setActiveTab('grupos')}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'grupos'
+                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                        : 'text-muted hover:text-foreground hover:bg-hover-bg'
+                    }`}
+                >
+                    <Sparkles className="w-4 h-4" />
+                    Grupos de Productos
+                </button>
             </div>
 
             {/* Tab Content */}
             {activeTab === 'import' ? (
+                /* Import tab content */
                 <>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         {/* Upload Area */}
@@ -460,8 +482,12 @@ export default function ImportPage() {
                         </div>
                     )}
                 </>
-            ) : (
+            ) : activeTab === 'corrections' ? (
                 <PriceCorrections />
+            ) : (
+                <div className="max-w-[1600px]">
+                    <CampaignDataConfig defaultSection={activeTab === 'grupos' ? 'grupos' : 'mapeo'} />
+                </div>
             )}
         </div>
     );

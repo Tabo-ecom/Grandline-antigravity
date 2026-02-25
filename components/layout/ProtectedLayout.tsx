@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { AuthProvider, useAuth } from '@/lib/context/AuthContext';
 import { ThemeProvider } from '@/lib/context/ThemeContext';
 import { usePathname, useRouter } from 'next/navigation';
+import { MODULE_REQUIRED_PLAN } from '@/lib/hooks/usePlanAccess';
 
 const AppProviders = dynamic(() => import('./AppProviders'), {
     ssr: false,
@@ -19,7 +20,7 @@ const AppProviders = dynamic(() => import('./AppProviders'), {
 });
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-    const { user, loading } = useAuth();
+    const { user, profile, loading } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
     const [isLandingDomain, setIsLandingDomain] = React.useState<boolean | null>(null);
@@ -78,6 +79,40 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Redirecting — show nothing
     if (!user && !isPublicPage) return null;
     if (user && (pathname === '/login' || pathname === '/')) return <>{children}</>;
+
+    // Plan-based access check: block modules the user's plan doesn't include
+    const moduleId = pathname.replace('/', '').split('/')[0]; // e.g. "sunny", "berry", "vega-ai"
+    const requiredPlan = MODULE_REQUIRED_PLAN[moduleId];
+
+    if (requiredPlan && profile) {
+        const PLAN_LEVEL: Record<string, number> = { free: 0, rookie: 1, supernova: 2, yonko: 3 };
+        const userPlan = profile.plan || 'free';
+        const isActive = profile.subscriptionStatus === 'active' || profile.subscriptionStatus === 'trialing';
+        const hasAdminBypass = profile.role === 'admin' && !profile.plan;
+
+        if (!hasAdminBypass && (!isActive || (PLAN_LEVEL[userPlan] ?? 0) < (PLAN_LEVEL[requiredPlan] ?? 0))) {
+            return (
+                <AppProviders>
+                    <div className="flex h-screen items-center justify-center bg-background text-foreground">
+                        <div className="max-w-md text-center p-8 space-y-4">
+                            <div className="text-5xl">🔒</div>
+                            <h2 className="text-2xl font-black uppercase tracking-tighter">Módulo Bloqueado</h2>
+                            <p className="text-sm text-muted">
+                                Este módulo requiere el plan <span className="font-bold text-accent capitalize">{requiredPlan}</span> o superior.
+                                {!isActive && userPlan !== 'free' && ' Tu suscripción no está activa.'}
+                            </p>
+                            <button
+                                onClick={() => router.push('/planes')}
+                                className="px-6 py-3 bg-accent text-white font-black uppercase text-xs rounded-xl hover:bg-accent/90 transition-colors"
+                            >
+                                Ver Planes
+                            </button>
+                        </div>
+                    </div>
+                </AppProviders>
+            );
+        }
+    }
 
     // Protected pages — load all providers dynamically
     return <AppProviders>{children}</AppProviders>;

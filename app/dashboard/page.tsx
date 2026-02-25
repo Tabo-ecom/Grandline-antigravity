@@ -13,12 +13,10 @@ import {
     DollarSign,
     TrendingDown,
     ArrowUpRight,
-    ChevronDown,
     Activity,
     X,
     Search,
     Edit3,
-    Check,
     Loader2,
     AlertCircle,
     Bug,
@@ -29,10 +27,16 @@ import {
     Minimize2,
     Bot,
     Sparkles,
-    Info,
 } from 'lucide-react';
 import FilterHeader from '@/components/FilterHeader';
+import InfoTooltip from '@/components/common/InfoTooltip';
+import StatCard from '@/components/dashboard/StatCard';
+import HealthBadge from '@/components/dashboard/HealthBadge';
+import PlatformBar from '@/components/dashboard/PlatformBar';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
+import dynamic from 'next/dynamic';
+
+const CountryTable = dynamic(() => import('@/components/dashboard/CountryTable'));
 import { useKPITargets } from '@/lib/hooks/useKPITargets';
 import { buildDataContext } from '@/lib/services/vega/context-builder';
 import { authFetch } from '@/lib/api/client';
@@ -965,377 +969,23 @@ export default function GlobalDashboard() {
                 </div>
 
 
-                {/* Country Breakdown Table - REDESIGNED */}
-                <div className="bg-card border border-card-border rounded-2xl shadow-sm">
-                    <div className="p-6 border-b border-card-border flex justify-between items-center">
-                        <div className="flex items-center justify-between w-full">
-                            <h2 className="text-xl font-black uppercase tracking-tighter flex items-center gap-3">
-                                <Activity className="w-6 h-6 text-indigo-500" />
-                                Operación Global
-                                <InfoTooltip text="Desglose por país con métricas de logística y finanzas. Proj % = tasa de entrega proyectada para calcular utilidad." />
-                            </h2>
-                            {localOverrides && (
-                                <button
-                                    onClick={handleSaveProjections}
-                                    disabled={isSavingProjections}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saveSuccess ? 'bg-emerald-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'} disabled:opacity-50`}
-                                >
-                                    {isSavingProjections ? (
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : saveSuccess ? (
-                                        <Check className="w-3 h-3" />
-                                    ) : (
-                                        <Zap className="w-3 h-3" />
-                                    )}
-                                    {saveSuccess ? 'Guardado' : isSavingProjections ? 'Guardando...' : 'Guardar Brújula'}
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
-                        <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed', minWidth: '1100px' }}>
-                            <colgroup>
-                                <col style={{ width: '130px' }} />{/* País */}
-                                <col style={{ width: '90px' }} />{/* Proj % */}
-                                <col style={{ width: '80px' }} />{/* Órdenes */}
-                                <col style={{ width: '80px' }} />{/* % Canc */}
-                                <col style={{ width: '90px' }} />{/* % Entrega */}
-                                <col style={{ width: '80px' }} />{/* % Tránsito */}
-                                <col style={{ width: '80px' }} />{/* % Dev */}
-                                <col style={{ width: '120px' }} />{/* Venta Desp */}
-                                <col style={{ width: '120px' }} />{/* Ads */}
-                                <col style={{ width: '110px' }} />{/* CPA Desp */}
-                                <col style={{ width: '110px' }} />{/* CPA Ent */}
-                                <col style={{ width: '110px' }} />{/* Utd Real */}
-                                <col style={{ width: '110px' }} />{/* Utd Proy */}
-                                <col style={{ width: '44px' }} />{/* chevron */}
-                            </colgroup>
-                            <thead className="sticky top-0 z-20">
-                                {/* Group Headers */}
-                                <tr className="bg-card border-b border-card-border">
-                                    <th className="px-5 py-2 border-r border-card-border bg-card"></th>
-                                    <th colSpan={6} className="px-5 py-2 text-center text-[10px] font-black uppercase text-blue-400 tracking-widest border-r border-card-border bg-blue-500/5">
-                                        Grupo Logística
-                                    </th>
-                                    <th colSpan={6} className="px-5 py-2 text-center text-[10px] font-black uppercase text-emerald-400 tracking-widest bg-emerald-500/5">
-                                        Grupo Financiero
-                                    </th>
-                                    <th className="px-5 py-2 bg-card"></th>
-                                </tr>
-                                <tr className="bg-card text-muted uppercase text-[9px] font-black tracking-widest border-b border-card-border">
-                                    <th className="px-5 py-3.5 border-r border-card-border sticky left-0 z-30 bg-card">País</th>
-                                    {/* Logística */}
-                                    <th className="px-5 py-3.5 text-center bg-blue-500/5 whitespace-nowrap border-l border-blue-500/20">Proj %</th>
-                                    <th className="px-5 py-3.5 text-center bg-blue-500/5">Órdenes</th>
-                                    <th className="px-5 py-3.5 text-center bg-blue-500/5">% Canc.</th>
-                                    <th className="px-5 py-3.5 text-center bg-blue-500/5">% Entrega</th>
-                                    <th className="px-5 py-3.5 text-center bg-blue-500/5">% Tránsito</th>
-                                    <th className="px-5 py-3.5 text-center border-r border-card-border bg-blue-500/5">% Dev.</th>
-                                    {/* Financiera */}
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">Venta Desp.</th>
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">Ads (Part.)</th>
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">CPA Desp.</th>
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">CPA Ent.</th>
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">Utd. Real</th>
-                                    <th className="px-5 py-3.5 text-right bg-emerald-500/5">Utd. Proy.</th>
-                                    <th className="px-5 py-3.5"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-card-border">
-                                {metricsByCountry.map((ctry: CountryMetric) => {
-                                    const dispatched = ctry.products.reduce((s: number, p: ProductMetric) => s + p.orderCount, 0);
-                                    const adPart = ctry.sales > 0 ? (ctry.adSpend / ctry.sales) * 100 : 0;
-                                    const cpa = dispatched > 0 ? ctry.adSpend / dispatched : 0;
-                                    return (
-                                        <React.Fragment key={ctry.name}>
-                                            <tr className="hover:bg-hover-bg transition-colors group cursor-pointer" onClick={() => setExpandedCountry(expandedCountry === ctry.name ? null : ctry.name)}>
-                                                <td className="px-5 py-4 font-bold text-foreground border-r border-card-border sticky left-0 z-20 bg-card group-hover:bg-hover-bg">
-                                                    <div className="flex items-center gap-2.5 text-sm">
-                                                        <img
-                                                            src={`https://flagcdn.com/w20/${getFlagCode(ctry.name)}.png`}
-                                                            alt={ctry.name}
-                                                            className="w-5 h-3 rounded-sm object-cover"
-                                                        />
-                                                        {ctry.name}
-                                                    </div>
-                                                </td>
-                                                {/* Proj % – first in logistic group */}
-                                                <td className="px-5 py-4 text-center border-l border-blue-500/20 bg-blue-500/5">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <input
-                                                            type="number"
-                                                            value={localOverrides?.countries?.[ctry.name]?.delivery_percent ?? ctry.projectionConfig}
-                                                            onChange={(e) => updateCountryOverride(ctry.name, parseFloat(e.target.value))}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className="w-12 bg-transparent border-b border-transparent hover:border-muted focus:border-indigo-500 focus:outline-none text-center font-mono text-sm transition-colors"
-                                                        />
-                                                        <span className="text-[10px] text-muted">%</span>
-                                                    </div>
-                                                </td>
-                                                {/* Logística */}
-                                                <td className="px-5 py-4 text-center font-mono text-foreground/80 text-sm bg-blue-500/5">{ctry.orderCount}</td>
-                                                <td className="px-5 py-4 text-center bg-blue-500/5">
-                                                    <span className={`font-mono font-bold text-xs ${getHealthColor(findTarget(kpiTargets, 'tasa_can') ? evaluateHealth(ctry.cancelRate, findTarget(kpiTargets, 'tasa_can')!) : ctry.cancelRate > 30 ? 'bad' : ctry.cancelRate > 15 ? 'warning' : 'good')}`}>
-                                                        {ctry.cancelRate.toFixed(1)}%
-                                                    </span>
-                                                </td>
-                                                <td className="px-5 py-4 text-center bg-blue-500/5">
-                                                    <span className={`font-mono font-bold text-xs ${getHealthColor(findTarget(kpiTargets, 'tasa_ent') ? evaluateHealth(ctry.deliveryRate, findTarget(kpiTargets, 'tasa_ent')!) : ctry.deliveryRate > 70 ? 'good' : ctry.deliveryRate > 50 ? 'warning' : 'bad')}`}>
-                                                        {ctry.deliveryRate.toFixed(1)}%
-                                                    </span>
-                                                </td>
-                                                <td className="px-5 py-4 text-center text-xs font-mono text-blue-400 bg-blue-500/5">{ctry.transitRate.toFixed(1)}%</td>
-                                                <td className="px-5 py-4 text-center text-xs font-mono text-amber-500 border-r border-card-border bg-blue-500/5">{ctry.returnRate.toFixed(1)}%</td>
-                                                {/* Financiera */}
-                                                <td className="px-5 py-4 text-right font-mono text-foreground/80 text-sm bg-emerald-500/5">{formatCurrency(ctry.sales)}</td>
-                                                <td className="px-5 py-4 text-right bg-emerald-500/5">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className="font-mono text-rose-400 text-sm">{formatCurrency(ctry.adSpend)}</span>
-                                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${findTarget(kpiTargets, 'perc_ads_revenue') ? (evaluateHealth(adPart, findTarget(kpiTargets, 'perc_ads_revenue')!) === 'good' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400') : adPart > 25 ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                                                            {adPart.toFixed(1)}% PART.
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                {/* CPA Despachado */}
-                                                <td className="px-5 py-4 text-right bg-emerald-500/5">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className="font-mono text-purple-400 text-sm">{formatCurrency(cpa)}</span>
-                                                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">CPA DESP.</span>
-                                                    </div>
-                                                </td>
-                                                {/* CPA Entregado */}
-                                                {(() => {
-                                                    const deliveryRate = (localOverrides?.countries?.[ctry.name]?.delivery_percent ?? ctry.projectionConfig) / 100;
-                                                    const projDelivered = dispatched * deliveryRate;
-                                                    const cpaEnt = projDelivered > 0 ? ctry.adSpend / projDelivered : 0;
-                                                    return (
-                                                        <td className="px-5 py-4 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className="font-mono text-indigo-400 text-sm">{formatCurrency(cpaEnt)}</span>
-                                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400">CPA ENT.</span>
-                                                            </div>
-                                                        </td>
-                                                    );
-                                                })()}
-                                                {/* Utilidad Real */}
-                                                <td className="px-5 py-4 text-right bg-emerald-500/5">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className={`font-mono font-bold text-sm ${ctry.profit >= 0 ? 'text-foreground' : 'text-red-400'}`}>{formatCurrency(ctry.profit)}</span>
-                                                        {ctry.sales > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ctry.profit >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400'}`}>{((ctry.profit / ctry.sales) * 100).toFixed(1)}% MARGEN</span>}
-                                                    </div>
-                                                </td>
-                                                {/* Utilidad Proyectada */}
-                                                <td className="px-5 py-4 text-right bg-emerald-500/5">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className={`font-mono text-sm font-bold ${ctry.projectedProfit >= 0 ? 'text-blue-400' : 'text-red-400'}`}>{formatCurrency(ctry.projectedProfit)}</span>
-                                                        {ctry.sales > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${ctry.projectedProfit >= 0 ? 'bg-blue-500/10 text-blue-400' : 'bg-red-500/10 text-red-400'}`}>{((ctry.projectedProfit / ctry.sales) * 100).toFixed(1)}% MARGEN</span>}
-                                                    </div>
-                                                </td>
-                                                <td className="px-5 py-4 text-center">
-                                                    <ChevronDown className={`w-4 h-4 text-muted transition-transform ${expandedCountry === ctry.name ? 'rotate-180' : ''}`} />
-                                                </td>
-                                            </tr>
-                                    {/* Expanded Product Details (Flattened) */}
-                                    {expandedCountry === ctry.name && (
-                                        <React.Fragment>
-                                            <tr className="bg-hover-bg/30">
-                                                <td colSpan={14} className="px-6 py-2 text-[10px] font-black uppercase text-muted tracking-widest border-b border-card-border sticky left-0 z-10 bg-hover-bg/30">
-                                                    Detalle de Operación: {ctry.name}
-                                                </td>
-                                            </tr>
-                                            {ctry.products.map((prod: ProductMetric, idx: number) => {
-                                                const pAdPart = prod.netSales > 0 ? (prod.adSpend / prod.netSales) * 100 : 0;
-                                                const pCpa = prod.orderCount > 0 ? prod.adSpend / prod.orderCount : 0;
-                                                const prodDeliveryPct = (localOverrides?.products?.[ctry.name]?.[prod.id] ?? prod.projectionConfig) / 100;
-                                                const pCpaEnt = prod.orderCount > 0 && prodDeliveryPct > 0 ? prod.adSpend / (prod.orderCount * prodDeliveryPct) : 0;
-
-                                                return (
-                                                    <tr key={idx} className="border-b border-card-border last:border-0 hover:bg-white/5 transition-colors group/row bg-card/40">
-                                                        <td className="px-5 py-3 font-medium text-foreground/80 sticky left-0 z-20 bg-card group-hover/row:bg-hover-bg overflow-hidden text-ellipsis whitespace-nowrap transition-colors pl-8" title={prod.name}>
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="w-1 h-3 rounded-full bg-border"></div>
-                                                                <span className="truncate max-w-[150px]">{prod.name}</span>
-                                                            </div>
-                                                        </td>
-                                                        {/* Proj % */}
-                                                        <td className="px-5 py-3 text-center bg-blue-500/5">
-                                                            <div className="flex items-center justify-center gap-1">
-                                                                <input
-                                                                    type="number"
-                                                                    value={localOverrides?.products?.[ctry.name]?.[prod.id] ?? prod.projectionConfig}
-                                                                    onChange={(e) => updateProductOverride(ctry.name, prod.id, parseFloat(e.target.value))}
-                                                                    className="w-10 bg-transparent border-b border-transparent hover:border-muted focus:border-indigo-500 focus:outline-none text-center font-mono transition-colors"
-                                                                />
-                                                                <span className="text-[9px] text-muted">%</span>
-                                                            </div>
-                                                        </td>
-                                                        {/* Órdenes */}
-                                                        <td className="px-5 py-3 text-center font-mono text-sm bg-blue-500/5">{prod.orderCount}</td>
-                                                        {/* % Can */}
-                                                        <td className="px-5 py-3 text-center font-mono text-xs text-red-400 bg-blue-500/5">{prod.cancelRate.toFixed(1)}%</td>
-                                                        {/* % Ent */}
-                                                        <td className="px-5 py-3 text-center font-mono text-xs text-emerald-400 bg-blue-500/5">{prod.deliveryRate.toFixed(1)}%</td>
-                                                        {/* % Tránsito */}
-                                                        <td className="px-5 py-3 text-center font-mono text-xs text-blue-400 bg-blue-500/5">{prod.transitRate.toFixed(1)}%</td>
-                                                        {/* % Dev */}
-                                                        <td className="px-5 py-3 text-center font-mono text-xs text-orange-400 bg-blue-500/5 border-r border-card-border">{prod.returnRate.toFixed(1)}%</td>
-                                                        
-                                                        {/* Financial */}
-                                                        <td className="px-5 py-3 text-right font-mono text-foreground/80 text-sm bg-emerald-500/5">{formatCurrency(prod.netSales)}</td>
-                                                        <td className="px-5 py-3 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className="font-mono text-rose-400 text-sm">{formatCurrency(prod.adSpend)}</span>
-                                                                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${pAdPart > 25 ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                                                                    {pAdPart.toFixed(1)}% PART.
-                                                                </span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className="font-mono text-purple-400 text-sm">{formatCurrency(pCpa)}</span>
-                                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">CPA DESP.</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className="font-mono text-indigo-400 text-sm">{formatCurrency(pCpaEnt)}</span>
-                                                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400">CPA ENT.</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className={`font-mono text-sm ${prod.profit >= 0 ? 'text-foreground' : 'text-red-400'}`}>{formatCurrency(prod.profit)}</span>
-                                                                {prod.netSales > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${prod.profit >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-400'}`}>{((prod.profit / prod.netSales) * 100).toFixed(1)}% MARG.</span>}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-right bg-emerald-500/5">
-                                                            <div className="flex flex-col items-end gap-0.5">
-                                                                <span className={`font-mono font-bold text-sm ${prod.projectedProfit >= 0 ? 'text-blue-400' : 'text-red-400'}`}>{formatCurrency(prod.projectedProfit)}</span>
-                                                                {prod.netSales > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${prod.projectedProfit >= 0 ? 'bg-blue-500/10 text-blue-400' : 'bg-red-500/10 text-red-400'}`}>{((prod.projectedProfit / prod.netSales) * 100).toFixed(1)}% MARG.</span>}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-5 py-3 text-center"></td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </React.Fragment>
-                                    )}
-                                        </React.Fragment>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <CountryTable
+                    metricsByCountry={metricsByCountry}
+                    expandedCountry={expandedCountry}
+                    setExpandedCountry={setExpandedCountry}
+                    localOverrides={localOverrides}
+                    updateCountryOverride={updateCountryOverride}
+                    updateProductOverride={updateProductOverride}
+                    handleSaveProjections={handleSaveProjections}
+                    isSavingProjections={isSavingProjections}
+                    saveSuccess={saveSuccess}
+                    kpiTargets={kpiTargets}
+                />
 
             </div>
         </div>
     );
 }
 
-// --- Component Helpers ---
+// --- Utility Helpers ---
 
-const InfoTooltip = ({ text }: { text: string }) => {
-    const ref = React.useRef<HTMLDivElement>(null);
-    const [above, setAbove] = React.useState(true);
-
-    const handleEnter = () => {
-        if (!ref.current) return;
-        const rect = ref.current.getBoundingClientRect();
-        setAbove(rect.top > 120);
-    };
-
-    return (
-        <div ref={ref} className="relative group/info inline-flex" onMouseEnter={handleEnter}>
-            <Info className="w-3.5 h-3.5 text-muted/50 hover:text-muted cursor-help transition-colors" />
-            <div className={`absolute left-1/2 -translate-x-1/2 px-3 py-2 bg-foreground text-background text-[11px] leading-tight rounded-lg shadow-lg opacity-0 group-hover/info:opacity-100 pointer-events-none transition-opacity duration-200 w-48 text-center z-50 font-normal normal-case tracking-normal ${above ? 'bottom-full mb-2' : 'top-full mt-2'}`}>
-                {text}
-                <div className={`absolute left-1/2 -translate-x-1/2 border-4 border-transparent ${above ? 'top-full -mt-px border-t-foreground' : 'bottom-full -mb-px border-b-foreground'}`} />
-            </div>
-        </div>
-    );
-};
-
-const HealthBadge = ({ label, value, status }: { label: string; value: string; status: 'good' | 'warning' | 'bad' }) => {
-    const colors = {
-        good: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-        warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-        bad: 'bg-red-500/10 text-red-400 border-red-500/20',
-    };
-    const dotColors = {
-        good: 'bg-emerald-500',
-        warning: 'bg-amber-500',
-        bad: 'bg-red-500',
-    };
-
-    return (
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold ${colors[status]}`}>
-            <div className={`w-2 h-2 rounded-full ${dotColors[status]} ${status === 'bad' ? 'animate-pulse' : ''}`} />
-            <span className="text-muted font-normal">{label}:</span>
-            <span className="font-mono">{value}</span>
-        </div>
-    );
-};
-
-const StatCard = ({ title, value, subvalue, icon: Icon, color, growth, invert }: any) => {
-    const colorMap: Record<string, string> = {
-        emerald: '#10b981',
-        blue: '#3b82f6',
-        indigo: '#6366f1',
-        amber: '#f59e0b',
-        rose: '#f43f5e',
-        purple: '#a855f7',
-    };
-    const hexColor = colorMap[color] || '#d75c33';
-
-    const growthPct = growth?.prev > 0 ? ((growth.current - growth.prev) / Math.abs(growth.prev)) * 100 : null;
-    const isPositive = growthPct !== null && (invert ? growthPct < 0 : growthPct > 0);
-
-    return (
-        <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all group shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-                <span className="text-[10px] font-black text-muted uppercase tracking-widest">{title}</span>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${hexColor}15` }}>
-                    <Icon className="w-4 h-4" style={{ color: hexColor }} />
-                </div>
-            </div>
-            <p className="text-xl font-black tracking-tight" style={{ color: hexColor }}>{value}</p>
-            {subvalue && <p className="text-xs text-muted mt-1">{subvalue}</p>}
-            {growthPct !== null && Math.abs(growthPct) >= 0.1 && (
-                <div className={`flex items-center gap-1 mt-1 text-[10px] font-bold ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {growthPct > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {Math.abs(growthPct).toFixed(1)}% vs periodo anterior
-                </div>
-            )}
-        </div>
-    );
-};
-
-const PlatformBar = ({ platform, value, total, color }: any) => (
-    <div>
-        <div className="flex justify-between text-sm mb-2">
-            <span className="text-foreground/80 font-medium">{platform}</span>
-            <div className="flex items-center gap-3">
-                <span className="text-muted font-mono text-xs">{formatCurrency(value)}</span>
-                <span className="text-[9px] font-bold text-muted bg-muted/10 px-1.5 py-0.5 rounded tabular-nums">{((value / total) * 100).toFixed(1)}%</span>
-            </div>
-        </div>
-        <div className="h-2 bg-card-border rounded-full overflow-hidden">
-            <div style={{ width: `${(value / total) * 100}%` }} className={`h-full bg-gradient-to-r ${color} rounded-full`} />
-        </div>
-    </div>
-);
-
-function getFlagCode(countryName: string) {
-    const map: Record<string, string> = {
-        'Colombia': 'co',
-        'México': 'mx',
-        'Perú': 'pe',
-        'Ecuador': 'ec',
-        'Panamá': 'pa',
-        'Chile': 'cl',
-        'España': 'es',
-        'Guatemala': 'gt'
-    };
-    return map[countryName] || 'un';
-}

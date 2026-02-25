@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { Shield, RefreshCw, Save, Loader2, CheckCircle2, Brain, Sparkles } from 'lucide-react';
-import { getAppData, setAppData } from '@/lib/firebase/firestore';
 import { useAuth } from '@/lib/context/AuthContext';
 import { fetchMetaAdAccounts } from '@/lib/services/meta';
 import { fetchTikTokAdAccounts } from '@/lib/services/tiktok';
-import { getAdSettings } from '@/lib/services/marketing';
+import { getAdSettings, saveAdSettings } from '@/lib/services/marketing';
 
 interface AdAccount {
     id: string;
@@ -92,7 +91,7 @@ export default function SettingsPage() {
         setSaving(true);
         setSuccess(false);
         try {
-            await setAppData('ad_settings', settings, effectiveUid || '');
+            await saveAdSettings(settings as any, effectiveUid || '');
             setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
         } catch (error) {

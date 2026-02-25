@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { formatCurrency } from '@/lib/utils/currency';
 import { Facebook, Search, Filter, ChevronDown, ChevronRight, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import InfoTooltip from '@/components/common/InfoTooltip';
 import { AdSpendHistory, CampaignMapping, CustomMetric } from '@/lib/services/marketing';
 import { isEntregado } from '@/lib/utils/status';
 import { evaluateCustomMetric, formatMetricValue } from '@/lib/utils/customMetrics';
@@ -486,7 +487,7 @@ export const CampaignAnalysis: React.FC<CampaignAnalysisProps> = ({ rawHistory, 
             <div className="p-5 border-b border-card-border flex flex-col gap-4">
                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                     <div className="flex flex-col gap-2">
-                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">Análisis de Campañas</h3>
+                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">Análisis de Campañas <InfoTooltip text="Desglose de campañas por producto con métricas de rendimiento. Expande un producto para ver sus campañas individuales." /></h3>
                         <div className="flex items-center gap-2">
                             <span className="text-[9px] font-bold text-muted bg-muted/10 px-1.5 py-0.5 rounded tabular-nums">
                                 {summary.totalProducts} Productos
@@ -580,9 +581,9 @@ export const CampaignAnalysis: React.FC<CampaignAnalysisProps> = ({ rawHistory, 
             </div>
 
             {/* Table */}
-            <div className="flex-1 overflow-auto relative">
+            <div className="flex-1 overflow-auto relative max-h-[700px]">
                 {/* Sticky Header */}
-                <div className="hidden lg:block sticky top-0 bg-card/95 backdrop-blur-sm z-30">
+                <div className="hidden lg:block sticky top-0 bg-card z-30 shadow-sm">
                     {/* Group Header Row */}
                     <div
                         className="grid gap-3 px-5 py-2 border-b border-card-border/50"
@@ -618,130 +619,168 @@ export const CampaignAnalysis: React.FC<CampaignAnalysisProps> = ({ rawHistory, 
 
                 {/* Rows */}
                 <div className="space-y-2 p-4">
-                    {filteredProducts.map(p => {
-                        const isExpanded = expandedProducts[p.productId];
-                        const s = p.summary;
-                        const badge = getStatusBadge(s);
+                    {(() => {
+                        const renderProductRow = (p: any) => {
+                            const isExpanded = expandedProducts[p.productId];
+                            const s = p.summary;
+                            const badge = getStatusBadge(s);
 
-                        return (
-                            <div key={p.productId} className="flex flex-col bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm hover:border-accent/40 transition-colors">
-                                {/* Product Row */}
-                                <div
-                                    onClick={() => toggleExpand(p.productId)}
-                                    className={`lg:grid items-center gap-3 px-5 py-3.5 cursor-pointer transition-colors ${isExpanded ? 'bg-hover-bg' : 'hover:bg-hover-bg'}`}
-                                    style={{ gridTemplateColumns: gridTemplate, minWidth: minTableWidth }}
-                                >
-                                    <div className="flex items-center gap-3 min-w-0 overflow-hidden">
-                                        <div className="bg-card border border-card-border w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
-                                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted" /> : <ChevronRight className="w-3.5 h-3.5 text-muted" />}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <h4 className="font-black text-sm text-foreground truncate">{p.productName}</h4>
-                                            <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5">{p.campaigns.length} Campañas</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="lg:text-center mt-2 lg:mt-0">
-                                        <span className={`inline-block px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${badge.color}`}>
-                                            {badge.text}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex items-center justify-between lg:block lg:text-right mt-2 lg:mt-0">
-                                        <span className="lg:hidden text-[10px] font-black text-muted uppercase">Gasto: </span>
-                                        <div className="flex flex-col items-end">
-                                            <span className="font-mono text-sm font-black text-orange-400">{formatCurrency(s.amount)}</span>
-                                            {p._prevSummary && <GrowthBadge current={s.amount} prev={p._prevSummary.amount} invert className="mt-0.5" />}
-                                        </div>
-                                    </div>
-
-                                    {activeColumns.map(col => {
-                                        const val = getMetricValue(s, col.key);
-                                        const prevVal = p._prevSummary ? getMetricValue(p._prevSummary, col.key) : 0;
-                                        return (
-                                            <div key={col.key} className={`flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0 rounded px-1 ${getGroupBg(col)}`}>
-                                                <span className="lg:hidden text-[9px] font-black text-muted uppercase">{col.shortLabel}: </span>
-                                                <div className="flex flex-col items-end">
-                                                    <span className={`font-mono text-sm font-bold ${metricColor(col.key, val, s.amount)}`}>
-                                                        {formatMetric(val, col.format)}
-                                                    </span>
-                                                    {prevVal > 0 && <GrowthBadge current={val} prev={prevVal} invert={col.invert} className="mt-0.5" />}
-                                                </div>
+                            return (
+                                <div key={p.productId} className="flex flex-col bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm hover:border-accent/40 transition-colors">
+                                    <div
+                                        onClick={() => toggleExpand(p.productId)}
+                                        className={`lg:grid items-center gap-3 px-5 py-3.5 cursor-pointer transition-colors ${isExpanded ? 'bg-hover-bg' : 'hover:bg-hover-bg'}`}
+                                        style={{ gridTemplateColumns: gridTemplate, minWidth: minTableWidth }}
+                                    >
+                                        <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+                                            <div className="bg-card border border-card-border w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted" /> : <ChevronRight className="w-3.5 h-3.5 text-muted" />}
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                            <div className="min-w-0">
+                                                <h4 className="font-black text-sm text-foreground truncate">{p.productName}</h4>
+                                                <p className="text-[10px] text-muted font-bold uppercase tracking-wider mt-0.5">{p.campaigns.length} Campañas</p>
+                                            </div>
+                                        </div>
 
-                                {/* Expanded Campaigns */}
-                                {isExpanded && (
-                                    <div className="border-t border-card-border divide-y divide-card-border/50">
-                                        {p.campaigns.map((c: any, i: number) => {
-                                            const isFb = c.platform === 'facebook';
-                                            const cBadge = getStatusBadge(c);
+                                        <div className="lg:text-center mt-2 lg:mt-0">
+                                            <span className={`inline-block px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${badge.color}`}>
+                                                {badge.text}
+                                            </span>
+                                        </div>
 
+                                        <div className="flex items-center justify-between lg:block lg:text-right mt-2 lg:mt-0">
+                                            <span className="lg:hidden text-[10px] font-black text-muted uppercase">Gasto: </span>
+                                            <div className="flex flex-col items-end">
+                                                <span className="font-mono text-sm font-black text-orange-400">{formatCurrency(s.amount)}</span>
+                                                {p._prevSummary && <GrowthBadge current={s.amount} prev={p._prevSummary.amount} invert className="mt-0.5" />}
+                                            </div>
+                                        </div>
+
+                                        {activeColumns.map(col => {
+                                            const val = getMetricValue(s, col.key);
+                                            const prevVal = p._prevSummary ? getMetricValue(p._prevSummary, col.key) : 0;
                                             return (
-                                                <div
-                                                    key={`${p.productId}-${i}`}
-                                                    className="lg:grid items-center gap-3 px-5 py-3 hover:bg-hover-bg transition-colors pl-7 lg:pl-8"
-                                                    style={{ gridTemplateColumns: gridTemplate, minWidth: minTableWidth }}
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0 overflow-hidden pr-2">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-card-border shrink-0" />
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2">
-                                                                {isFb ? <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <TikTokIcon className="w-3.5 h-3.5 text-[#00f2fe] shrink-0" />}
-                                                                <h5 className="text-xs font-semibold text-foreground/80 truncate" title={c.campaignName}>{c.campaignName}</h5>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="lg:text-center mt-1 lg:mt-0">
-                                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${cBadge.color}`}>
-                                                            {cBadge.text}
+                                                <div key={col.key} className={`flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0 rounded px-1 ${getGroupBg(col)}`}>
+                                                    <span className="lg:hidden text-[9px] font-black text-muted uppercase">{col.shortLabel}: </span>
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={`font-mono text-sm font-bold ${metricColor(col.key, val, s.amount)}`}>
+                                                            {formatMetric(val, col.format)}
                                                         </span>
+                                                        {prevVal > 0 && <GrowthBadge current={val} prev={prevVal} invert={col.invert} className="mt-0.5" />}
                                                     </div>
-
-                                                    <div className="flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0">
-                                                        <span className="lg:hidden text-[9px] font-black text-muted uppercase">Gasto: </span>
-                                                        <span className="font-mono text-xs font-semibold text-orange-400/80">{formatCurrency(c.amount)}</span>
-                                                    </div>
-
-                                                    {activeColumns.map(col => {
-                                                        const val = getMetricValue(c, col.key);
-                                                        const prevVal = c._prev ? getMetricValue(c._prev, col.key) : 0;
-
-                                                        // Custom metrics
-                                                        let displayVal = val;
-                                                        let displayFormat = col.format;
-                                                        if (col.key.startsWith('custom_')) {
-                                                            const cmId = col.key.replace('custom_', '');
-                                                            const cm = customMetrics.find(x => x.id === cmId);
-                                                            if (cm) {
-                                                                displayVal = evaluateCustomMetric(cm.formula, c);
-                                                                displayFormat = cm.format as MetricFormat;
-                                                            }
-                                                        }
-
-                                                        return (
-                                                            <div key={col.key} className={`flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0 rounded px-1 ${getGroupBg(col)}`}>
-                                                                <span className="lg:hidden text-[9px] font-black text-muted uppercase">{col.shortLabel}: </span>
-                                                                <div className="flex flex-col items-end">
-                                                                    <span className={`font-mono text-xs font-bold ${metricColor(col.key, displayVal, c.amount)}`}>
-                                                                        {col.key.startsWith('custom_') ? formatMetricValue(displayVal, displayFormat as any) : formatMetric(displayVal, displayFormat)}
-                                                                    </span>
-                                                                    {prevVal > 0 && <GrowthBadge current={displayVal} prev={prevVal} invert={col.invert} className="mt-0.5" />}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
                                                 </div>
                                             );
                                         })}
                                     </div>
-                                )}
-                            </div>
-                        );
-                    })}
+
+                                    {isExpanded && (
+                                        <div className="border-t border-card-border divide-y divide-card-border/50">
+                                            {p.campaigns.map((c: any, i: number) => {
+                                                const isFb = c.platform === 'facebook';
+                                                const cBadge = getStatusBadge(c);
+
+                                                return (
+                                                    <div
+                                                        key={`${p.productId}-${i}`}
+                                                        className="lg:grid items-center gap-3 px-5 py-3 hover:bg-hover-bg transition-colors pl-7 lg:pl-8"
+                                                        style={{ gridTemplateColumns: gridTemplate, minWidth: minTableWidth }}
+                                                    >
+                                                        <div className="flex items-center gap-2.5 min-w-0 overflow-hidden pr-2">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-card-border shrink-0" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    {isFb ? <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <TikTokIcon className="w-3.5 h-3.5 text-[#00f2fe] shrink-0" />}
+                                                                    <h5 className="text-xs font-semibold text-foreground/80 truncate" title={c.campaignName}>{c.campaignName}</h5>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="lg:text-center mt-1 lg:mt-0">
+                                                            <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${cBadge.color}`}>
+                                                                {cBadge.text}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0">
+                                                            <span className="lg:hidden text-[9px] font-black text-muted uppercase">Gasto: </span>
+                                                            <span className="font-mono text-xs font-semibold text-orange-400/80">{formatCurrency(c.amount)}</span>
+                                                        </div>
+
+                                                        {activeColumns.map(col => {
+                                                            const val = getMetricValue(c, col.key);
+                                                            const prevVal = c._prev ? getMetricValue(c._prev, col.key) : 0;
+
+                                                            let displayVal = val;
+                                                            let displayFormat = col.format;
+                                                            if (col.key.startsWith('custom_')) {
+                                                                const cmId = col.key.replace('custom_', '');
+                                                                const cm = customMetrics.find(x => x.id === cmId);
+                                                                if (cm) {
+                                                                    displayVal = evaluateCustomMetric(cm.formula, c);
+                                                                    displayFormat = cm.format as MetricFormat;
+                                                                }
+                                                            }
+
+                                                            return (
+                                                                <div key={col.key} className={`flex items-center justify-between lg:block lg:text-right mt-1 lg:mt-0 rounded px-1 ${getGroupBg(col)}`}>
+                                                                    <span className="lg:hidden text-[9px] font-black text-muted uppercase">{col.shortLabel}: </span>
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className={`font-mono text-xs font-bold ${metricColor(col.key, displayVal, c.amount)}`}>
+                                                                            {col.key.startsWith('custom_') ? formatMetricValue(displayVal, displayFormat as any) : formatMetric(displayVal, displayFormat)}
+                                                                        </span>
+                                                                        {prevVal > 0 && <GrowthBadge current={displayVal} prev={prevVal} invert={col.invert} className="mt-0.5" />}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        };
+
+                        // Group by country when globalCountryFilter is 'Todos'
+                        if (globalCountryFilter === 'Todos') {
+                            const countryMap = new Map<string, typeof filteredProducts>();
+                            filteredProducts.forEach(p => {
+                                const countryCounts = new Map<string, number>();
+                                p.campaigns.forEach((c: any) => {
+                                    const cc = c.country || 'Global';
+                                    countryCounts.set(cc, (countryCounts.get(cc) || 0) + (c.amount || 0));
+                                });
+                                let topCountry = 'Global';
+                                let topAmount = 0;
+                                countryCounts.forEach((amt, cc) => {
+                                    if (amt > topAmount) { topAmount = amt; topCountry = cc; }
+                                });
+                                if (!countryMap.has(topCountry)) countryMap.set(topCountry, []);
+                                countryMap.get(topCountry)!.push(p);
+                            });
+                            const sortedCountries = Array.from(countryMap.entries()).sort((a, b) => {
+                                const totalA = a[1].reduce((sum, p) => sum + p.summary.amount, 0);
+                                const totalB = b[1].reduce((sum, p) => sum + p.summary.amount, 0);
+                                return totalB - totalA;
+                            });
+                            return (
+                                <>
+                                    {sortedCountries.map(([country, prods]) => (
+                                        <div key={country} className="space-y-2">
+                                            <div className="flex items-center gap-3 px-2 pt-3 pb-1">
+                                                <span className="text-[10px] font-black text-accent uppercase tracking-widest">{country}</span>
+                                                <div className="flex-1 h-px bg-card-border" />
+                                                <span className="text-[9px] font-bold text-muted">{prods.length} productos · {formatCurrency(prods.reduce((s, p) => s + p.summary.amount, 0))}</span>
+                                            </div>
+                                            {prods.map(p => renderProductRow(p))}
+                                        </div>
+                                    ))}
+                                </>
+                            );
+                        }
+                        return <>{filteredProducts.map(p => renderProductRow(p))}</>;
+                    })()}
 
                     {filteredProducts.length === 0 && (
                         <div className="px-6 py-20 text-center text-muted bg-card border border-card-border rounded-2xl">

@@ -27,6 +27,7 @@ import type { UserProfile } from '@/lib/context/AuthContext';
 import { getAllOrderFiles } from '@/lib/firebase/firestore';
 import { isMatchingCountry } from '@/lib/utils/currency';
 import { useSidebar } from '@/lib/context/SidebarContext';
+import { usePlanAccess } from '@/lib/hooks/usePlanAccess';
 
 const NAV_ITEMS = [
     { name: 'Wheel', icon: LayoutDashboard, href: '/dashboard' },
@@ -49,6 +50,7 @@ export default function Sidebar() {
     const { user, profile, effectiveUid, signOut } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const { collapsed, toggleCollapsed } = useSidebar();
+    const { canAccess } = usePlanAccess();
     const [activeCountries, setActiveCountries] = React.useState<typeof ALL_COUNTRIES>([]);
     const [loadingCountries, setLoadingCountries] = React.useState(true);
 
@@ -122,10 +124,13 @@ export default function Sidebar() {
                     )}
                     <nav className="space-y-1">
                         {NAV_ITEMS.filter((item) => {
+                            const moduleId = item.href.replace('/', '');
+                            // Plan-based access
+                            if (!canAccess(moduleId)) return false;
+                            // Viewer module restrictions
                             if ((profile as UserProfile)?.role === 'admin') return true;
                             const modules = (profile as UserProfile)?.allowed_modules;
                             if (!modules || modules.length === 0) return true;
-                            const moduleId = item.href.replace('/', '');
                             return modules.includes(moduleId);
                         }).map((item) => {
                             const isActive = pathname === item.href;
@@ -217,7 +222,7 @@ export default function Sidebar() {
                     {!collapsed && <span>Modo {theme === 'dark' ? 'Claro' : 'Oscuro'}</span>}
                 </button>
 
-                {((profile as UserProfile)?.role === 'admin' || !(profile as UserProfile)?.allowed_modules?.length || (profile as UserProfile)?.allowed_modules?.includes('import')) && (
+                {canAccess('import') && ((profile as UserProfile)?.role === 'admin' || !(profile as UserProfile)?.allowed_modules?.length || (profile as UserProfile)?.allowed_modules?.includes('import')) && (
                     <Link
                         href="/import"
                         title={collapsed ? 'Importar Datos' : undefined}

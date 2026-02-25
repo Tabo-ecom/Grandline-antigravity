@@ -75,15 +75,24 @@ import { getAllOrderFiles } from '@/lib/firebase/firestore';
 import { calculateKPIs, type KPIResults } from '@/lib/calculations/kpis';
 import { useDashboardData } from '@/lib/hooks/useDashboardData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
-import { GlobalSummary } from '@/components/publicidad/GlobalSummary';
-import { CampaignAnalysis } from '@/components/publicidad/CampaignAnalysis';
-import { ProductSpend } from '@/components/publicidad/ProductSpend';
-import { CountryAnalysis } from '@/components/publicidad/CountryAnalysis';
-import { TimeTrends } from '@/components/publicidad/TimeTrends';
-import { CreativesGallery } from '@/components/publicidad/CreativesGallery';
 import { collection, query, where, getDocs, getDoc, orderBy, Timestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import FilterHeader from '@/components/FilterHeader';
+import { detectHeaderRow, findColumnIndex, parseNumber, parseDate, detectCountryFromCampaign, COLUMN_VARIANTS } from '@/lib/utils/csv-parser';
+import dynamic from 'next/dynamic';
+
+// Lazy-loaded tab/analytics components (only loaded when rendered)
+const GlobalSummary = dynamic(() => import('@/components/publicidad/GlobalSummary').then(m => ({ default: m.GlobalSummary })));
+const CampaignAnalysis = dynamic(() => import('@/components/publicidad/CampaignAnalysis').then(m => ({ default: m.CampaignAnalysis })));
+const ProductSpend = dynamic(() => import('@/components/publicidad/ProductSpend').then(m => ({ default: m.ProductSpend })));
+const CountryAnalysis = dynamic(() => import('@/components/publicidad/CountryAnalysis').then(m => ({ default: m.CountryAnalysis })));
+const TimeTrends = dynamic(() => import('@/components/publicidad/TimeTrends').then(m => ({ default: m.TimeTrends })));
+const CreativesGallery = dynamic(() => import('@/components/publicidad/CreativesGallery').then(m => ({ default: m.CreativesGallery })));
+
+// Lazy-loaded modals (only loaded when opened)
+const AddGroupModal = dynamic(() => import('@/components/publicidad/AddGroupModal'));
+const ManualSpendModal = dynamic(() => import('@/components/publicidad/ManualSpendModal'));
+const EditMappingModal = dynamic(() => import('@/components/publicidad/EditMappingModal'));
 
 // Session cache to prevent re-fetching on tab switch
 const adCenterSessionCache = {
@@ -344,10 +353,12 @@ export default function AdvertisingPage() {
         if (!newMapping.productId || newMapping.campaignNames.length === 0) return;
         setSaving(true);
         try {
+            const mappingProduct = availableProducts.find(p => p.id === newMapping.productId);
             await addMultipleCampaignMappings(newMapping.campaignNames.map(name => ({
                 campaignName: name,
                 productId: newMapping.productId,
                 platform: newMapping.platform,
+                country: mappingProduct?.country && mappingProduct.country !== 'Todos' ? mappingProduct.country : undefined,
                 updatedAt: Date.now()
             })), effectiveUid || '');
             const updated = await getCampaignMappings(effectiveUid || '');
@@ -416,8 +427,10 @@ export default function AdvertisingPage() {
         if (!editingMapping || !editNewProductId) return;
         setSaving(true);
         try {
+            const editProduct = availableProducts.find(p => p.id === editNewProductId);
+            const editCountry = editProduct?.country && editProduct.country !== 'Todos' ? editProduct.country : undefined;
             await Promise.all(editingMapping.campaigns.map(m =>
-                updateCampaignMapping(m.campaignName, m.platform, editNewProductId, effectiveUid || '')
+                updateCampaignMapping(m.campaignName, m.platform, editNewProductId, effectiveUid || '', editCountry)
             ));
             const updated = await getCampaignMappings(effectiveUid || '');
             setMappings(updated);
@@ -673,61 +686,20 @@ export default function AdvertisingPage() {
                         }
 
                         // ── Step 2: Find the real header row ──────────────────────────
-                        const HEADER_KEYWORDS = [
-                            'campaign', 'campaña', 'cost', 'coste', 'costo', 'gasto',
-                            'spend', 'date', 'fecha', 'día', 'day', 'nombre'
-                        ];
-
-                        let headerRowIdx = -1;
-                        for (let i = 0; i < rawRows.length; i++) {
-                            const row = rawRows[i];
-                            if (!Array.isArray(row)) continue;
-                            const rowText = row.map(cell => String(cell ?? '').toLowerCase()).join(' ');
-                            const matchCount = HEADER_KEYWORDS.filter(kw => rowText.includes(kw)).length;
-                            if (matchCount >= 2) {
-                                headerRowIdx = i;
-                                break;
-                            }
-                        }
-
-                        if (headerRowIdx === -1) {
-                            headerRowIdx = 0;
-                        }
-
-                        const headers: string[] = (rawRows[headerRowIdx] || []).map(h => String(h ?? '').trim());
+                        const headerRowIdx = detectHeaderRow(rawRows);
+                        const headers: string[] = (rawRows[headerRowIdx] || []).map((h: any) => String(h ?? '').trim());
                         const dataRows = rawRows.slice(headerRowIdx + 1);
 
-                        const findColIdx = (variants: string[]): number => {
-                            for (const v of variants) {
-                                const exact = headers.indexOf(v);
-                                if (exact !== -1) return exact;
-                            }
-                            for (const v of variants) {
-                                const idx = headers.findIndex(h => h.toLowerCase() === v.toLowerCase());
-                                if (idx !== -1) return idx;
-                            }
-                            return -1;
-                        };
-
-                        const campaignIdx = findColIdx(['Campaign name', 'Campaña', 'Nombre de la campaña', 'campaign_name', 'Nombre campaña']);
-                        const spendIdx = findColIdx(['Cost', 'Gasto', 'Spend', 'Coste', 'Costo', 'Importe gastado']);
-                        const dateIdx = findColIdx(['Date', 'Fecha', 'Day', 'By Day', 'Reporting date', 'Fecha de inicio']);
-                        const currencyIdx = findColIdx(['Currency', 'Divisa', 'Moneda']);
+                        const campaignIdx = findColumnIndex(headers, COLUMN_VARIANTS.campaign);
+                        const spendIdx = findColumnIndex(headers, COLUMN_VARIANTS.spend);
+                        const dateIdx = findColumnIndex(headers, COLUMN_VARIANTS.date);
+                        const currencyIdx = findColumnIndex(headers, COLUMN_VARIANTS.currency);
 
                         if (campaignIdx === -1 || spendIdx === -1 || dateIdx === -1) {
                             alert(`⚠️ No se encontraron las columnas necesarias.\n\nColumnas detectadas:\n${headers.join(', ')}`);
                             resolve();
                             return;
                         }
-
-                        const parseNumber = (val: any): number => {
-                            if (val === undefined || val === null || val === '') return 0;
-                            if (typeof val === 'number') return val;
-                            const str = String(val).trim().replace(/[^\d.,-]/g, '');
-                            if (/^[-]?[\d.]+,[\d]+$/.test(str)) return parseFloat(str.replace(/\./g, '').replace(',', '.'));
-                            if (/^[-]?[\d,]+\.[\d]+$/.test(str)) return parseFloat(str.replace(/,/g, ''));
-                            return parseFloat(str.replace(/,/g, '')) || 0;
-                        };
 
                         let importedCount = 0;
                         let skippedBlank = 0;
@@ -788,32 +760,15 @@ export default function AdvertisingPage() {
                             } else {
                                 // 3. Try to detect from campaign name (Global mode)
                                 const upperCam = cleanName.toUpperCase();
-                                if (upperCam.includes('COLOMBIA') || upperCam.includes('CO-')) rowTargetCountry = 'Colombia';
-                                else if (upperCam.includes('ECUADOR') || upperCam.includes('EC-')) rowTargetCountry = 'Ecuador';
-                                else if (upperCam.includes('GUATEMALA') || upperCam.includes('GT-')) rowTargetCountry = 'Guatemala';
-                                else if (upperCam.includes('PANAMA') || upperCam.includes('PA-')) rowTargetCountry = 'Panama';
-                                else if (upperCam.includes('EC-') || upperCam.includes('ECUADOR')) rowTargetCountry = 'Ecuador';
+                                const detected = detectCountryFromCampaign(cleanName);
+                                if (detected) rowTargetCountry = detected;
                             }
 
                             // ── Date parsing ────────────────────────────────────────────
-                            let formattedDate: string;
-                            const rawDate = String(dateStr).trim();
-                            if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
-                                formattedDate = rawDate.slice(0, 10);
-                            } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(rawDate)) {
-                                const parts = rawDate.split('/');
-                                formattedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                            } else if (typeof dateStr === 'number') {
-                                const excelEpoch = new Date(1899, 11, 30);
-                                const d = new Date(excelEpoch.getTime() + dateStr * 86400000);
-                                formattedDate = d.toISOString().split('T')[0];
-                            } else {
-                                const parsed = new Date(rawDate);
-                                if (isNaN(parsed.getTime())) {
-                                    skippedBadData++;
-                                    continue;
-                                }
-                                formattedDate = parsed.toISOString().split('T')[0];
+                            const formattedDate = parseDate(dateStr);
+                            if (!formattedDate) {
+                                skippedBadData++;
+                                continue;
                             }
 
                             await saveAdSpend(
@@ -929,10 +884,12 @@ export default function AdvertisingPage() {
 
     const handleAcceptSuggestion = async (suggestion: AISuggestion) => {
         try {
+            const suggestedProduct = availableProducts.find(p => p.id === suggestion.suggestedProductId);
             await addCampaignMapping({
                 campaignName: suggestion.campaignName,
                 productId: suggestion.suggestedProductId,
                 platform: suggestion.platform,
+                country: suggestedProduct?.country && suggestedProduct.country !== 'Todos' ? suggestedProduct.country : suggestion.suggestedProductCountry,
                 updatedAt: Date.now()
             }, effectiveUid || '');
 
@@ -1343,7 +1300,7 @@ export default function AdvertisingPage() {
         <div className="space-y-6 pb-20 max-w-[1600px] mx-auto px-4 sm:px-6">
             <FilterHeader
                 availableCountries={['Todos', ...ALL_COUNTRIES_MASTER]}
-                availableProducts={availableProducts}
+                availableProducts={selectableProducts}
                 title="Central de Anuncios"
                 icon={Target}
             >
@@ -1356,23 +1313,10 @@ export default function AdvertisingPage() {
                 </button>
             </FilterHeader>
 
-            <div className="flex border-b border-card-border">
-                {['dashboard', 'mapeo', 'grupos'].map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-8 py-4 text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === tab ? tab === 'mapeo' ? 'text-blue-400' : tab === 'grupos' ? 'text-purple-400' : 'text-accent' : 'text-muted hover:text-foreground'}`}
-                    >
-                        {tab === 'mapeo' ? 'Mapeo de Campañas' : tab === 'grupos' ? 'Grupos de Productos' : 'Dashboard'}
-                        {activeTab === tab && (
-                            <div className={`absolute bottom-0 left-0 right-0 h-0.5 ${tab === 'mapeo' ? 'bg-blue-500' : tab === 'grupos' ? 'bg-purple-500' : 'bg-accent'}`}></div>
-                        )}
-                    </button>
-                ))}
-            </div>
+            {/* Dashboard only - Mapeo and Grupos moved to Importar Datos */}
 
-            <div className="pt-6">
-                {activeTab === 'dashboard' && (
+            <div className="pt-2">
+                {(
                     <div className="space-y-8 animate-in fade-in duration-500">
                         <GlobalSummary
                             kpis={kpis as any}
@@ -1947,9 +1891,13 @@ export default function AdvertisingPage() {
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap gap-2">
-                                            {g.productIds.map(pid => (
-                                                <span key={pid} className="px-3 py-1 bg-purple-500/10 text-purple-400 text-[10px] font-bold rounded-xl border border-purple-500/20 uppercase">{pid}</span>
-                                            ))}
+                                            {g.productIds.map(pid => {
+                                                const product = availableProducts.find(p => p.id === pid);
+                                                const displayName = product ? product.label : pid;
+                                                return (
+                                                    <span key={pid} className="px-3 py-1 bg-purple-500/10 text-purple-400 text-[10px] font-bold rounded-xl border border-purple-500/20 uppercase">{displayName}</span>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 ))}
@@ -1959,169 +1907,48 @@ export default function AdvertisingPage() {
                 )}
             </div>
 
-            {
-                isAddGroupModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => { setIsAddGroupModalOpen(false); setEditingGroupId(null); setNewGroupName(''); setNewGroupProducts([]); }}></div>
-                        <div className="bg-card border border-card-border w-full max-w-lg rounded-2xl relative z-10 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
-                            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-8">
-                                {editingGroupId ? 'Editar Grupo de Productos' : 'Crear Grupo de Productos'}
-                            </h3>
-                            <form onSubmit={handleAddGroup} className="space-y-6">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Nombre del Grupo</label>
-                                    <input type="text" placeholder="Ej. Promoción Verano" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} className="w-full bg-card border border-card-border rounded-2xl px-6 py-4 text-white font-mono text-sm focus:border-purple-500/50 outline-none transition-all" required />
-                                </div>
-                                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                    <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Seleccionar Productos (mín 2)</label>
-                                    <div className="flex flex-col gap-2">
-                                        {Array.from(new Map(availableProducts.filter(p => p.id !== 'Todos').map(p => [p.label.trim().toLowerCase(), p])).values()).map(p => (
-                                            <label key={p.id} className="flex items-center gap-3 p-3 bg-hover-bg rounded-xl border border-card-border cursor-pointer hover:bg-white/10 transition-colors">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={newGroupProducts.includes(p.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) setNewGroupProducts([...newGroupProducts, p.id]);
-                                                        else setNewGroupProducts(newGroupProducts.filter(id => id !== p.id));
-                                                    }}
-                                                    className="w-4 h-4 rounded bg-black border-gray-700 text-purple-600 focus:ring-purple-600 focus:ring-offset-gray-900"
-                                                />
-                                                <span className="text-sm text-foreground/80 font-medium">{p.label} <span className="text-[10px] text-muted">({p.id})</span></span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex gap-4 pt-4 border-t border-card-border">
-                                    <button type="button" onClick={() => { setIsAddGroupModalOpen(false); setEditingGroupId(null); setNewGroupName(''); setNewGroupProducts([]); }} className="flex-1 px-6 py-4 rounded-2xl bg-hover-bg hover:bg-white/10 text-white text-[11px] font-black uppercase tracking-widest transition-all">Cancelar</button>
-                                    <button type="submit" disabled={saving || newGroupProducts.length < 2 || !newGroupName} className="flex-1 px-6 py-4 rounded-2xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all shadow-lg shadow-purple-600/20">
-                                        {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : (editingGroupId ? 'Actualizar Grupo' : 'Crear Grupo')}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
+            {isAddGroupModalOpen && (
+                <AddGroupModal
+                    editingGroupId={editingGroupId}
+                    newGroupName={newGroupName}
+                    setNewGroupName={setNewGroupName}
+                    newGroupProducts={newGroupProducts}
+                    setNewGroupProducts={setNewGroupProducts}
+                    availableProducts={availableProducts}
+                    saving={saving}
+                    onSubmit={handleAddGroup}
+                    onClose={() => { setIsAddGroupModalOpen(false); setEditingGroupId(null); setNewGroupName(''); setNewGroupProducts([]); }}
+                />
+            )}
 
-            {
-                isManualModalOpen && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsManualModalOpen(false)}></div>
-                        <div className="bg-card border border-card-border w-full max-w-lg rounded-2xl relative z-10 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
-                            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-8">Registrar Gasto Manual</h3>
-                            <form onSubmit={handleSave} className="space-y-6">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Fecha del Gasto</label>
-                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full bg-card border border-card-border rounded-2xl px-6 py-4 text-white font-mono text-sm focus:border-orange-500/50 outline-none transition-all" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Monto Invertido</label>
-                                    <div className="relative">
-                                        <DollarSign className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-                                        <input type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} className="w-full bg-card border border-card-border rounded-2xl pl-14 pr-6 py-4 text-white font-mono text-sm focus:border-orange-500/50 outline-none transition-all" />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Producto / Destino</label>
-                                    <select value={productId} onChange={e => setProductId(e.target.value)} className="w-full bg-card border border-card-border rounded-2xl px-6 py-4 text-foreground font-bold text-xs uppercase tracking-widest focus:border-orange-500/50 outline-none transition-all appearance-none cursor-pointer">
-                                        <option value="global">[GL] Carga Global</option>
-                                        {Array.from(new Map(selectableProducts.filter(p => p.id !== 'Todos').map(p => [p.label.trim().toLowerCase(), p])).values()).map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                [{p.country ? p.country.substring(0, 2) : 'XX'}] {p.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="pt-4">
-                                    <button disabled={saving} className="w-full bg-orange-600 hover:bg-orange-500 py-5 rounded-2xl font-black text-foreground uppercase tracking-[0.2em] text-[11px] transition-all shadow-lg shadow-orange-600/20">
-                                        {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Guardar Datos'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
+            {isManualModalOpen && (
+                <ManualSpendModal
+                    date={date}
+                    setDate={setDate}
+                    amount={amount}
+                    setAmount={setAmount}
+                    productId={productId}
+                    setProductId={setProductId}
+                    selectableProducts={selectableProducts}
+                    saving={saving}
+                    onSubmit={handleSave}
+                    onClose={() => setIsManualModalOpen(false)}
+                />
+            )}
 
-            {
-                isEditModalOpen && editingMapping && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsEditModalOpen(false)}></div>
-                        <div className="bg-card border border-card-border w-full max-w-lg rounded-2xl relative z-10 p-10 shadow-2xl animate-in zoom-in-95 duration-200">
-                            <div className="flex justify-between items-start mb-8">
-                                <div className="flex flex-col">
-                                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">Editar Vinculación</h3>
-                                    <p className="text-[10px] font-bold text-muted uppercase tracking-widest mt-1">Se moverán {editingMapping.campaigns.length} campañas</p>
-                                </div>
-                                <button onClick={() => setIsEditModalOpen(false)} className="p-2 text-muted hover:text-white"><X className="w-6 h-6" /></button>
-                            </div>
-
-                            <div className="space-y-8">
-                                <div className="p-6 bg-card border border-card-border rounded-2xl space-y-4">
-                                    <span className="text-[9px] font-black text-muted uppercase tracking-widest">Campañas Actuales</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {editingMapping.campaigns.map((c: any) => (
-                                            <div key={`${c.campaignName}_${c.platform}`} className="px-3 py-2 bg-hover-bg text-muted text-[9px] font-bold rounded-lg border border-white/10 flex items-center gap-3 group/item">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[10px]">{c.campaignName}</span>
-                                                    <span className={`text-[7px] font-black uppercase ${c.platform === 'facebook' ? 'text-blue-500' : 'text-teal-500'}`}>{c.platform}</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => {
-                                                        if (confirm(`¿Eliminar vinculación de ${c.campaignName}?`)) {
-                                                            handleDeleteMapping(c.campaignName, c.platform);
-                                                            setEditingMapping(prev => prev ? ({
-                                                                ...prev,
-                                                                campaigns: prev.campaigns.filter(cam => !(cam.campaignName === c.campaignName && cam.platform === c.platform))
-                                                            }) : null);
-                                                        }
-                                                    }}
-                                                    className="hover:text-rose-500 transition-all ml-auto"
-                                                    title="Eliminar campaña de este producto"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <label className="text-[11px] font-black text-muted uppercase tracking-widest px-2">Nuevo Producto Destino</label>
-                                    <select
-                                        value={editNewProductId}
-                                        onChange={e => setEditNewProductId(e.target.value)}
-                                        className="w-full bg-card border border-card-border rounded-2xl px-6 py-5 text-white font-black text-sm uppercase tracking-widest focus:border-blue-500/50 outline-none transition-all appearance-none cursor-pointer shadow-lg"
-                                    >
-                                        <option value="global">[GL] Carga Global</option>
-                                        {Array.from(new Map(selectableProducts.filter(p => p.id !== 'Todos').map(p => [p.label.trim().toLowerCase(), p])).values()).map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                [{p.country ? p.country.substring(0, 2) : 'XX'}] {p.label}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="pt-4 flex gap-4">
-                                    <button
-                                        onClick={() => setIsEditModalOpen(false)}
-                                        className="flex-1 px-8 py-5 rounded-2xl font-black text-muted uppercase tracking-widest text-[11px] hover:bg-hover-bg transition-all"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        disabled={saving}
-                                        onClick={handleUpdateMappingProduct}
-                                        className="flex-[2] bg-blue-600 hover:bg-blue-500 py-5 rounded-2xl font-black text-foreground uppercase tracking-[0.2em] text-[11px] transition-all shadow-xl shadow-blue-600/20"
-                                    >
-                                        {saving ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Actualizar Vinculación'}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            {isEditModalOpen && editingMapping && (
+                <EditMappingModal
+                    editingMapping={editingMapping}
+                    setEditingMapping={setEditingMapping}
+                    editNewProductId={editNewProductId}
+                    setEditNewProductId={setEditNewProductId}
+                    selectableProducts={selectableProducts}
+                    saving={saving}
+                    onDeleteMapping={handleDeleteMapping}
+                    onUpdateProduct={handleUpdateMappingProduct}
+                    onClose={() => setIsEditModalOpen(false)}
+                />
+            )}
         </div >
     );
 }

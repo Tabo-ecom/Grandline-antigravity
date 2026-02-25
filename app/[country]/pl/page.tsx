@@ -7,6 +7,7 @@ import FilterHeader from '@/components/FilterHeader';
 import { formatCurrency, formatDualCurrency } from '@/lib/utils/currency';
 import { DropiOrder } from '@/lib/calculations/kpis';
 import { calculateKPIs } from '@/lib/calculations/kpis';
+import InfoTooltip from '@/components/common/InfoTooltip';
 import {
     CircleDollarSign,
     TrendingUp,
@@ -143,7 +144,7 @@ export default function CountryPLPage() {
                             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
                                 <Receipt className="w-5 h-5 text-emerald-400" />
                             </div>
-                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest">Ingresos Entregados</h3>
+                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-1.5">Ingresos Entregados <InfoTooltip text="Total facturado de órdenes con estado 'Entregado'. Es el flujo de caja efectivamente realizado." /></h3>
                         </div>
                         <div className="space-y-2">
                             <h2 className="text-4xl font-black text-foreground font-mono tracking-tight">{dualReal.primary}</h2>
@@ -166,7 +167,7 @@ export default function CountryPLPage() {
                             <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
                                 <Truck className="w-5 h-5 text-blue-400" />
                             </div>
-                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest">Costo Logístico Total</h3>
+                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-1.5">Costo Logístico Total <InfoTooltip text="Suma de fletes de entregas, devoluciones y órdenes en tránsito. Incluye todos los costos de transporte." /></h3>
                         </div>
                         <div className="space-y-2">
                             <h2 className="text-4xl font-black text-foreground font-mono tracking-tight">{formatCurrency((kpis?.fl_ent || 0) + (kpis?.fl_dev || 0) + (kpis?.fl_tra || 0), 'COP')}</h2>
@@ -195,7 +196,7 @@ export default function CountryPLPage() {
                             <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center border border-accent/20">
                                 <CircleDollarSign className="w-5 h-5 text-accent" />
                             </div>
-                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest">Utilidad Real (EBITDA)</h3>
+                            <h3 className="text-xs font-bold text-muted uppercase tracking-widest flex items-center gap-1.5">Utilidad Real (EBITDA) <InfoTooltip text="Ganancia real: ingreso entregado menos costo de producto, fletes y publicidad. No incluye impuestos ni depreciación." /></h3>
                         </div>
                         <div className="space-y-2">
                             <h2 className={`text-4xl font-black font-mono tracking-tight ${kpis?.u_real! >= 0 ? 'text-emerald-400' : 'text-red-500'}`}>
@@ -220,7 +221,7 @@ export default function CountryPLPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Waterfall Analysis */}
                 <div className="bg-card rounded-3xl border border-card-border p-8 space-y-8 shadow-xl">
-                    <h3 className="text-xs font-bold text-foreground uppercase tracking-[0.2em] mb-4">Cascada de Gastos ({localCurrency})</h3>
+                    <h3 className="text-xs font-bold text-foreground uppercase tracking-[0.2em] mb-4 flex items-center gap-1.5">Cascada de Gastos ({localCurrency}) <InfoTooltip text="Descomposición visual de cómo se distribuye el ingreso bruto entre los diferentes costos operativos." /></h3>
                     <div className="space-y-8">
                         {[
                             { label: 'Ingreso Bruto', val: dualReal.secondary, perc: 100, color: 'bg-emerald-500' },
@@ -250,7 +251,7 @@ export default function CountryPLPage() {
 
                 {/* Top Products by Profit Margin */}
                 <div className="bg-card rounded-xl border border-card-border p-8 relative overflow-hidden">
-                    <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-6">Eficiencia por Producto</h3>
+                    <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-6 flex items-center gap-1.5">Eficiencia por Producto <InfoTooltip text="Top 5 productos por margen de ganancia. Muestra qué productos son más rentables después de todos los costos." /></h3>
                     <div className="space-y-4">
                         {(() => {
                             const products: Record<string, DropiOrder[]> = {};

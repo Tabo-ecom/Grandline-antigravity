@@ -2,12 +2,15 @@
 
 import React, { useState } from 'react';
 import { Bot, Activity, Bell, FileText, Settings } from 'lucide-react';
-import { VegaCoreMonitoring } from '@/components/vega/VegaCoreMonitoring';
-import { VegaActiveAlerts } from '@/components/vega/VegaActiveAlerts';
-import { VegaAlertConfigPanel } from '@/components/vega/VegaAlertConfigPanel';
-import { VegaRecentReports } from '@/components/vega/VegaRecentReports';
-import { VegaNotificationSettings } from '@/components/vega/VegaNotificationSettings';
-import { KPICalibration } from '@/components/settings/KPICalibration';
+import dynamic from 'next/dynamic';
+
+// Lazy-loaded tab components (only one visible at a time)
+const VegaCoreMonitoring = dynamic(() => import('@/components/vega/VegaCoreMonitoring').then(m => ({ default: m.VegaCoreMonitoring })));
+const VegaActiveAlerts = dynamic(() => import('@/components/vega/VegaActiveAlerts').then(m => ({ default: m.VegaActiveAlerts })));
+const VegaAlertConfigPanel = dynamic(() => import('@/components/vega/VegaAlertConfigPanel').then(m => ({ default: m.VegaAlertConfigPanel })));
+const VegaRecentReports = dynamic(() => import('@/components/vega/VegaRecentReports').then(m => ({ default: m.VegaRecentReports })));
+const VegaNotificationSettings = dynamic(() => import('@/components/vega/VegaNotificationSettings').then(m => ({ default: m.VegaNotificationSettings })));
+const KPICalibration = dynamic(() => import('@/components/settings/KPICalibration').then(m => ({ default: m.KPICalibration })));
 
 const TABS = [
     { key: 'monitoring', label: 'Monitoreo', icon: Activity },

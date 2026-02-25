@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
                 },
             ],
             mode: 'subscription',
-            success_url: `${req.headers.get('origin')}/log-pose?session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `${req.headers.get('origin')}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${req.headers.get('origin')}/planes`,
             metadata: {
                 userId: auth.teamId,

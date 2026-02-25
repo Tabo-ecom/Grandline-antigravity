@@ -26,11 +26,10 @@ export async function POST(req: NextRequest) {
 
     try {
         if (!sig || !endpointSecret) {
-            console.warn('Webhook secret or signature absent. Continuing without verification for dev/test.');
-            event = JSON.parse(body) as Stripe.Event;
-        } else {
-            event = stripe.webhooks.constructEvent(body, sig, endpointSecret);
+            console.error('Webhook secret or signature missing. Rejecting unverified event.');
+            return NextResponse.json({ error: 'Webhook signature required' }, { status: 400 });
         }
+        event = stripe.webhooks.constructEvent(body, sig, endpointSecret);
     } catch (err: any) {
         console.error(`Webhook Error: ${err.message}`);
         return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });

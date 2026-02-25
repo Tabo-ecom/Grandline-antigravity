@@ -12,6 +12,7 @@ import {
     Area,
     Legend
 } from 'recharts';
+import InfoTooltip from '@/components/common/InfoTooltip';
 
 
 interface TimeData {
@@ -56,8 +57,9 @@ export const TimeTrends: React.FC<TimeTrendsProps> = ({ data }) => {
         <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                 <div>
-                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
                         {view === 'profit' ? 'Facturado vs Ads vs Utilidad' : 'Tendencia de CPA MKT'}
+                        <InfoTooltip text={view === 'profit' ? 'Comparativa diaria de facturación despachada, inversión en ads y utilidad proyectada.' : 'Evolución del costo por compra (CPA) de Facebook en el tiempo.'} />
                     </h3>
                     <p className="text-xs text-muted mt-1">
                         {view === 'profit' ? 'Comparativa de facturación, inversión y rentabilidad.' : 'Evolución del costo por compra en el tiempo.'}

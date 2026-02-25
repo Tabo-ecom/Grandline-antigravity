@@ -14,8 +14,26 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GRAND LINE v8.0 — Command Center",
-  description: "Advanced analytics platform for e-commerce and dropshipping.",
+  title: "GRAND LINE — Command Center para E-commerce COD",
+  description: "Plataforma todo-en-uno para gestionar tu negocio de dropshipping COD en Latinoam\u00e9rica. Analytics, publicidad, reportes y automatizaci\u00f3n con IA.",
+  metadataBase: new URL("https://grandline.com.co"),
+  openGraph: {
+    title: "GRAND LINE — Command Center para E-commerce COD",
+    description: "Gestiona tu negocio de dropshipping COD con analytics avanzados, automatizaci\u00f3n de publicidad y reportes con IA.",
+    url: "https://grandline.com.co",
+    siteName: "GRAND LINE",
+    locale: "es_CO",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GRAND LINE — Command Center para E-commerce COD",
+    description: "Plataforma todo-en-uno para dropshipping COD en Latinoam\u00e9rica.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

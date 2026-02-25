@@ -3,12 +3,16 @@ import { getAlertRules, saveTriggeredAlert } from '@/lib/services/vega/alerts';
 import { getNotificationConfig, sendNotification } from '@/lib/services/vega/notifications';
 import { vegaEvaluateAlerts } from '@/lib/services/vega/gemini';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
+import { checkRateLimit, rateLimitResponse } from '@/lib/api/rate-limit';
 import type { VegaTriggeredAlert } from '@/lib/types/vega';
 
 export async function POST(req: NextRequest) {
     try {
         const auth = await verifyAuth(req);
         if (!auth) return unauthorizedResponse();
+
+        const rl = checkRateLimit(`${auth.uid}:vega-alerts`, { max: 10 });
+        if (!rl.success) return rateLimitResponse();
 
         const { currentValues } = await req.json();
 

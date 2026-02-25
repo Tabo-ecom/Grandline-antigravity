@@ -44,7 +44,7 @@ interface SunnyContextType {
 const SunnyContext = createContext<SunnyContextType | undefined>(undefined);
 
 export function SunnyProvider({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
+    const { user, effectiveUid } = useAuth();
     const [storeProfiles, setStoreProfiles] = useState<StoreProfile[]>([]);
     const [exclusionLists, setExclusionLists] = useState<ExclusionList[]>([]);
     const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function SunnyProvider({ children }: { children: React.ReactNode }) {
     const activeStore = storeProfiles.find(s => s.id === selectedStoreId) || null;
 
     useEffect(() => {
-        if (!user) {
+        if (!effectiveUid) {
             setStoreProfiles([]);
             setLoading(false);
             return;
@@ -62,8 +62,8 @@ export function SunnyProvider({ children }: { children: React.ReactNode }) {
 
         setLoading(true);
 
-        // Listen to Store Profiles
-        const profilesQuery = query(collection(db, 'sunny_profiles'), where('userId', '==', user.uid));
+        // Listen to Store Profiles (use effectiveUid for team data sharing)
+        const profilesQuery = query(collection(db, 'sunny_profiles'), where('userId', '==', effectiveUid));
         const unsubscribeProfiles = onSnapshot(profilesQuery, (snapshot) => {
             const profiles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StoreProfile));
             setStoreProfiles(profiles);
@@ -77,7 +77,7 @@ export function SunnyProvider({ children }: { children: React.ReactNode }) {
         });
 
         // Listen to Exclusion Lists
-        const exclusionsQuery = query(collection(db, 'sunny_exclusions'), where('userId', '==', user.uid));
+        const exclusionsQuery = query(collection(db, 'sunny_exclusions'), where('userId', '==', effectiveUid));
         const unsubscribeExclusions = onSnapshot(exclusionsQuery, (snapshot) => {
             const lists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExclusionList));
             setExclusionLists(lists);
@@ -89,12 +89,12 @@ export function SunnyProvider({ children }: { children: React.ReactNode }) {
             unsubscribeProfiles();
             unsubscribeExclusions();
         };
-    }, [user]);
+    }, [effectiveUid]);
 
     // Load naming template from Firestore
     useEffect(() => {
-        if (!user) return;
-        const docRef = doc(db, 'sunny_settings', user.uid);
+        if (!effectiveUid) return;
+        const docRef = doc(db, 'sunny_settings', effectiveUid);
         const unsub = onSnapshot(docRef, (snap) => {
             if (snap.exists()) {
                 const data = snap.data();
@@ -102,19 +102,19 @@ export function SunnyProvider({ children }: { children: React.ReactNode }) {
             }
         });
         return () => unsub();
-    }, [user]);
+    }, [effectiveUid]);
 
     const setNamingTemplate = async (template: string) => {
         setNamingTemplateState(template);
-        if (!user) return;
-        const docRef = doc(db, 'sunny_settings', user.uid);
+        if (!effectiveUid) return;
+        const docRef = doc(db, 'sunny_settings', effectiveUid);
         await setDoc(docRef, { namingTemplate: template }, { merge: true });
     };
 
     const addStoreProfile = async (profile: Omit<StoreProfile, 'id'>) => {
-        if (!user) return;
+        if (!effectiveUid) return;
         const newDocRef = doc(collection(db, 'sunny_profiles'));
-        await setDoc(newDocRef, { ...profile, userId: user.uid, createdAt: Date.now() });
+        await setDoc(newDocRef, { ...profile, userId: effectiveUid, createdAt: Date.now() });
     };
 
     const updateStoreProfile = async (id: string, profile: Partial<StoreProfile>) => {

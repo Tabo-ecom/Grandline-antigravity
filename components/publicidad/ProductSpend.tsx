@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatCurrency } from '@/lib/utils/currency';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as ReTooltip } from 'recharts';
+import InfoTooltip from '@/components/common/InfoTooltip';
 
 interface ProductSpendProps {
     data: any[];
@@ -13,7 +14,7 @@ export const ProductSpend: React.FC<ProductSpendProps> = ({ data, tableData }) =
 
     return (
         <div className="bg-card border border-card-border rounded-2xl p-5 h-full flex flex-col shadow-sm">
-            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-4">Gasto por Producto</h3>
+            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-4 flex items-center gap-1.5">Gasto por Producto <InfoTooltip text="Distribución del gasto publicitario por producto según el mapeo de campañas configurado." /></h3>
 
             <div className="flex-1 min-h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">

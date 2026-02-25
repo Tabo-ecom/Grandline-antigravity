@@ -10,6 +10,7 @@ import {
     BarChart3,
     MapPinOff
 } from 'lucide-react';
+import InfoTooltip from '@/components/common/InfoTooltip';
 
 export const SunnyDashboard: React.FC = () => {
     return (
@@ -17,10 +18,10 @@ export const SunnyDashboard: React.FC = () => {
             {/* Real-time Status Row */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {[
-                    { label: 'Cuentas Activas', value: '12', icon: ShieldCheck, color: 'text-emerald-400' },
-                    { label: 'Campañas Hoy', value: '48', icon: Zap, color: 'text-accent' },
-                    { label: 'Gasto Consolidado', value: '$1.2M', icon: TrendingUp, color: 'text-blue-400' },
-                    { label: 'ROAS Global', value: '4.2x', icon: Target, color: 'text-purple-400' },
+                    { label: 'Cuentas Activas', value: '12', icon: ShieldCheck, color: 'text-emerald-400', tooltip: 'Número de cuentas publicitarias activas conectadas a Sunny.' },
+                    { label: 'Campañas Hoy', value: '48', icon: Zap, color: 'text-accent', tooltip: 'Total de campañas que tuvieron gasto publicitario en el día de hoy.' },
+                    { label: 'Gasto Consolidado', value: '$1.2M', icon: TrendingUp, color: 'text-blue-400', tooltip: 'Gasto total acumulado en publicidad de todas las cuentas conectadas.' },
+                    { label: 'ROAS Global', value: '4.2x', icon: Target, color: 'text-purple-400', tooltip: 'Retorno sobre inversión en ads consolidado de todas las cuentas.' },
                 ].map((stat, i) => (
                     <div key={i} className="bg-card border border-card-border p-6 rounded-3xl group hover:border-accent/20 transition-all">
                         <div className="flex justify-between items-start mb-4">
@@ -29,7 +30,7 @@ export const SunnyDashboard: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                             <h3 className="text-3xl font-black italic tracking-tighter font-mono">{stat.value}</h3>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-muted">{stat.label}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted flex items-center gap-1">{stat.label} <InfoTooltip text={stat.tooltip} /></p>
                         </div>
                     </div>
                 ))}

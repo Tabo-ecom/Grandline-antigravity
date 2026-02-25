@@ -8,7 +8,9 @@ import {
     Trash2,
     DollarSign,
     RefreshCw,
-    MapPinOff
+    MapPinOff,
+    X,
+    Loader2
 } from 'lucide-react';
 import { useSunny, StoreProfile, ExclusionList } from '@/lib/context/SunnyContext';
 import { getAdSettings } from '@/lib/services/marketing';
@@ -169,19 +171,28 @@ export const Connectivity: React.FC = () => {
                         </div>
                     ))}
 
-                    {isAddingProfile && (
-                        <div className="min-w-[300px] p-5 rounded-2xl border border-accent/30 bg-card animate-in zoom-in-95 duration-200">
-                            <h4 className="text-xs font-black uppercase italic text-accent mb-4">Configurar Nuevo Perfil</h4>
+                </div>
+
+                {/* Modal: Nuevo Perfil de Tienda */}
+                {isAddingProfile && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsAddingProfile(false)}>
+                        <div className="w-full max-w-md mx-4 p-6 rounded-2xl border border-accent/30 bg-card shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-5">
+                                <h4 className="text-sm font-black uppercase italic text-accent tracking-tighter">Configurar Nuevo Perfil</h4>
+                                <button onClick={() => setIsAddingProfile(false)} className="p-1.5 hover:bg-background rounded-lg transition-colors text-muted hover:text-foreground">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
                             <div className="space-y-3">
                                 <input
                                     placeholder="Nombre de Tienda/Marca"
-                                    className="w-full bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
+                                    className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
                                     value={newProfile.name}
                                     onChange={e => setNewProfile({ ...newProfile, name: e.target.value })}
                                 />
                                 <div className="grid grid-cols-2 gap-2">
                                     <select
-                                        className="bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
+                                        className="bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
                                         value={newProfile.country}
                                         onChange={e => setNewProfile({ ...newProfile, country: e.target.value })}
                                     >
@@ -191,7 +202,7 @@ export const Connectivity: React.FC = () => {
                                         <option value="Guatemala">Guatemala</option>
                                     </select>
                                     <select
-                                        className="bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
+                                        className="bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
                                         value={newProfile.currency}
                                         onChange={e => setNewProfile({ ...newProfile, currency: e.target.value })}
                                     >
@@ -202,23 +213,26 @@ export const Connectivity: React.FC = () => {
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase tracking-widest text-muted ml-1">Meta Ad Account</label>
-                                    <select
-                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
-                                        value={selectedAdAccountId}
-                                        onChange={e => setSelectedAdAccountId(e.target.value)}
-                                        disabled={isLoadingMeta}
-                                    >
-                                        <option value="">Seleccionar Cuenta...</option>
-                                        {fbAdAccounts.map(acc => (
-                                            <option key={acc.id} value={acc.id}>{acc.name}</option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <select
+                                            className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
+                                            value={selectedAdAccountId}
+                                            onChange={e => setSelectedAdAccountId(e.target.value)}
+                                            disabled={isLoadingMeta}
+                                        >
+                                            <option value="">Seleccionar Cuenta...</option>
+                                            {fbAdAccounts.map(acc => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                        {isLoadingMeta && <Loader2 className="absolute right-8 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-accent animate-spin" />}
+                                    </div>
                                 </div>
 
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase tracking-widest text-muted ml-1">Meta Pixel</label>
                                     <select
-                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
                                         value={newProfile.pixelId}
                                         onChange={e => setNewProfile({ ...newProfile, pixelId: e.target.value })}
                                         disabled={!selectedAdAccountId}
@@ -233,7 +247,7 @@ export const Connectivity: React.FC = () => {
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-black uppercase tracking-widest text-muted ml-1">Meta Page</label>
                                     <select
-                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2 text-xs text-foreground focus:border-accent/50 outline-none"
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
                                         value={newProfile.pageId}
                                         onChange={e => setNewProfile({ ...newProfile, pageId: e.target.value })}
                                         disabled={isLoadingMeta}
@@ -244,24 +258,24 @@ export const Connectivity: React.FC = () => {
                                         ))}
                                     </select>
                                 </div>
-                                <div className="flex gap-2 pt-2">
+                                <div className="flex gap-2 pt-3">
                                     <button
                                         onClick={handleAddStore}
-                                        className="flex-1 py-2 bg-accent text-white font-black uppercase text-[10px] rounded-lg"
+                                        className="flex-1 py-2.5 bg-accent text-white font-black uppercase text-[10px] rounded-lg hover:bg-accent/90 transition-colors"
                                     >
-                                        Guardar
+                                        Guardar Perfil
                                     </button>
                                     <button
                                         onClick={() => setIsAddingProfile(false)}
-                                        className="px-3 py-2 bg-card text-muted font-bold uppercase text-[10px] rounded-lg border border-card-border"
+                                        className="px-4 py-2.5 bg-card text-muted font-bold uppercase text-[10px] rounded-lg border border-card-border hover:border-muted/30 transition-colors"
                                     >
                                         Cancelar
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </section>
 
             {/* Zone 3: Currency & TRM */}

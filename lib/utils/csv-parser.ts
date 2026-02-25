@@ -1,0 +1,107 @@
+/**
+ * CSV/Excel parsing utilities for ad spend imports.
+ */
+
+/** Keywords to identify the real header row in a CSV/Excel file */
+const HEADER_KEYWORDS = [
+    'campaign', 'campaña', 'cost', 'coste', 'costo', 'gasto',
+    'spend', 'date', 'fecha', 'día', 'day', 'nombre'
+];
+
+/**
+ * Detect the header row index in raw sheet data.
+ * Returns the row index where at least 2 header keywords match.
+ */
+export function detectHeaderRow(rawRows: any[][]): number {
+    for (let i = 0; i < rawRows.length; i++) {
+        const row = rawRows[i];
+        if (!Array.isArray(row)) continue;
+        const rowText = row.map(cell => String(cell ?? '').toLowerCase()).join(' ');
+        const matchCount = HEADER_KEYWORDS.filter(kw => rowText.includes(kw)).length;
+        if (matchCount >= 2) return i;
+    }
+    return 0; // fallback to first row
+}
+
+/**
+ * Find column index by trying multiple name variants (exact match first, then case-insensitive).
+ */
+export function findColumnIndex(headers: string[], variants: readonly string[]): number {
+    for (const v of variants) {
+        const exact = headers.indexOf(v);
+        if (exact !== -1) return exact;
+    }
+    for (const v of variants) {
+        const idx = headers.findIndex(h => h.toLowerCase() === v.toLowerCase());
+        if (idx !== -1) return idx;
+    }
+    return -1;
+}
+
+/**
+ * Parse a number from various formats (1,234.56 / 1.234,56 / plain).
+ */
+export function parseNumber(val: any): number {
+    if (val === undefined || val === null || val === '') return 0;
+    if (typeof val === 'number') return val;
+    const str = String(val).trim().replace(/[^\d.,-]/g, '');
+    // European format: 1.234,56
+    if (/^[-]?[\d.]+,[\d]+$/.test(str)) return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+    // US format: 1,234.56
+    if (/^[-]?[\d,]+\.[\d]+$/.test(str)) return parseFloat(str.replace(/,/g, ''));
+    return parseFloat(str.replace(/,/g, '')) || 0;
+}
+
+/**
+ * Parse a date string from various formats into YYYY-MM-DD.
+ * Returns null if the date cannot be parsed.
+ */
+export function parseDate(dateStr: any): string | null {
+    const raw = String(dateStr).trim();
+
+    // ISO format: 2024-01-15
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.slice(0, 10);
+    }
+
+    // DD/MM/YYYY format
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(raw)) {
+        const parts = raw.split('/');
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+
+    // Excel serial date number
+    if (typeof dateStr === 'number') {
+        const excelEpoch = new Date(1899, 11, 30);
+        const d = new Date(excelEpoch.getTime() + dateStr * 86400000);
+        return d.toISOString().split('T')[0];
+    }
+
+    // Fallback: try native Date parsing
+    const parsed = new Date(raw);
+    if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+    }
+
+    return null;
+}
+
+/**
+ * Try to detect country from a campaign name string.
+ */
+export function detectCountryFromCampaign(campaignName: string): string | null {
+    const upper = campaignName.toUpperCase();
+    if (upper.includes('COLOMBIA') || upper.includes('CO-')) return 'Colombia';
+    if (upper.includes('ECUADOR') || upper.includes('EC-')) return 'Ecuador';
+    if (upper.includes('GUATEMALA') || upper.includes('GT-')) return 'Guatemala';
+    if (upper.includes('PANAMA') || upper.includes('PA-')) return 'Panama';
+    return null;
+}
+
+/** Standard column name variants for ad spend CSVs */
+export const COLUMN_VARIANTS = {
+    campaign: ['Campaign name', 'Campaña', 'Nombre de la campaña', 'campaign_name', 'Nombre campaña'],
+    spend: ['Cost', 'Gasto', 'Spend', 'Coste', 'Costo', 'Importe gastado'],
+    date: ['Date', 'Fecha', 'Day', 'By Day', 'Reporting date', 'Fecha de inicio'],
+    currency: ['Currency', 'Divisa', 'Moneda'],
+} as const;

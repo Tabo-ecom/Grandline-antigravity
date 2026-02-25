@@ -102,17 +102,15 @@ La fecha de hoy es: ${new Date().toLocaleDateString('es-CO', { weekday: 'long', 
 }
 
 function detectProvider(): { provider: AIProvider; apiKey: string } {
-    // Try Gemini keys (only explicit Gemini/Generative AI keys)
-    const geminiKey = process.env.GEMINI_API_KEY
-        || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    // Try Gemini keys (server-only)
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     if (geminiKey) {
         return { provider: 'gemini', apiKey: geminiKey };
     }
 
-    // Try OpenAI keys
-    const openaiKey = process.env.OPENAI_API_KEY
-        || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+    // Try OpenAI keys (server-only)
+    const openaiKey = process.env.OPENAI_API_KEY;
 
     if (openaiKey) {
         return { provider: 'openai', apiKey: openaiKey };

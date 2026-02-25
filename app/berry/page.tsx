@@ -22,6 +22,7 @@ import {
 import { getAdSpendHistory, AdSpend, getCampaignMappings, CampaignMapping } from '@/lib/services/marketing';
 import { useCurrency } from '@/lib/hooks/useCurrency';
 import { toCOP } from '@/lib/utils/currency';
+import InfoTooltip from '@/components/common/InfoTooltip';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fmtCOP = (v: number) => {
@@ -111,9 +112,17 @@ export default function BerryPage() {
         // 1. Filter Ad Spend to only mapped campaigns
         const mappedCampaigns = new Set(mappings.map(m => m.campaignName.trim().toLowerCase()));
 
-        // Only Facebook for now, filtered by mapping
+        // Build campaign→country lookup from mappings (uses mapping.country when available)
+        const campaignCountryMap = new Map<string, string>();
+        mappings.forEach(m => {
+            if (m.country) {
+                campaignCountryMap.set(`${m.platform}_${m.campaignName.trim().toLowerCase()}`, m.country);
+            }
+        });
+
+        // Facebook + TikTok, filtered by mapping
         const rawFbAds = adSpendHistory.filter(s =>
-            s.platform === 'facebook' &&
+            (s.platform === 'facebook' || s.platform === 'tiktok') &&
             s.campaignName &&
             mappedCampaigns.has(s.campaignName.trim().toLowerCase())
         );
@@ -143,13 +152,17 @@ export default function BerryPage() {
             const month = parseInt(dateParts[1]);
             const amount = rates ? toCOP(ad.amount, ad.currency, rates) : ad.amount;
 
-            const key = `${ad.platform}_${ad.country}_${year}_${month}`;
+            // Use mapping country if available, fallback to ad.country
+            const campaignKey = ad.campaignName ? `${ad.platform}_${ad.campaignName.trim().toLowerCase()}` : '';
+            const country = (campaignKey && campaignCountryMap.get(campaignKey)) || ad.country;
+
+            const key = `${ad.platform}_${country}_${year}_${month}`;
 
             if (!monthlyGroups[key]) {
                 monthlyGroups[key] = {
                     amount: 0,
                     platform: ad.platform,
-                    country: ad.country,
+                    country,
                     year,
                     month,
                     updatedAt: ad.updatedAt || Date.now()
@@ -627,7 +640,7 @@ export default function BerryPage() {
                             <div key={kpi.label} className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all group shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black text-muted uppercase tracking-widest">{kpi.label}</span>
+                                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">{kpi.label} {kpi.label === 'Total Gastos' ? <InfoTooltip text="Suma total de todos los gastos operativos registrados en el periodo." /> : kpi.label === 'Ads' ? <InfoTooltip text="Inversión en publicidad (Facebook + TikTok) sincronizada desde la central de anuncios." /> : kpi.label === 'Operativos' ? <InfoTooltip text="Gastos fijos del negocio: nómina, herramientas, servicios, etc." /> : <InfoTooltip text="Gastos registrados en esta categoría para el periodo seleccionado." />}</span>
                                         {kpi.label !== 'Total Gastos' && kpi.participation > 0 && (
                                             <span className="text-[9px] font-bold text-muted bg-muted/10 px-1.5 py-0.5 rounded tabular-nums">
                                                 {kpi.participation.toFixed(1)}%
@@ -654,8 +667,9 @@ export default function BerryPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Trend Chart */}
                     <div className="lg:col-span-2 bg-card border border-card-border rounded-2xl p-5 shadow-sm">
-                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-4">
+                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-4 flex items-center gap-1.5">
                             {viewMode === 'monthly' ? `Tendencia Diaria · ${MONTH_NAMES_FULL[selectedMonth - 1]}` : `Tendencia Anual · ${selectedYear}`}
+                            <InfoTooltip text="Evolución del gasto total a lo largo del tiempo. Permite identificar picos y patrones de gasto." />
                         </h3>
                         <div className="h-[260px]">
                             <ResponsiveContainer width="100%" height="100%">
@@ -683,8 +697,8 @@ export default function BerryPage() {
                     {/* Donut Chart */}
                     <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">
-                                Distribución por Categoría
+                            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                                Distribución por Categoría <InfoTooltip text="Proporción de cada categoría sobre el gasto total. Click en una porción para ocultar/mostrar." />
                             </h3>
                             {hiddenCategories.size > 0 && (
                                 <button
@@ -746,8 +760,9 @@ export default function BerryPage() {
                 {/* ── Category Table ─────────────────────────────────────── */}
                 <div className="bg-card border border-card-border rounded-2xl overflow-hidden shadow-sm">
                     <div className="px-5 py-4 border-b border-card-border flex items-center justify-between">
-                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">
+                        <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
                             Desglose por Categoría · {viewMode === 'annual' ? `Todo ${selectedYear}` : `${MONTH_NAMES_FULL[selectedMonth - 1]} ${selectedYear}`}
+                            <InfoTooltip text="Detalle de gastos agrupados por categoría. Expande una categoría para ver los gastos individuales." />
                         </h3>
                         <span className="text-xs font-bold text-gray-600">{monthExpenses.length} {viewMode === 'annual' ? 'registros' : 'gastos'}</span>
                     </div>

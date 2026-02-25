@@ -384,6 +384,8 @@ export interface MetaAdConfig {
         videoId?: string;
         videoThumbnailUrl?: string;
         message: string;
+        title?: string;
+        description?: string;
         link: string;
         callToAction?: string;
     };
@@ -697,6 +699,7 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
                 value: { link: config.creative.link }
             }
         };
+        if (config.creative.title) videoData.title = config.creative.title;
         if (config.creative.imageHash) {
             videoData.image_hash = config.creative.imageHash;
         } else if (thumbnailUrl) {
@@ -704,7 +707,7 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
         }
         creativeSpec.object_story_spec.video_data = videoData;
     } else if (config.creative.imageHash) {
-        creativeSpec.object_story_spec.link_data = {
+        const linkData: Record<string, any> = {
             image_hash: config.creative.imageHash,
             link: config.creative.link,
             message: config.creative.message,
@@ -713,9 +716,12 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
                 value: { link: config.creative.link }
             }
         };
+        if (config.creative.title) linkData.name = config.creative.title;
+        if (config.creative.description) linkData.description = config.creative.description;
+        creativeSpec.object_story_spec.link_data = linkData;
     } else {
         // No creative file — text-only ad with link
-        creativeSpec.object_story_spec.link_data = {
+        const linkData: Record<string, any> = {
             link: config.creative.link,
             message: config.creative.message,
             call_to_action: {
@@ -723,6 +729,9 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
                 value: { link: config.creative.link }
             }
         };
+        if (config.creative.title) linkData.name = config.creative.title;
+        if (config.creative.description) linkData.description = config.creative.description;
+        creativeSpec.object_story_spec.link_data = linkData;
     }
 
     const params: Record<string, string> = {
@@ -807,6 +816,8 @@ export interface FlexibleAdConfig {
     imageHashes?: string[];
     videoIds?: string[];
     bodies: string[];
+    titles?: string[];
+    descriptions?: string[];
     callToAction?: string;
 }
 
@@ -816,6 +827,13 @@ export async function createMetaFlexibleAd(token: string, config: FlexibleAdConf
         link_urls: [{ website_url: config.link }],
         call_to_action_types: [config.callToAction || 'SHOP_NOW'],
     };
+
+    if (config.titles && config.titles.length > 0) {
+        assetFeedSpec.titles = config.titles.map(text => ({ text }));
+    }
+    if (config.descriptions && config.descriptions.length > 0) {
+        assetFeedSpec.descriptions = config.descriptions.map(text => ({ text }));
+    }
 
     if (config.imageHashes && config.imageHashes.length > 0) {
         assetFeedSpec.images = config.imageHashes.map(hash => ({ hash }));

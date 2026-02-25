@@ -22,7 +22,8 @@ import {
     Split,
     Shuffle,
     Info,
-    ChevronDown
+    ChevronDown,
+    Search
 } from 'lucide-react';
 import { useSunny } from '@/lib/context/SunnyContext';
 import { getAdSettings } from '@/lib/services/marketing';
@@ -100,6 +101,7 @@ export const Lanzador: React.FC = () => {
     const [isLaunching, setIsLaunching] = useState(false);
     const [launchError, setLaunchError] = useState<string | null>(null);
     const [launchProgress, setLaunchProgress] = useState('');
+    const [videoProgress, setVideoProgress] = useState<Map<string, number>>(new Map());
     const [launchResult, setLaunchResult] = useState<MetaLaunchResult | null>(null);
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
     const [metaToken, setMetaToken] = useState<string | null>(null);
@@ -165,6 +167,7 @@ export const Lanzador: React.FC = () => {
     const [selectedAdSetId, setSelectedAdSetId] = useState<string>('');
     const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
     const [isLoadingAdSets, setIsLoadingAdSets] = useState(false);
+    const [campaignSearch, setCampaignSearch] = useState('');
 
     useEffect(() => {
         if (activeStore) {
@@ -378,10 +381,6 @@ export const Lanzador: React.FC = () => {
                 const videoIds: string[] = [];
                 const videoNames: string[] = [];
 
-                const onProgress: UploadProgressCallback = (fileName, percent) => {
-                    setLaunchProgress(`Subiendo ${fileName}: ${percent}%`);
-                };
-
                 // Separate images and videos
                 const imageFiles = uploadedFiles.filter(f =>
                     (f.type === 'local' && f.file && !f.file.type.startsWith('video/')) ||
@@ -407,18 +406,37 @@ export const Lanzador: React.FC = () => {
                 const imageResults = await Promise.all(imagePromises);
                 imageResults.forEach(r => { if (r) { imageHashes.push(r.hash); imageNames.push(r.name); } });
 
-                // Upload videos sequentially (chunked, with progress)
-                for (const file of videoFiles) {
-                    if (file.type === 'local' && file.file) {
-                        const result = await uploadMetaAdVideo(metaToken, accountId, file.file, onProgress);
-                        videoIds.push(result.videoId);
-                        videoNames.push(file.name);
-                    } else if (file.type === 'gdrive') {
-                        const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
-                        const result = await uploadMetaAdVideoFromUrl(metaToken, accountId, downloadUrl, file.name, onProgress);
-                        videoIds.push(result.videoId);
-                        videoNames.push(file.name);
+                // Upload videos in parallel (max 3 concurrent)
+                const MAX_CONCURRENT_VIDEOS = 3;
+                const videoResults: { videoId: string; name: string }[] = [];
+                let videoIdx = 0;
+
+                const uploadNextVideo = async (): Promise<void> => {
+                    while (videoIdx < videoFiles.length) {
+                        const currentIdx = videoIdx++;
+                        const file = videoFiles[currentIdx];
+                        const fileProgress: UploadProgressCallback = (fileName, percent) => {
+                            setVideoProgress(prev => new Map(prev).set(fileName, percent));
+                        };
+
+                        let result: { videoId: string; thumbnailUrl: string } | undefined;
+                        if (file.type === 'local' && file.file) {
+                            result = await uploadMetaAdVideo(metaToken, accountId, file.file, fileProgress);
+                        } else if (file.type === 'gdrive') {
+                            const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
+                            result = await uploadMetaAdVideoFromUrl(metaToken, accountId, downloadUrl, file.name, fileProgress);
+                        }
+                        if (result) videoResults.push({ videoId: result.videoId, name: file.name });
                     }
+                };
+
+                if (videoFiles.length > 0) {
+                    setLaunchProgress(`Subiendo ${videoFiles.length} video${videoFiles.length > 1 ? 's' : ''} (${Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length)} en paralelo)...`);
+                    await Promise.all(
+                        Array.from({ length: Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length) }, () => uploadNextVideo())
+                    );
+                    videoResults.forEach(r => { videoIds.push(r.videoId); videoNames.push(r.name); });
+                    setVideoProgress(new Map());
                 }
 
                 let campaignId: string;
@@ -427,7 +445,7 @@ export const Lanzador: React.FC = () => {
                 // Base ad set config reusable for both modes and isolated structure
                 const baseAdSetConfig = {
                     accountId,
-                    status: 'PAUSED' as const,
+                    status: 'ACTIVE' as const,
                     dailyBudget: naming.strategy === 'ABO' ? metaBudget : undefined,
                     billingEvent: 'IMPRESSIONS' as const,
                     optimizationGoal: (activeStore?.pixelId ? 'OFFSITE_CONVERSIONS' : 'LINK_CLICKS') as MetaAdSetConfig['optimizationGoal'],
@@ -504,12 +522,14 @@ export const Lanzador: React.FC = () => {
                         accountId,
                         adSetId,
                         name: `${campaignName} - Flexible Ad`,
-                        status: 'PAUSED',
+                        status: 'ACTIVE',
                         pageId: activeStore.pageId,
                         link: destinationUrl || 'https://example.com',
                         imageHashes: imageHashes.length > 0 ? imageHashes : undefined,
                         videoIds: videoIds.length > 0 ? videoIds : undefined,
                         bodies,
+                        titles: aiTitle ? [aiTitle] : undefined,
+                        descriptions: aiDescription ? [aiDescription] : undefined,
                         callToAction: 'SHOP_NOW',
                     };
 
@@ -530,10 +550,12 @@ export const Lanzador: React.FC = () => {
                             accountId,
                             adSetId: isoAdSetId,
                             name: getAdName(i),
-                            status: 'PAUSED',
+                            status: 'ACTIVE',
                             creative: {
                                 pageId: activeStore.pageId,
                                 message: copy || naming.product,
+                                title: aiTitle || undefined,
+                                description: aiDescription || undefined,
                                 link: destinationUrl || 'https://example.com',
                                 imageHash: i < imageHashes.length ? imageHashes[i] : undefined,
                                 videoId: i >= imageHashes.length ? videoIds[i - imageHashes.length] : undefined,
@@ -556,10 +578,12 @@ export const Lanzador: React.FC = () => {
                             accountId,
                             adSetId,
                             name: getAdName(i),
-                            status: 'PAUSED',
+                            status: 'ACTIVE',
                             creative: {
                                 pageId: activeStore.pageId,
                                 message: copy || naming.product,
+                                title: aiTitle || undefined,
+                                description: aiDescription || undefined,
                                 link: destinationUrl || 'https://example.com',
                                 imageHash: !isVideo ? imageHashes[i] : undefined,
                                 videoId: isVideo ? videoIds[i - imageHashes.length] : undefined,
@@ -867,18 +891,34 @@ export const Lanzador: React.FC = () => {
                                         <span className="text-xs text-muted">Cargando campañas...</span>
                                     </div>
                                 ) : (
-                                    <select
-                                        className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
-                                        value={selectedCampaignId}
-                                        onChange={e => { setSelectedCampaignId(e.target.value); setSelectedAdSetId(''); }}
-                                    >
-                                        <option value="">Seleccionar campaña...</option>
-                                        {existingCampaigns.map(c => (
-                                            <option key={c.id} value={c.id}>
-                                                {c.name} ({c.status})
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="space-y-2">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                                            <input
+                                                type="text"
+                                                placeholder="Buscar campaña por nombre..."
+                                                className="w-full bg-background border border-card-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
+                                                value={campaignSearch}
+                                                onChange={e => setCampaignSearch(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto border border-card-border rounded-xl bg-background">
+                                            {existingCampaigns
+                                                .filter(c => !campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase()))
+                                                .map(c => (
+                                                    <button
+                                                        key={c.id}
+                                                        onClick={() => { setSelectedCampaignId(c.id); setSelectedAdSetId(''); setCampaignSearch(''); }}
+                                                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors border-b border-card-border last:border-b-0 ${selectedCampaignId === c.id ? 'bg-accent/10 text-accent font-bold' : 'text-foreground hover:bg-accent/5'}`}
+                                                    >
+                                                        {c.name} <span className="text-[10px] text-muted ml-1">({c.status})</span>
+                                                    </button>
+                                                ))}
+                                            {existingCampaigns.filter(c => !campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase())).length === 0 && (
+                                                <p className="px-4 py-3 text-xs text-muted text-center">No se encontraron campañas</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
 
@@ -946,22 +986,26 @@ export const Lanzador: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">
                             <div>
-                                <div className="flex justify-between items-center mb-4">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted">Presupuesto Diario</label>
-                                    <span className="text-2xl font-black italic text-foreground">{activeCurrencyConfig.symbol}{budget.amount.toLocaleString()} <span className="text-sm not-italic font-bold text-accent">{budget.currency}</span></span>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Presupuesto Diario</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg font-black text-muted">{activeCurrencyConfig.symbol}</span>
+                                    <input
+                                        type="number"
+                                        min={activeCurrencyConfig.min}
+                                        max={activeCurrencyConfig.max}
+                                        step={activeCurrencyConfig.step}
+                                        value={budget.amount}
+                                        onChange={e => {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setBudget({ ...budget, amount: Math.max(activeCurrencyConfig.min, Math.min(activeCurrencyConfig.max, val)) });
+                                        }}
+                                        className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-2xl font-black italic text-foreground focus:border-accent/50 outline-none transition-colors font-mono"
+                                    />
+                                    <span className="text-sm font-bold text-accent">{budget.currency}</span>
                                 </div>
-                                <input
-                                    type="range"
-                                    min={activeCurrencyConfig.min}
-                                    max={activeCurrencyConfig.max}
-                                    step={activeCurrencyConfig.step}
-                                    value={budget.amount}
-                                    onChange={e => setBudget({ ...budget, amount: parseInt(e.target.value) })}
-                                    className="w-full h-1 bg-card-border rounded-full appearance-none cursor-pointer accent-accent"
-                                />
-                                <div className="flex justify-between mt-2 text-xs font-mono text-muted">
-                                    <span>MIN {activeCurrencyConfig.symbol}{activeCurrencyConfig.min.toLocaleString()}</span>
-                                    <span>MAX {activeCurrencyConfig.symbol}{activeCurrencyConfig.max.toLocaleString()}</span>
+                                <div className="flex justify-between mt-2 text-[10px] font-bold text-muted">
+                                    <span>Min: {activeCurrencyConfig.symbol}{activeCurrencyConfig.min.toLocaleString()}</span>
+                                    <span>Max: {activeCurrencyConfig.symbol}{activeCurrencyConfig.max.toLocaleString()}</span>
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
@@ -1204,14 +1248,22 @@ export const Lanzador: React.FC = () => {
                                 <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs text-muted">
                                     {copy.length}
                                 </div>
-                                <button
-                                    onClick={handleGenerateCopy}
-                                    disabled={isGenerating || !naming.product}
-                                    className="p-2 px-4 bg-purple-500/20 hover:bg-purple-500 text-purple-400 hover:text-white border border-purple-500/30 rounded-lg transition-all flex items-center gap-2 text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                                    {aiCopies.length > 0 ? 'Regenerar' : 'Vega AI'}
-                                </button>
+                                <div className="relative group/vega">
+                                    <button
+                                        onClick={handleGenerateCopy}
+                                        disabled={isGenerating || !naming.product}
+                                        className={`p-2 px-4 border rounded-lg transition-all flex items-center gap-2 text-xs font-black uppercase disabled:cursor-not-allowed ${!naming.product ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 opacity-80' : 'bg-purple-500/20 hover:bg-purple-500 text-purple-400 hover:text-white border-purple-500/30 disabled:opacity-50'}`}
+                                    >
+                                        {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : !naming.product ? <AlertCircle className="w-3 h-3" /> : <Sparkles className="w-3 h-3" />}
+                                        {aiCopies.length > 0 ? 'Regenerar' : 'Vega AI'}
+                                    </button>
+                                    {!naming.product && (
+                                        <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-amber-500 text-white text-[10px] font-bold rounded-lg shadow-lg opacity-0 group-hover/vega:opacity-100 pointer-events-none transition-opacity duration-200 whitespace-nowrap z-50">
+                                            Escribe el nombre del producto primero
+                                            <div className="absolute top-full right-4 border-4 border-transparent border-t-amber-500" />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -1294,10 +1346,30 @@ export const Lanzador: React.FC = () => {
                     </div>
                 )}
 
-                {isLaunching && launchProgress && (
-                    <div className="flex items-center gap-3 p-3 bg-accent/10 border border-accent/20 rounded-xl animate-pulse">
-                        <Loader2 className="w-4 h-4 text-accent animate-spin shrink-0" />
-                        <p className="text-xs text-accent font-bold">{launchProgress}</p>
+                {isLaunching && (videoProgress.size > 0 || launchProgress) && (
+                    <div className="p-3 bg-accent/10 border border-accent/20 rounded-xl space-y-2">
+                        {launchProgress && (
+                            <div className="flex items-center gap-3">
+                                <Loader2 className="w-4 h-4 text-accent animate-spin shrink-0" />
+                                <p className="text-xs text-accent font-bold">{launchProgress}</p>
+                            </div>
+                        )}
+                        {videoProgress.size > 0 && (
+                            <div className="space-y-1.5">
+                                {Array.from(videoProgress.entries()).map(([name, percent]) => (
+                                    <div key={name} className="flex items-center gap-3">
+                                        <span className="text-[10px] font-bold text-muted truncate w-32">{name}</span>
+                                        <div className="flex-1 h-1.5 bg-card rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-accent rounded-full transition-all duration-300"
+                                                style={{ width: `${percent}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-[10px] font-bold text-accent tabular-nums w-8 text-right">{percent}%</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
