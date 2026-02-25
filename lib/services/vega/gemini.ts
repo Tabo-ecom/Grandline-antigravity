@@ -379,6 +379,64 @@ Estados: BUENO = Dentro de objetivo, ATENCION = En riesgo, CRITICO = Fuera de ra
 3. [Optimización — acción específica]
 
 Compara con período anterior cuando esté disponible. Sé honesto con los problemas.`,
+
+        slack_daily: `Genera un reporte diario COMPLETO para Slack. Período: ${period}.
+
+REGLAS ESTRICTAS:
+- NO uses <!-- -->, HERO_KPIS, ALERTS. Solo texto Slack con *bold* y emojis.
+- NO escribas introducción ni saludo. Empieza DIRECTO con el título 🧭.
+- USA SOLO datos proporcionados. No inventes números.
+- Formatea montos: $1,234,567 (con separadores de miles)
+- "Util. Proy" = Utilidad Proyectada de los datos
+- "CPA Desp" = usa "CPA Despachado (Ads/No cancelados)" de los datos, NO el CPA general
+
+DEBES incluir las 5 secciones de abajo. Si falta alguna sección, el reporte está INCOMPLETO y es inválido.
+
+=== SECCIÓN 1 (OBLIGATORIA) ===
+🧭 *VEGA — Reporte Diario* (${period})
+
+📊 *Resumen*
+Órdenes: X | Entregadas: X (X%) | Tránsito: X
+Ads: $X | ROAS: Xx | CPA Desp: $X
+Util. Real: $X | Util. Proy: $X
+
+=== SECCIÓN 2 (OBLIGATORIA) ===
+🟢 *Top 5 Productos (mejor proyección)*
+Lista los 5 productos con Utilidad Proyectada MÁS ALTA. Ordénalos de mayor a menor.
+• [Nombre]: X órd | CPA: $X | U.Proy: $X ✅
+(repite para cada uno de los 5)
+
+=== SECCIÓN 3 (OBLIGATORIA) ===
+🔴 *Bottom 5 Productos (peor proyección)*
+Lista los 5 productos con Utilidad Proyectada MÁS BAJA o negativa. Ordénalos del peor al menos peor.
+• [Nombre]: X órd | CPA: $X | U.Proy: -$X 🔴
+(repite para cada uno de los 5)
+
+=== SECCIÓN 4 (OBLIGATORIA) ===
+🌎 *Países*
+• [País]: X órd | Ent X% | Ads $X | U.Proy: $X
+
+=== SECCIÓN 5 (OBLIGATORIA) ===
+💡 *Recomendaciones* (3 acciones)
+1. [Acción concreta en 1 línea]
+2. [Acción concreta en 1 línea]
+3. [Acción concreta en 1 línea]
+
+NO agregues nada antes del 🧭. NO agregues secciones extra. Las 5 secciones son OBLIGATORIAS.`,
+
+        slack_recommendations: `Analiza los datos operativos y genera EXACTAMENTE 3 recomendaciones accionables para el equipo.
+Período: ${period}.
+
+REGLAS:
+- Solo 3 líneas numeradas. NADA MÁS. Sin título, sin intro, sin cierre.
+- Cada recomendación debe ser una acción CONCRETA y ESPECÍFICA basada en los datos.
+- Menciona productos o países específicos cuando sea relevante.
+- Usa emojis: ⚠️ para alertas, 📈 para oportunidades, 💰 para costos.
+
+FORMATO EXACTO (solo estas 3 líneas):
+1. [Acción concreta]
+2. [Acción concreta]
+3. [Acción concreta]`,
     };
 
     return prompts[type] || `Genera un reporte tipo ${type} para ${period}. Incluye KPIs principales, análisis por país/producto, rendimiento publicitario y recomendaciones.

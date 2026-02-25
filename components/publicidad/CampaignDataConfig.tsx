@@ -296,9 +296,13 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
 
             if (!countryGroups[country]) countryGroups[country] = {};
             if (!countryGroups[country][effectiveId]) {
+                // Priority: selectableProducts label > stored productName > resolveProductName fallback
+                const storedName = m.productName;
+                const resolvedName = product ? product.label
+                    : storedName || resolveProductName(effectiveId, orders as any, mappings, productGroups);
                 countryGroups[country][effectiveId] = {
                     productId: effectiveId,
-                    productName: product ? product.label : resolveProductName(effectiveId, orders as any, mappings, productGroups),
+                    productName: resolvedName,
                     campaigns: []
                 };
             }
@@ -398,9 +402,12 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
         if (!newMapping.productId || newMapping.campaignNames.length === 0) return;
         setSaving(true);
         try {
+            const selectedProduct = selectableProducts.find(p => p.id === newMapping.productId);
+            const productLabel = selectedProduct?.label?.replace(/^📦 \[Grupo\] /, '') || newMapping.productId;
             await addMultipleCampaignMappings(newMapping.campaignNames.map(name => ({
                 campaignName: name,
                 productId: newMapping.productId,
+                productName: productLabel,
                 platform: newMapping.platform,
                 updatedAt: Date.now()
             })), effectiveUid || '');
@@ -804,9 +811,12 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
 
     const handleAcceptSuggestion = async (suggestion: any) => {
         try {
+            const selectedProduct = selectableProducts.find(p => p.id === suggestion.suggestedProductId);
+            const productLabel = selectedProduct?.label?.replace(/^📦 \[Grupo\] /, '') || suggestion.suggestedProductId;
             await addMultipleCampaignMappings([{
                 campaignName: suggestion.campaignName,
                 productId: suggestion.suggestedProductId,
+                productName: productLabel,
                 platform: suggestion.platform,
                 updatedAt: Date.now()
             }], effectiveUid || '');

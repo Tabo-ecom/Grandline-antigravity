@@ -67,6 +67,7 @@ export function buildDataContext(data: VegaDataContext): string {
         `ROAS Real: ${kpis.roas_real.toFixed(2)}x`,
         `ROAS Bruto: ${kpis.roas_bruto.toFixed(2)}x`,
         `CPA (Costo por Orden): $${kpis.cpa.toLocaleString()}`,
+        `CPA Despachado (Ads/No cancelados): $${(kpis.n_nc > 0 ? Math.round(kpis.g_ads / kpis.n_nc) : 0).toLocaleString()}`,
         `CPE (Costo por Entrega): $${kpis.cpe.toLocaleString()}`,
         `% Ads vs Revenue: ${kpis.perc_ads_revenue.toFixed(1)}%`,
         `MER: ${kpis.mer.toFixed(2)}x`,
@@ -96,30 +97,45 @@ export function buildDataContext(data: VegaDataContext): string {
     if (metricsByCountry.length > 0) {
         lines.push('', '--- MÉTRICAS POR PAÍS Y PRODUCTO (DESGLOSE COMPLETO) ---');
         metricsByCountry.forEach((c: any) => {
+            const ck = c.kpis;
             lines.push(
                 '',
-                `== ${c.name} (${c.currency || 'COP'}) ==`,
-                `  Órdenes: ${c.orderCount || 0}`,
-                `  Tasa Entrega: ${(c.deliveryRate || 0).toFixed(1)}% | Tasa Cancelación: ${(c.cancelRate || 0).toFixed(1)}%`,
-                `  Facturación Neta: $${(c.sales || 0).toLocaleString()}`,
-                `  Gasto Ads: $${(c.adSpend || 0).toLocaleString()}`,
-                `  Utilidad Real: $${(c.profit || 0).toLocaleString()}`,
-                `  Utilidad Proyectada: $${(c.projectedProfit || 0).toLocaleString()}`,
+                `== ${c.countryName || c.name} (COP) ==`,
+                `  Órdenes: ${ck?.n_ord || c.orderCount || 0}`,
+                `  Tasa Entrega: ${(ck?.tasa_ent || c.deliveryRate || 0).toFixed(1)}% | Tasa Cancelación: ${(ck?.tasa_can || c.cancelRate || 0).toFixed(1)}%`,
+                `  Facturación Neta: $${(ck?.fact_neto || c.sales || 0).toLocaleString()}`,
+                `  Ingreso Real: $${(ck?.ing_real || 0).toLocaleString()}`,
+                `  Gasto Ads: $${(ck?.g_ads || c.adSpend || 0).toLocaleString()}`,
+                `  Utilidad Real: $${(ck?.u_real || c.profit || 0).toLocaleString()}`,
+                `  ROAS Real: ${(ck?.roas_real || 0).toFixed(2)}x | CPA: $${Math.round(ck?.cpa || 0).toLocaleString()}`,
             );
 
             // Product breakdown within country — DESGLOSE INDIVIDUAL POR PRODUCTO
             if (c.products && c.products.length > 0) {
-                lines.push(`  --- Productos en ${c.name} (desglose individual) ---`);
+                lines.push(`  --- Productos en ${c.countryName || c.name} (desglose individual) ---`);
                 c.products.forEach((p: any) => {
+                    const ord = p.n_ord ?? p.orderCount ?? 0;
+                    const ent = p.n_ent ?? p.delivered ?? 0;
+                    const tra = p.n_tra ?? 0;
+                    const tasaEnt = p.tasa_ent ?? p.deliveryRate ?? 0;
+                    const ads = p.ads ?? p.adSpend ?? 0;
+                    const can = p.n_can ?? 0;
+                    const nc = ord - can;
+                    // CPA = Ads / Non-canceled (same as dashboard)
+                    const cpa = p.cpa ?? (nc > 0 ? ads / nc : 0);
+                    // CPA Despachado = Ads / (Entregados + Devoluciones)
+                    const dev = p.n_dev ?? 0;
+                    const dispatched = ent + dev;
+                    const cpaDesp = p.cpaDesp ?? (dispatched > 0 ? ads / dispatched : 0);
+                    const utilReal = p.utilReal ?? p.profit ?? 0;
+                    const utilProy = p.utilProy ?? p.projectedProfit ?? 0;
+                    const ing = p.ing ?? p.netSales ?? 0;
                     lines.push(
                         `    PRODUCTO: ${p.name} (ID: ${p.id})`,
-                        `      Órdenes: ${p.orderCount || 0}`,
-                        `      Tasa Entrega: ${(p.deliveryRate || 0).toFixed(1)}% | Tasa Cancel: ${(p.cancelRate || 0).toFixed(1)}%`,
-                        `      Ventas Netas: $${(p.netSales || 0).toLocaleString()}`,
-                        `      Gasto Ads: $${(p.adSpend || 0).toLocaleString()}`,
-                        `      ROAS: ${(p.roas || 0).toFixed(2)}x | CPA: $${(p.cpa || 0).toLocaleString()}`,
-                        `      Utilidad Real: $${(p.profit || 0).toLocaleString()}`,
-                        `      Utilidad Proyectada: $${(p.projectedProfit || 0).toLocaleString()}`,
+                        `      Órdenes: ${ord} | Entregadas: ${ent} | Tránsito: ${tra} | Tasa Entrega: ${tasaEnt.toFixed(1)}%`,
+                        `      Ingreso Entregados: $${Math.round(ing).toLocaleString()} | Gasto Ads: $${Math.round(ads).toLocaleString()}`,
+                        `      CPA: $${Math.round(cpa).toLocaleString()} | CPA Despachado: $${Math.round(cpaDesp).toLocaleString()}`,
+                        `      Utilidad Real: $${Math.round(utilReal).toLocaleString()} | Utilidad Proyectada: $${Math.round(utilProy).toLocaleString()}`,
                     );
                 });
             }

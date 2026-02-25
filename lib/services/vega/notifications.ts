@@ -40,10 +40,33 @@ export async function sendTelegramMessage(botToken: string, chatId: string, mess
 
 export async function sendSlackMessage(webhookUrl: string, message: string): Promise<boolean> {
     try {
+        // Split message into Slack blocks to avoid truncation (max 3000 chars per section)
+        const blocks: any[] = [];
+        const paragraphs = message.split('\n\n');
+        let currentText = '';
+
+        for (const para of paragraphs) {
+            if ((currentText + '\n\n' + para).length > 2800) {
+                if (currentText.trim()) {
+                    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: currentText.trim() } });
+                }
+                currentText = para;
+            } else {
+                currentText += (currentText ? '\n\n' : '') + para;
+            }
+        }
+        if (currentText.trim()) {
+            blocks.push({ type: 'section', text: { type: 'mrkdwn', text: currentText.trim() } });
+        }
+
+        // Slack allows max 50 blocks; use fallback text for notifications
         const res = await fetch(webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: message }),
+            body: JSON.stringify({
+                text: message.substring(0, 200),
+                blocks: blocks.slice(0, 50),
+            }),
         });
         return res.ok;
     } catch (err) {

@@ -1,17 +1,18 @@
 /**
  * Vega AI - Server-Side Data Gatherer
- * Replicates useDashboardData logic for server-side cron jobs (no React hooks)
+ * Uses Firebase Admin SDK for server-side cron jobs (no React hooks, bypasses security rules)
  */
 
-import { getAllOrderFiles, getAppData } from '@/lib/firebase/firestore';
-import { fetchExchangeRates, toCOP, isMatchingCountry, getCurrencyForCountry, getOfficialCountryName } from '@/lib/utils/currency';
-import { listAllAdSpends, getCampaignMappings, deduplicateAdSpends } from '@/lib/services/marketing';
-import { DropiOrder, calculateKPIs } from '@/lib/calculations/kpis';
+import { adminGetAllOrderFiles, adminGetAppData, adminGetAllDocs } from '@/lib/firebase/admin-helpers';
+import { fetchExchangeRates, toCOP, isMatchingCountry, getCurrencyForCountry, getOfficialCountryName, normalizeCountry } from '@/lib/utils/currency';
+import { deduplicateAdSpends, fixAdSpendCurrencies, type AdSpend, type AdSettings, type CampaignMapping } from '@/lib/services/marketing';
+import { DropiOrder, calculateKPIs, calculateProjection } from '@/lib/calculations/kpis';
 import { parseDropiDate, getLocalDateKey } from '@/lib/utils/date-parsers';
 import { isCancelado, isEntregado, isTransit, isDevolucion } from '@/lib/utils/status';
-import { getProductGroups, getEffectiveProductId, getProductGroup } from '@/lib/services/productGroups';
-import { getExpenses, totalByCategory, type Expense } from '@/lib/services/expenses';
+import { getEffectiveProductId, getProductGroup, type ProductGroup } from '@/lib/services/productGroups';
+import { totalByCategory, type Expense } from '@/lib/services/expenses';
 import { buildDataContext, type VegaDataContext } from './context-builder';
+import { applyPriceCorrections, type PriceCorrection } from '@/lib/services/priceCorrections';
 import type { ExtendedDropiOrder } from '@/lib/hooks/useDashboardData';
 
 interface DateRange {
@@ -65,19 +66,53 @@ function getDateRangeForReport(type: 'daily' | 'weekly' | 'monthly'): DateRange 
     };
 }
 
-export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', userId: string): Promise<{ context: string; period: string }> {
+export interface ReportData {
+    context: string;
+    period: string;
+    kpis: any;
+    metricsByCountry: any[];
+}
+
+export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', userId: string): Promise<ReportData> {
     if (!userId) throw new Error("userId is required for gatherDataForReport");
     const range = getDateRangeForReport(type);
 
-    // Parallel fetch all data
-    const [ordersData, rates, ads, mappings, groups, expenses] = await Promise.all([
-        getAllOrderFiles(userId),
+    // Parallel fetch all data via Admin SDK (server-side, bypasses security rules)
+    const [ordersData, rates, adsRaw, adSettings, mappingsRaw, groups, expensesRaw, projectionSettings, priceCorrections] = await Promise.all([
+        adminGetAllOrderFiles(userId),
         fetchExchangeRates(),
-        listAllAdSpends(userId),
-        getCampaignMappings(userId),
-        getProductGroups(userId),
-        getExpenses(userId),
+        adminGetAllDocs('marketing_history', userId) as Promise<any[]>,
+        adminGetAppData<AdSettings>('ad_settings', userId),
+        adminGetAppData<any>('campaign_mappings', userId),
+        adminGetAppData<ProductGroup[]>('product_groups', userId).then(d => Array.isArray(d) ? d : []),
+        adminGetAppData<Expense[]>('expenses', userId).then(d => Array.isArray(d) ? d : []),
+        adminGetAppData<any>('projection_settings', userId),
+        adminGetAppData<PriceCorrection[]>('price_corrections', userId).then(d => Array.isArray(d) ? d : []),
     ]);
+
+    // Process raw ads through same pipeline as client-side
+    const ads: AdSpend[] = fixAdSpendCurrencies(
+        (adsRaw || []).map((d: any) => ({ ...d } as AdSpend)).sort((a: AdSpend, b: AdSpend) => (b.date || '').localeCompare(a.date || '')),
+        adSettings
+    );
+
+    // Process campaign mappings (support legacy dictionary format)
+    let mappings: CampaignMapping[] = [];
+    if (mappingsRaw) {
+        if (Array.isArray(mappingsRaw)) {
+            mappings = mappingsRaw;
+        } else if (typeof mappingsRaw === 'object') {
+            Object.entries(mappingsRaw).forEach(([productId, campaigns]) => {
+                if (Array.isArray(campaigns)) {
+                    (campaigns as string[]).forEach(campaignName => {
+                        mappings.push({ campaignName, productId, platform: 'facebook', updatedAt: Date.now() });
+                    });
+                }
+            });
+        }
+    }
+
+    const expenses: Expense[] = expensesRaw || [];
 
     // Flatten orders with currency conversion + product group resolution
     const allOrders: ExtendedDropiOrder[] = [];
@@ -102,6 +137,9 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
             }
         });
     }
+
+    // Apply price corrections (matching dashboard useDashboardData.ts line 183)
+    applyPriceCorrections(allOrders, priceCorrections);
 
     // Resolve ads (dedup + campaign mapping + name-ID conversion)
     const dedupedAds = deduplicateAdSpends(ads);
@@ -153,6 +191,7 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
 
     // Current period KPIs
     const kpis = calculateKPIs(filteredOrders, totalMappedAds);
+    // utilidad_proyectada will be set after metricsByCountry is computed (needs calculateProjection)
 
     // Previous period KPIs
     const diff = range.endDate.getTime() - range.startDate.getTime();
@@ -185,14 +224,142 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         if (h.platform === 'tiktok') tiktok += cop;
     });
 
-    // Metrics by country (simplified for reports)
+    // Build adsByCountryProduct (matching dashboard useDashboardData.ts lines 339-417 exactly)
+    const adsByCountryProduct: Record<string, Record<string, number>> = {};
+    let sharedGlobalSpend = 0;
+    const countryGlobalSpends: Record<string, number> = {};
+
+    filteredAds.forEach(h => {
+        const amountCOP = h.currency === 'COP' ? h.amount : toCOP(h.amount, h.currency, rates);
+        if (!h.productId || h.productId === 'unmapped' || h.productId === '' || h.productId === 'unknown') return;
+
+        const isGlobalPid = h.productId === 'global';
+        const isSharedCountry = normalizeCountry(h.country) === 'desconocido' || normalizeCountry(h.country) === 'todos';
+
+        if (isGlobalPid && isSharedCountry) {
+            sharedGlobalSpend += amountCOP;
+            return;
+        }
+
+        if (isSharedCountry && !isGlobalPid) {
+            const targetCountries = countries.filter(c => {
+                return allOrders.some(o => o.country === c && (o.PRODUCTO_ID?.toString() === h.productId || getEffectiveProductId(o.PRODUCTO_ID?.toString() || '', groups) === h.productId));
+            });
+            const targets = targetCountries.length > 0 ? targetCountries : countries;
+            const splitAmount = amountCOP / targets.length;
+            targets.forEach(c => {
+                if (!adsByCountryProduct[c]) adsByCountryProduct[c] = {};
+                adsByCountryProduct[c][h.productId] = (adsByCountryProduct[c][h.productId] || 0) + splitAmount;
+            });
+            return;
+        }
+
+        const matchedCountry = countries.find(c => isMatchingCountry(h.country, c));
+        if (!matchedCountry) return;
+
+        if (isGlobalPid) {
+            countryGlobalSpends[matchedCountry] = (countryGlobalSpends[matchedCountry] || 0) + amountCOP;
+            return;
+        }
+
+        // Map NAME-based ad spend to existing ORDER-based IDs
+        let effectivePid = h.productId;
+        if (effectivePid && isNaN(Number(effectivePid))) {
+            const matchingOrder = allOrders.find(o =>
+                o.country === matchedCountry &&
+                (o.PRODUCTO || '').toString().toLowerCase().trim() === effectivePid.toLowerCase().trim() && o.PRODUCTO_ID
+            );
+            if (matchingOrder && matchingOrder.PRODUCTO_ID) {
+                effectivePid = matchingOrder.PRODUCTO_ID.toString();
+            }
+        }
+
+        if (!adsByCountryProduct[matchedCountry]) adsByCountryProduct[matchedCountry] = {};
+        adsByCountryProduct[matchedCountry][effectivePid] = (adsByCountryProduct[matchedCountry][effectivePid] || 0) + amountCOP;
+    });
+
+    // Distribute shared global spend across all countries
+    if (countries.length > 0 && sharedGlobalSpend > 0) {
+        const split = sharedGlobalSpend / countries.length;
+        countries.forEach(c => {
+            countryGlobalSpends[c] = (countryGlobalSpends[c] || 0) + split;
+        });
+    }
+
+    // Distribute country-level global spend proportionally across products by order count
+    countries.forEach(cntry => {
+        const globalSpend = countryGlobalSpends[cntry] || 0;
+        if (globalSpend > 0) {
+            const cntryOrders = filteredOrders.filter(o => o.country === cntry);
+            const totalOrders = cntryOrders.length || 1;
+            const pidsWithOrders = new Set(cntryOrders.map(o => o.PRODUCTO_ID?.toString() || 'unknown').filter(id => id !== 'unknown'));
+            if (!adsByCountryProduct[cntry]) adsByCountryProduct[cntry] = {};
+            pidsWithOrders.forEach(pid => {
+                const pOrdersCount = cntryOrders.filter(o => o.PRODUCTO_ID?.toString() === pid).length;
+                adsByCountryProduct[cntry][pid] = (adsByCountryProduct[cntry][pid] || 0) + (globalSpend * (pOrdersCount / totalOrders));
+            });
+        }
+    });
+
+    // Metrics by country with per-product breakdown (matching dashboard exactly)
     const metricsByCountry = countries.map(cntry => {
         const cOrders = filteredOrders.filter(o => o.country === cntry);
-        const cAds = filteredAds.filter(h => isMatchingCountry(h.country, cntry))
-            .reduce((s, h) => s + (h.currency === 'COP' ? h.amount : toCOP(h.amount, h.currency, rates)), 0);
+        const cntryAds = adsByCountryProduct[cntry] || {};
+        const cAds = Object.values(cntryAds).reduce((sum, val) => sum + val, 0);
         const cKpis = calculateKPIs(cOrders, cAds);
-        return { countryName: cntry, kpis: cKpis, products: [] };
+
+        // Get projection settings for this country (same as dashboard)
+        const cSettings = projectionSettings?.countries?.[cntry];
+        const pOverrides: Record<string, number> = projectionSettings?.products?.[cntry] || {};
+        const defaultDeliveryPercent = cSettings?.delivery_percent ?? 80;
+        const buffer = cSettings?.buffer ?? 1.4;
+
+        // Iterate over product IDs from both orders AND ads (matching dashboard line 587)
+        const pids = new Set([
+            ...cOrders.map(o => o.PRODUCTO_ID?.toString() || 'unknown'),
+            ...Object.keys(cntryAds),
+        ]);
+
+        const products = Array.from(pids).map(pid => {
+            const pOrders = cOrders.filter(o => (o.PRODUCTO_ID?.toString() || 'unknown') === pid);
+            const pAds = cntryAds[pid] || 0;
+            const pKpis = calculateKPIs(pOrders, pAds);
+
+            const ids = new Set(pOrders.map(o => o.ID));
+            const n_ord = ids.size;
+            const n_ent = new Set(pOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+            const n_can = new Set(pOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+            const n_dev = new Set(pOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+            const n_tra = new Set(pOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+            const n_nc = n_ord - n_can;
+            const n_dispatched = n_ent + n_dev;
+
+            // CPA = Ads / Non-canceled (same as dashboard GlobalSummary.tsx line 24)
+            const cpa = n_nc > 0 ? pAds / n_nc : 0;
+            // CPA Despachado = Ads / (Entregados + Devoluciones)
+            const cpaDesp = n_dispatched > 0 ? pAds / n_dispatched : 0;
+
+            // Calculate projection per-product individually (matching dashboard useDashboardData.ts line 599)
+            const pDeliveryRate = pOverrides[pid] !== undefined ? pOverrides[pid] : defaultDeliveryPercent;
+            const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, buffer, { [pid]: pAds });
+            const baseProj = pproj.reduce((s, p) => s + p.utilidad, 0);
+            // If no orders for this product, projection is 0 (matching dashboard line 603)
+            const utilProy = pOrders.length === 0 ? 0 : baseProj;
+
+            const name = pOrders[0]?.PRODUCTO?.toString() || pid;
+            return {
+                id: pid, name, n_ord, n_ent, n_can, n_dev, n_tra, n_nc,
+                tasa_ent: pKpis.tasa_ent, ing: pKpis.ing_real, cpr: pKpis.cpr, ads: pAds,
+                cpa, cpaDesp, utilReal: pKpis.u_real, utilProy,
+            };
+        }).filter(p => p.n_ord > 0 || p.ads > 0).sort((a, b) => b.n_ord - a.n_ord);
+
+        return { countryName: cntry, kpis: cKpis, products };
     });
+
+    // Set global utilidad proyectada = sum of all product projections across countries
+    kpis.utilidad_proyectada = metricsByCountry.reduce((sum, c) =>
+        sum + c.products.reduce((s: number, p: any) => s + (p.utilProy || 0), 0), 0);
 
     // Daily sales data
     const dailySalesData: any[] = [];
@@ -278,5 +445,7 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
     return {
         context: buildDataContext(vegaData),
         period: range.label,
+        kpis,
+        metricsByCountry,
     };
 }
