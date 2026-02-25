@@ -43,18 +43,23 @@ export function aggregateByDepartment(
     const results: DepartmentMetrics[] = [];
 
     for (const [code, deptOrders] of deptMap) {
-        const entregados = deptOrders.filter(o => isEntregado(o.ESTATUS)).length;
-        const cancelados = deptOrders.filter(o => isCancelado(o.ESTATUS)).length;
-        const devoluciones = deptOrders.filter(o => isDevolucion(o.ESTATUS)).length;
-        const transito = deptOrders.filter(o => isTransit(o.ESTATUS)).length;
-        const totalOrders = deptOrders.length;
+        // Deduplicate counts by order ID (multi-item orders share the same ID)
+        const entregados = new Set(deptOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+        const cancelados = new Set(deptOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+        const devoluciones = new Set(deptOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+        const transito = new Set(deptOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+        const totalOrders = new Set(deptOrders.map(o => o.ID)).size;
         const noCancelados = totalOrders - cancelados || 1;
         const dispatched = entregados + devoluciones || 1;
 
-        const totalFlete = deptOrders.reduce((s, o) => s + (o['PRECIO FLETE'] || 0), 0);
-        const ingresoTotal = deptOrders
-            .filter(o => isEntregado(o.ESTATUS))
-            .reduce((s, o) => s + (o['TOTAL DE LA ORDEN'] || 0), 0);
+        // Deduplicate financial sums by order ID (flete/ingreso are per-order, not per-line)
+        const seenFlete = new Set<string>();
+        let totalFlete = 0;
+        deptOrders.forEach(o => { if (o.ID && !seenFlete.has(o.ID)) { seenFlete.add(o.ID); totalFlete += o['PRECIO FLETE'] || 0; } });
+
+        const seenIng = new Set<string>();
+        let ingresoTotal = 0;
+        deptOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenIng.has(o.ID)) { seenIng.add(o.ID); ingresoTotal += o['TOTAL DE LA ORDEN'] || 0; } });
 
         results.push({
             code,
@@ -99,13 +104,15 @@ export function aggregateByCityInDepartment(
 
     for (const [, cityOrders] of cityMap) {
         const displayName = cityOrders[0].CIUDAD || cityOrders[0]['CIUDAD DESTINO'] || 'Desconocida';
-        const entregados = cityOrders.filter(o => isEntregado(o.ESTATUS)).length;
-        const cancelados = cityOrders.filter(o => isCancelado(o.ESTATUS)).length;
-        const devoluciones = cityOrders.filter(o => isDevolucion(o.ESTATUS)).length;
-        const totalOrders = cityOrders.length;
+        const entregados = new Set(cityOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+        const cancelados = new Set(cityOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+        const devoluciones = new Set(cityOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+        const totalOrders = new Set(cityOrders.map(o => o.ID)).size;
         const noCancelados = totalOrders - cancelados || 1;
 
-        const totalFlete = cityOrders.reduce((s, o) => s + (o['PRECIO FLETE'] || 0), 0);
+        const seenFlete = new Set<string>();
+        let totalFlete = 0;
+        cityOrders.forEach(o => { if (o.ID && !seenFlete.has(o.ID)) { seenFlete.add(o.ID); totalFlete += o['PRECIO FLETE'] || 0; } });
 
         results.push({
             city: displayName,

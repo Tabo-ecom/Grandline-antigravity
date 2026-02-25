@@ -39,6 +39,14 @@ export function invalidateDashboardCache() {
     dashboardCache = null;
 }
 
+/** Access the session-level dashboard cache (shared with useCountryData for consistency) */
+export function getDashboardCache(): DashboardCache | null {
+    if (dashboardCache && Date.now() - dashboardCache.timestamp < CACHE_TTL) {
+        return dashboardCache;
+    }
+    return null;
+}
+
 export interface DashboardDataHook {
     loading: boolean;
     error: string | null;
@@ -75,7 +83,8 @@ export interface DashboardDataHook {
     unmappedAdSpend: number;
     rawDatesSample: string[];
 
-    // Debug data
+    // Shared data
+    exchangeRates: ExchangeRates;
     filteredAds: AdSpend[];
     campaignMappings: CampaignMapping[];
     // Projections
@@ -717,6 +726,7 @@ export function useDashboardData(): DashboardDataHook {
         rawDatesSample: [],
         startDateCustom, setStartDateCustom,
         endDateCustom, setEndDateCustom,
+        exchangeRates,
         filteredAds,
         campaignMappings,
         projectionSettings,

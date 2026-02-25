@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { useCountryData } from '@/lib/hooks/useCountryData';
+import { useParams } from 'next/navigation';
+import { useDashboardData } from '@/lib/hooks/useDashboardData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import FilterHeader from '@/components/FilterHeader';
-import { formatDualCurrency, formatCurrency } from '@/lib/utils/currency';
+import { formatDualCurrency, formatCurrency, isMatchingCountry, getCurrencyForCountry } from '@/lib/utils/currency';
 import { DropiOrder } from '@/lib/calculations/kpis';
+import { parseDropiDate, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
 import { aggregateByDepartment, aggregateByCityInDepartment } from '@/lib/calculations/geo';
 import { getCountryCode } from '@/lib/data/geo/departments';
 import { CountryMap } from '@/components/territories/CountryMap';
@@ -34,7 +36,6 @@ import {
     Clock,
 } from 'lucide-react';
 import { isEntregado, isCancelado, isTransit, isDevolucion } from '@/lib/utils/status';
-import { parseISO, subDays, startOfDay, endOfDay, startOfMonth, subMonths } from 'date-fns';
 
 // Color scale helper for delivery rate
 function deliveryColor(rate: number): string {
@@ -48,67 +49,20 @@ function deliveryBg(rate: number): string {
     return 'bg-red-500/10 border-red-500/20';
 }
 
-function filterByGlobalDate(
-    orders: DropiOrder[],
-    dateRange: string,
-    startCustom: string,
-    endCustom: string
-): DropiOrder[] {
-    const now = new Date();
-    let start: Date | null = null;
-    let end: Date | null = null;
-
-    switch (dateRange) {
-        case 'Hoy':
-            start = startOfDay(now); end = endOfDay(now); break;
-        case 'Ayer':
-            start = startOfDay(subDays(now, 1)); end = endOfDay(subDays(now, 1)); break;
-        case 'Últimos 3 Días':
-            start = startOfDay(subDays(now, 3)); break;
-        case 'Últimos 7 Días':
-            start = startOfDay(subDays(now, 7)); break;
-        case 'Últimos 30 Días':
-            start = startOfDay(subDays(now, 30)); break;
-        case 'Este Mes':
-            start = startOfMonth(now); break;
-        case 'Mes Pasado': {
-            const lastMonth = subMonths(now, 1);
-            start = startOfMonth(lastMonth); end = startOfMonth(now); break;
-        }
-        case 'Personalizado':
-            if (startCustom) start = parseISO(startCustom);
-            if (endCustom) end = endOfDay(parseISO(endCustom));
-            break;
-        case 'Todos': default: return orders;
-    }
-
-    return orders.filter(o => {
-        const dateStr = o.FECHA;
-        if (!dateStr) return false;
-        let d: Date;
-        if (typeof dateStr === 'string' && dateStr.includes('/')) {
-            const parts = dateStr.split(' ')[0].split('/');
-            if (parts.length === 3) {
-                const [day, m, y] = parts;
-                d = new Date(parseInt(y), parseInt(m) - 1, parseInt(day));
-            } else return false;
-        } else { d = new Date(dateStr); }
-        if (isNaN(d.getTime())) return false;
-        if (start && d < start) return false;
-        if (end && d > end) return false;
-        return true;
-    });
-}
-
 type SortKey = 'name' | 'totalOrders' | 'entregados' | 'devoluciones' | 'tasaEntrega' | 'fletePromedio';
 type SortDir = 'asc' | 'desc';
 type ProdSortKey = 'name' | 'total' | 'ent' | 'percEnt' | 'can' | 'facturado';
 
 export default function CountryOperationPage() {
+    const { country } = useParams();
+    const decodedCountry = decodeURIComponent(country as string);
+    const countryName = decodedCountry.charAt(0).toUpperCase() + decodedCountry.slice(1);
+    const localCurrency = getCurrencyForCountry(countryName);
+
+    // Use the SAME data hook as the dashboard for guaranteed consistency
     const {
-        loading, rates, countryOrders,
-        localCurrency, countryName,
-    } = useCountryData();
+        loading, rawOrders, exchangeRates: rates,
+    } = useDashboardData();
 
     const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
 
@@ -118,6 +72,11 @@ export default function CountryOperationPage() {
         setSelectedProduct('Todos');
     }, [countryName]);
 
+    // All orders for this country (unfiltered by date — for product list, etc.)
+    const countryOrders = useMemo(() => {
+        return rawOrders.filter(o => isMatchingCountry((o as any).country || '', decodedCountry));
+    }, [rawOrders, decodedCountry]);
+
     // Map state
     const [activeMetric, setActiveMetric] = useState<MetricType>('tasaEntrega');
     const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
@@ -125,6 +84,8 @@ export default function CountryOperationPage() {
     // Collapsible + sort state
     const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
     const [expandedDepts, setExpandedDepts] = useState<Set<string>>(new Set());
+    const [deptTableCollapsed, setDeptTableCollapsed] = useState(true);
+    const [prodTableCollapsed, setProdTableCollapsed] = useState(true);
     const [deptSort, setDeptSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'totalOrders', dir: 'desc' });
     const [prodSort, setProdSort] = useState<{ key: ProdSortKey; dir: SortDir }>({ key: 'total', dir: 'desc' });
 
@@ -136,6 +97,9 @@ export default function CountryOperationPage() {
     const [carrierForm, setCarrierForm] = useState({
         carrierName: '', coverageCities: '', avgDeliveryDays: 3, costPerKg: 0, isActive: true,
     });
+
+    // Transportadora filter for map
+    const [selectedCarrier, setSelectedCarrier] = useState<string>('Todas');
 
     const countryCode = getCountryCode(countryName);
 
@@ -184,9 +148,23 @@ export default function CountryOperationPage() {
         setShowCarrierForm(true);
     }
 
-    // Apply global filters: date + product
+    // Apply global filters: date + product — uses parseDropiDate (same as dashboard)
     const filteredOrders = useMemo(() => {
-        let orders = filterByGlobalDate(countryOrders, dateRange, startDateCustom, endDateCustom);
+        let startDate = getStartDateForRange(dateRange);
+        let endDate = getEndDateForRange(dateRange);
+        if (dateRange === 'Personalizado' && startDateCustom && endDateCustom) {
+            startDate = new Date(startDateCustom + 'T00:00:00');
+            endDate = new Date(endDateCustom + 'T23:59:59');
+        }
+
+        let orders = dateRange === 'Todos'
+            ? countryOrders
+            : countryOrders.filter(o => {
+                const d = parseDropiDate(o.FECHA);
+                if (!d || d.getTime() === 0) return false;
+                return d >= startDate && d <= endDate;
+            });
+
         if (selectedProduct && selectedProduct !== 'Todos') {
             orders = orders.filter(o => o.PRODUCTO === selectedProduct);
         }
@@ -200,13 +178,13 @@ export default function CountryOperationPage() {
         return ['Todos', ...Array.from(products).sort()];
     }, [countryOrders]);
 
-    // Status stats (cancelado separate from the 100%)
+    // Status stats — deduplicate by order ID (multi-item orders share same ID)
     const statusStats = useMemo(() => {
-        const entregados = filteredOrders.filter(o => isEntregado(o.ESTATUS)).length;
-        const cancelados = filteredOrders.filter(o => isCancelado(o.ESTATUS)).length;
-        const transito = filteredOrders.filter(o => isTransit(o.ESTATUS)).length;
-        const devoluciones = filteredOrders.filter(o => isDevolucion(o.ESTATUS)).length;
-        const total = filteredOrders.length || 1;
+        const entregados = new Set(filteredOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+        const cancelados = new Set(filteredOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+        const transito = new Set(filteredOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+        const devoluciones = new Set(filteredOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+        const total = new Set(filteredOrders.map(o => o.ID)).size || 1;
         const noCancelados = total - cancelados || 1;
         return {
             entregados, cancelados, transito, devoluciones, total, noCancelados,
@@ -219,13 +197,19 @@ export default function CountryOperationPage() {
         };
     }, [filteredOrders]);
 
-    // Recaudo stats
+    // Recaudo stats — deduplicate by order ID
     const recaudoStats = useMemo(() => {
-        const total = filteredOrders.length || 1;
-        const conRecaudo = filteredOrders.filter(o => {
-            const r = (o.RECAUDO || '').toLowerCase().trim();
-            return r && r !== '' && r !== 'sin recaudo' && r !== 'no' && r !== 'undefined' && r !== 'null';
-        }).length;
+        const orderRecaudo = new Map<string, string>();
+        filteredOrders.forEach(o => {
+            if (o.ID && !orderRecaudo.has(o.ID)) {
+                orderRecaudo.set(o.ID, (o.RECAUDO || '').toLowerCase().trim());
+            }
+        });
+        const total = orderRecaudo.size || 1;
+        let conRecaudo = 0;
+        orderRecaudo.forEach(r => {
+            if (r && r !== '' && r !== 'sin recaudo' && r !== 'no' && r !== 'undefined' && r !== 'null') conRecaudo++;
+        });
         const sinRecaudo = total - conRecaudo;
         return {
             conRecaudo,
@@ -246,13 +230,15 @@ export default function CountryOperationPage() {
             carrierMap.get(key)!.push(o);
         }
         return Array.from(carrierMap.entries()).map(([name, orders]) => {
-            const total = orders.length;
-            const ent = orders.filter(o => isEntregado(o.ESTATUS)).length;
-            const dev = orders.filter(o => isDevolucion(o.ESTATUS)).length;
-            const tra = orders.filter(o => isTransit(o.ESTATUS)).length;
-            const can = orders.filter(o => isCancelado(o.ESTATUS)).length;
+            const total = new Set(orders.map(o => o.ID)).size;
+            const ent = new Set(orders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+            const dev = new Set(orders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+            const tra = new Set(orders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+            const can = new Set(orders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
             const nc = total - can || 1;
-            const flete = orders.reduce((s, o) => s + (o['PRECIO FLETE'] || 0), 0);
+            const seenFl = new Set<string>();
+            let flete = 0;
+            orders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); flete += o['PRECIO FLETE'] || 0; } });
             return {
                 name,
                 total,
@@ -267,17 +253,33 @@ export default function CountryOperationPage() {
         }).sort((a, b) => b.total - a.total);
     }, [filteredOrders]);
 
-    // Department metrics
-    const departmentMetrics = useMemo(() => {
-        if (filteredOrders.length === 0) return [];
-        return aggregateByDepartment(filteredOrders, countryCode);
-    }, [filteredOrders, countryCode]);
+    // Available carriers from order data (for map filter)
+    const availableCarriers = useMemo(() => {
+        const set = new Set<string>();
+        filteredOrders.forEach(o => {
+            const t = (o.TRANSPORTADORA || '').trim().toUpperCase();
+            if (t && t !== 'UNDEFINED' && t !== 'NULL') set.add(t);
+        });
+        return ['Todas', ...Array.from(set).sort()];
+    }, [filteredOrders]);
 
-    // City breakdown for selected dept
+    // Orders filtered by selected carrier (for map + dept metrics)
+    const carrierFilteredOrders = useMemo(() => {
+        if (selectedCarrier === 'Todas') return filteredOrders;
+        return filteredOrders.filter(o => (o.TRANSPORTADORA || '').trim().toUpperCase() === selectedCarrier);
+    }, [filteredOrders, selectedCarrier]);
+
+    // Department metrics (respects carrier filter)
+    const departmentMetrics = useMemo(() => {
+        if (carrierFilteredOrders.length === 0) return [];
+        return aggregateByDepartment(carrierFilteredOrders, countryCode);
+    }, [carrierFilteredOrders, countryCode]);
+
+    // City breakdown for selected dept (respects carrier filter)
     const cityBreakdown = useMemo(() => {
-        if (!selectedDepartment || filteredOrders.length === 0) return [];
-        return aggregateByCityInDepartment(filteredOrders, selectedDepartment, countryCode);
-    }, [selectedDepartment, filteredOrders, countryCode]);
+        if (!selectedDepartment || carrierFilteredOrders.length === 0) return [];
+        return aggregateByCityInDepartment(carrierFilteredOrders, selectedDepartment, countryCode);
+    }, [selectedDepartment, carrierFilteredOrders, countryCode]);
 
     const selectedDeptMetrics = selectedDepartment
         ? departmentMetrics.find(d => d.code === selectedDepartment)
@@ -295,9 +297,9 @@ export default function CountryOperationPage() {
         }
         const all = Array.from(cityMap.entries()).map(([, orders]) => {
             const name = orders[0].CIUDAD || orders[0]['CIUDAD DESTINO'] || 'Desconocida';
-            const total = orders.length;
-            const ent = orders.filter(o => isEntregado(o.ESTATUS)).length;
-            const can = orders.filter(o => isCancelado(o.ESTATUS)).length;
+            const total = new Set(orders.map(o => o.ID)).size;
+            const ent = new Set(orders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+            const can = new Set(orders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
             const nc = total - can || 1;
             return { city: name, total, ent, can, tasaEntrega: (ent / nc) * 100 };
         }).filter(c => c.total >= 3); // minimum 3 orders to be relevant
@@ -316,15 +318,39 @@ export default function CountryOperationPage() {
             productsMap[p].push(o);
         });
         return Object.entries(productsMap).map(([name, orders]) => {
-            const ent = orders.filter(o => isEntregado(o.ESTATUS)).length;
-            const can = orders.filter(o => isCancelado(o.ESTATUS)).length;
-            const tra = orders.filter(o => isTransit(o.ESTATUS)).length;
-            const dev = orders.filter(o => isDevolucion(o.ESTATUS)).length;
-            const nc = orders.length - can || 1;
+            const ent = new Set(orders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+            const can = new Set(orders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+            const tra = new Set(orders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+            const dev = new Set(orders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+            const total = new Set(orders.map(o => o.ID)).size;
+            const nc = total - can || 1;
             const percEnt = (ent / nc) * 100;
-            const facturado = orders.filter(o => isEntregado(o.ESTATUS)).reduce((sum, o) => sum + (o["TOTAL DE LA ORDEN"] || 0), 0);
-            const fleteTotal = orders.reduce((sum, o) => sum + (o["PRECIO FLETE"] || 0), 0);
-            return { name, total: orders.length, ent, can, tra, dev, percEnt, facturado, fleteTotal, orders };
+
+            // Dedup financial sums by order ID
+            const seenFact = new Set<string>();
+            let facturado = 0;
+            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenFact.has(o.ID)) { seenFact.add(o.ID); facturado += o["TOTAL DE LA ORDEN"] || 0; } });
+
+            const seenFl = new Set<string>();
+            let fleteTotal = 0;
+            orders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); fleteTotal += o["PRECIO FLETE"] || 0; } });
+
+            // Utilidad real: ingreso entregado - costo producto - flete entrega - flete devolución
+            let costoProducto = 0;
+            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { costoProducto += o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0; });
+            const seenFlEnt = new Set<string>();
+            let fleteEnt = 0;
+            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenFlEnt.has(o.ID)) { seenFlEnt.add(o.ID); fleteEnt += o["PRECIO FLETE"] || 0; } });
+            const seenFlDev = new Set<string>();
+            let fleteDev = 0;
+            orders.filter(o => isDevolucion(o.ESTATUS)).forEach(o => { if (o.ID && !seenFlDev.has(o.ID)) { seenFlDev.add(o.ID); fleteDev += o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0; } });
+            const utilReal = facturado - costoProducto - fleteEnt - fleteDev;
+
+            // Utilidad proyectada: if transit orders deliver at current avg margin
+            const avgUtilPerEnt = ent > 0 ? utilReal / ent : 0;
+            const utilProyectada = utilReal + (tra * avgUtilPerEnt);
+
+            return { name, total, ent, can, tra, dev, percEnt, facturado, fleteTotal, utilReal, utilProyectada, orders };
         });
     }, [filteredOrders]);
 
@@ -361,13 +387,15 @@ export default function CountryOperationPage() {
                 const city = (o.CIUDAD || o['CIUDAD DESTINO'] || '').toLowerCase().trim();
                 return coverageSet.has(city);
             });
-            const total = matchingOrders.length;
-            const ent = matchingOrders.filter(o => isEntregado(o.ESTATUS)).length;
-            const dev = matchingOrders.filter(o => isDevolucion(o.ESTATUS)).length;
-            const tra = matchingOrders.filter(o => isTransit(o.ESTATUS)).length;
-            const can = matchingOrders.filter(o => isCancelado(o.ESTATUS)).length;
+            const total = new Set(matchingOrders.map(o => o.ID)).size;
+            const ent = new Set(matchingOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size;
+            const dev = new Set(matchingOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
+            const tra = new Set(matchingOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+            const can = new Set(matchingOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
             const nc = total - can || 1;
-            const flete = matchingOrders.reduce((s, o) => s + (o['PRECIO FLETE'] || 0), 0);
+            const seenFl = new Set<string>();
+            let flete = 0;
+            matchingOrders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); flete += o['PRECIO FLETE'] || 0; } });
             return {
                 ...carrier,
                 kpi: {
@@ -380,13 +408,23 @@ export default function CountryOperationPage() {
         });
     }, [carriers, filteredOrders]);
 
-    const totalFacturado = useMemo(() =>
-        filteredOrders.filter(o => isEntregado(o.ESTATUS)).reduce((sum, o) => sum + (o["TOTAL DE LA ORDEN"] || 0), 0),
-    [filteredOrders]);
+    const totalFacturado = useMemo(() => {
+        const seen = new Set<string>();
+        let sum = 0;
+        filteredOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => {
+            if (o.ID && !seen.has(o.ID)) { seen.add(o.ID); sum += o["TOTAL DE LA ORDEN"] || 0; }
+        });
+        return sum;
+    }, [filteredOrders]);
 
     const avgFlete = useMemo(() => {
-        if (filteredOrders.length === 0) return 0;
-        return filteredOrders.reduce((sum, o) => sum + (o["PRECIO FLETE"] || 0), 0) / filteredOrders.length;
+        const seen = new Set<string>();
+        let sum = 0;
+        filteredOrders.forEach(o => {
+            if (o.ID && !seen.has(o.ID)) { seen.add(o.ID); sum += o["PRECIO FLETE"] || 0; }
+        });
+        const uniqueCount = seen.size;
+        return uniqueCount > 0 ? sum / uniqueCount : 0;
     }, [filteredOrders]);
 
     const toggleProduct = (name: string) => {
@@ -600,17 +638,32 @@ export default function CountryOperationPage() {
                             <MapPin className="w-4 h-4 text-accent" />
                             <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Mapa Logístico <InfoTooltip text="Visualización geográfica de métricas por departamento. Cambia la métrica para ver tasa de entrega, flete promedio u otras." /></h3>
                         </div>
-                        <div className="flex items-center gap-1 bg-hover-bg p-1 rounded-lg border border-card-border">
-                            {([
-                                { key: 'tasaEntrega' as MetricType, label: 'Entrega' },
-                                { key: 'fletePromedio' as MetricType, label: 'Flete' },
-                                { key: 'tasaDevolucion' as MetricType, label: 'Devolución' },
-                            ]).map(({ key, label }) => (
-                                <button key={key} onClick={() => setActiveMetric(key)}
-                                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${activeMetric === key ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-foreground'}`}>
-                                    {label}
-                                </button>
-                            ))}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Metric selector */}
+                            <div className="flex items-center gap-1 bg-hover-bg p-1 rounded-lg border border-card-border">
+                                {([
+                                    { key: 'tasaEntrega' as MetricType, label: 'Entrega' },
+                                    { key: 'fletePromedio' as MetricType, label: 'Flete' },
+                                    { key: 'tasaDevolucion' as MetricType, label: 'Devolución' },
+                                ]).map(({ key, label }) => (
+                                    <button key={key} onClick={() => setActiveMetric(key)}
+                                        className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${activeMetric === key ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-foreground'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                            {/* Carrier filter */}
+                            {availableCarriers.length > 2 && (
+                                <select
+                                    value={selectedCarrier}
+                                    onChange={e => setSelectedCarrier(e.target.value)}
+                                    className="bg-hover-bg border border-card-border rounded-lg px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-foreground cursor-pointer"
+                                >
+                                    {availableCarriers.map(c => (
+                                        <option key={c} value={c}>{c === 'Todas' ? '🚚 Todas' : c}</option>
+                                    ))}
+                                </select>
+                            )}
                         </div>
                     </div>
                     <div className="max-h-[480px] overflow-hidden flex items-center justify-center">
@@ -679,12 +732,16 @@ export default function CountryOperationPage() {
 
             {/* === ROW 4: Department Ranking Table (sortable + collapsible) === */}
             <div className="bg-card rounded-2xl border border-card-border overflow-hidden shadow-xl">
-                <div className="p-5 border-b border-card-border bg-hover-bg flex items-center justify-between">
-                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Ranking de Departamentos <InfoTooltip text="Ranking de departamentos por volumen de órdenes con métricas de entrega, devolución, tránsito y flete." /></h3>
+                <button className="w-full p-5 border-b border-card-border bg-hover-bg flex items-center justify-between cursor-pointer hover:bg-hover-bg/80 transition-colors" onClick={() => setDeptTableCollapsed(!deptTableCollapsed)}>
+                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">
+                        {deptTableCollapsed ? <ChevronRight className="w-4 h-4 text-accent" /> : <ChevronDown className="w-4 h-4 text-accent" />}
+                        Ranking de Departamentos <InfoTooltip text="Ranking de departamentos por volumen de órdenes con métricas de entrega, devolución, tránsito y flete." />
+                    </h3>
                     <span className="text-xs font-bold text-muted uppercase tracking-widest">{departmentMetrics.length} regiones</span>
-                </div>
+                </button>
+                {!deptTableCollapsed && (
                 <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[750px]">
+                    <table className="w-full text-left border-collapse min-w-[850px]">
                         <thead>
                             <tr className="bg-table-header-bg">
                                 <th className="px-5 py-3 border-b border-card-border w-8"></th>
@@ -706,12 +763,15 @@ export default function CountryOperationPage() {
                                 <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-right cursor-pointer select-none" onClick={() => toggleDeptSort('fletePromedio')}>
                                     Flete Prom <SortIcon sortKey="fletePromedio" currentSort={deptSort} />
                                 </th>
+                                <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-right">
+                                    Ingreso
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-card-border">
                             {sortedDepts.map((dept) => {
                                 const isExpanded = expandedDepts.has(dept.code);
-                                const deptCities = isExpanded ? aggregateByCityInDepartment(filteredOrders, dept.code, countryCode) : [];
+                                const deptCities = isExpanded ? aggregateByCityInDepartment(carrierFilteredOrders, dept.code, countryCode) : [];
                                 return (
                                     <React.Fragment key={dept.code}>
                                         <tr className={`hover:bg-hover-bg transition-colors cursor-pointer ${selectedDepartment === dept.code ? 'bg-accent/5' : ''}`} onClick={() => toggleDept(dept.code)}>
@@ -726,6 +786,7 @@ export default function CountryOperationPage() {
                                                 <span className={`text-sm font-black font-mono ${deliveryColor(dept.tasaEntrega)}`}>{dept.tasaEntrega.toFixed(1)}%</span>
                                             </td>
                                             <td className="px-3 py-3 text-right font-mono text-sm text-cyan-400 font-bold">{formatCurrency(dept.fletePromedio, 'COP')}</td>
+                                            <td className="px-3 py-3 text-right font-mono text-sm text-emerald-400 font-bold">{formatCurrency(dept.ingresoTotal, 'COP')}</td>
                                         </tr>
                                         {isExpanded && deptCities.map((city, ci) => (
                                             <tr key={`${dept.code}-${ci}`} className="bg-hover-bg/50">
@@ -736,6 +797,7 @@ export default function CountryOperationPage() {
                                                 <td className="px-3 py-2 text-center font-mono text-xs text-orange-400/60">{city.devoluciones}</td>
                                                 <td className="px-3 py-2 text-center"><span className={`text-xs font-bold font-mono ${deliveryColor(city.tasaEntrega)}`}>{city.tasaEntrega.toFixed(1)}%</span></td>
                                                 <td className="px-3 py-2 text-right font-mono text-xs text-cyan-400/70">{formatCurrency(city.fletePromedio, 'COP')}</td>
+                                                <td className="px-3 py-2"></td>
                                             </tr>
                                         ))}
                                     </React.Fragment>
@@ -744,16 +806,21 @@ export default function CountryOperationPage() {
                         </tbody>
                     </table>
                 </div>
+                )}
             </div>
 
             {/* === ROW 5: Product Summary Table (sortable + collapsible) === */}
             <div className="bg-card rounded-2xl border border-card-border overflow-hidden shadow-xl">
-                <div className="p-5 border-b border-card-border bg-hover-bg flex items-center justify-between">
-                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">Resumen por Producto <InfoTooltip text="Desglose de cada producto con métricas de entrega, cancelación, flete y valor promedio de venta." /></h3>
+                <button className="w-full p-5 border-b border-card-border bg-hover-bg flex items-center justify-between cursor-pointer hover:bg-hover-bg/80 transition-colors" onClick={() => setProdTableCollapsed(!prodTableCollapsed)}>
+                    <h3 className="text-xs font-black text-foreground uppercase tracking-widest flex items-center gap-1.5">
+                        {prodTableCollapsed ? <ChevronRight className="w-4 h-4 text-accent" /> : <ChevronDown className="w-4 h-4 text-accent" />}
+                        Resumen por Producto <InfoTooltip text="Desglose de cada producto con métricas de entrega, cancelación, flete, utilidad real y proyectada." />
+                    </h3>
                     <span className="text-xs font-bold text-muted uppercase tracking-widest">{productBreakdown.length} productos</span>
-                </div>
+                </button>
+                {!prodTableCollapsed && (
                 <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[850px]">
+                    <table className="w-full text-left border-collapse min-w-[1050px]">
                         <thead>
                             <tr className="bg-table-header-bg">
                                 <th className="px-5 py-3 border-b border-card-border w-8"></th>
@@ -775,6 +842,12 @@ export default function CountryOperationPage() {
                                 <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-center">Trá</th>
                                 <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-right cursor-pointer select-none" onClick={() => toggleProdSort('facturado')}>
                                     Facturado <SortIcon sortKey="facturado" currentSort={prodSort} />
+                                </th>
+                                <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-right">
+                                    Util. Real
+                                </th>
+                                <th className="px-3 py-3 text-xs font-bold text-muted uppercase tracking-widest border-b border-card-border text-right">
+                                    Util. Proy.
                                 </th>
                             </tr>
                         </thead>
@@ -810,10 +883,16 @@ export default function CountryOperationPage() {
                                             <td className="px-3 py-3 text-right font-mono text-sm text-foreground font-bold">
                                                 {rates ? formatDualCurrency(prod.facturado, localCurrency, rates).primary : '—'}
                                             </td>
+                                            <td className={`px-3 py-3 text-right font-mono text-sm font-bold ${prod.utilReal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {formatCurrency(prod.utilReal, 'COP')}
+                                            </td>
+                                            <td className={`px-3 py-3 text-right font-mono text-sm font-bold ${prod.utilProyectada >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
+                                                {formatCurrency(prod.utilProyectada, 'COP')}
+                                            </td>
                                         </tr>
                                         {isExpanded && (
                                             <tr className="bg-hover-bg/50">
-                                                <td colSpan={8} className="px-8 py-4">
+                                                <td colSpan={10} className="px-8 py-4">
                                                     <div className="flex flex-col md:flex-row gap-6">
                                                         <div className="flex-1 space-y-2">
                                                             <p className="text-xs font-bold text-muted uppercase tracking-widest mb-2">Desglose de Estados</p>
@@ -850,6 +929,7 @@ export default function CountryOperationPage() {
                         </tbody>
                     </table>
                 </div>
+                )}
             </div>
         </div>
     );

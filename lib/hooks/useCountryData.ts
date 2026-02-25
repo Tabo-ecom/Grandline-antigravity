@@ -12,6 +12,7 @@ import {
 } from '@/lib/utils/currency';
 import { listAdSpends, AdSpend } from '@/lib/services/marketing';
 import { isEntregado, isCancelado, isTransit, isDevolucion } from '@/lib/utils/status';
+import { getDashboardCache } from './useDashboardData';
 
 export type DateRangeOption = 'Últimos 3 Días' | 'Últimos 7 Días' | 'Últimos 30 Días' | 'Todos';
 
@@ -52,12 +53,32 @@ export function useCountryData() {
     const localCurrency = getCurrencyForCountry(countryName);
 
     // Load order data + exchange rates
+    // Prefer dashboard session cache when available for data consistency
     useEffect(() => {
         if (!effectiveUid) return;
 
         async function loadData() {
             setLoading(true);
             try {
+                // Try to use dashboard's session cache first (same data, guaranteed consistency)
+                const cache = getDashboardCache();
+                if (cache && cache.uid === effectiveUid) {
+                    setRates(cache.rates);
+
+                    // Dashboard orders already have .country set via getOfficialCountryName
+                    // and all financial fields converted to COP
+                    const uniqueCountries = new Set(cache.orders.map(o => (o as any).country));
+                    setTotalActiveCountries(uniqueCountries.size || 1);
+
+                    const countryFiltered = cache.orders.filter(o =>
+                        isMatchingCountry((o as any).country || '', decodedCountry)
+                    );
+                    setCountryOrders(countryFiltered);
+                    setLoading(false);
+                    return;
+                }
+
+                // Fallback: fresh Firestore query (when navigating directly to territory)
                 const [files, exchangeRates] = await Promise.all([
                     getAllOrderFiles(effectiveUid!),
                     fetchExchangeRates()
@@ -76,7 +97,7 @@ export function useCountryData() {
 
                 const allCountryOrders: DropiOrder[] = [];
                 matchingFiles.forEach(file => {
-                    if (file.orders) {
+                    if (file.orders && Array.isArray(file.orders)) {
                         const currency = getCurrencyForCountry(file.country || decodedCountry);
                         const normalized = file.orders.map((o: DropiOrder) => ({
                             ...o,

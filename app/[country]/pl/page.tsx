@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useMemo, useEffect } from 'react';
-import { useCountryData } from '@/lib/hooks/useCountryData';
+import { useParams } from 'next/navigation';
+import { useDashboardData } from '@/lib/hooks/useDashboardData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import FilterHeader from '@/components/FilterHeader';
-import { formatCurrency, formatDualCurrency } from '@/lib/utils/currency';
+import { formatCurrency, formatDualCurrency, isMatchingCountry, getCurrencyForCountry, toCOP } from '@/lib/utils/currency';
 import { DropiOrder, calculateKPIs } from '@/lib/calculations/kpis';
+import { parseDropiDate, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
 import InfoTooltip from '@/components/common/InfoTooltip';
 import {
     CircleDollarSign,
@@ -22,7 +24,6 @@ import {
     Minus,
 } from 'lucide-react';
 import { isEntregado, isDevolucion } from '@/lib/utils/status';
-import { parseISO, subDays, startOfDay, endOfDay, startOfMonth, subMonths } from 'date-fns';
 import {
     BarChart,
     Bar,
@@ -43,58 +44,6 @@ function fmtCompact(value: number): string {
     if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
     if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
     return `$${value.toFixed(0)}`;
-}
-
-function filterByGlobalDate(
-    orders: DropiOrder[],
-    dateRange: string,
-    startCustom: string,
-    endCustom: string
-): DropiOrder[] {
-    const now = new Date();
-    let start: Date | null = null;
-    let end: Date | null = null;
-
-    switch (dateRange) {
-        case 'Hoy':
-            start = startOfDay(now); end = endOfDay(now); break;
-        case 'Ayer':
-            start = startOfDay(subDays(now, 1)); end = endOfDay(subDays(now, 1)); break;
-        case 'Últimos 3 Días':
-            start = startOfDay(subDays(now, 3)); break;
-        case 'Últimos 7 Días':
-            start = startOfDay(subDays(now, 7)); break;
-        case 'Últimos 30 Días':
-            start = startOfDay(subDays(now, 30)); break;
-        case 'Este Mes':
-            start = startOfMonth(now); break;
-        case 'Mes Pasado': {
-            const lastMonth = subMonths(now, 1);
-            start = startOfMonth(lastMonth); end = startOfMonth(now); break;
-        }
-        case 'Personalizado':
-            if (startCustom) start = parseISO(startCustom);
-            if (endCustom) end = endOfDay(parseISO(endCustom));
-            break;
-        case 'Todos': default: return orders;
-    }
-
-    return orders.filter(o => {
-        const dateStr = o.FECHA;
-        if (!dateStr) return false;
-        let d: Date;
-        if (typeof dateStr === 'string' && dateStr.includes('/')) {
-            const parts = dateStr.split(' ')[0].split('/');
-            if (parts.length === 3) {
-                const [day, m, y] = parts;
-                d = new Date(parseInt(y), parseInt(m) - 1, parseInt(day));
-            } else return false;
-        } else { d = new Date(dateStr); }
-        if (isNaN(d.getTime())) return false;
-        if (start && d < start) return false;
-        if (end && d > end) return false;
-        return true;
-    });
 }
 
 // Custom waterfall tooltip
@@ -127,11 +76,16 @@ function WaterfallTooltip({ active, payload }: any) {
 }
 
 export default function CountryPLPage() {
+    const { country } = useParams();
+    const decodedCountry = decodeURIComponent(country as string);
+    const countryName = decodedCountry.charAt(0).toUpperCase() + decodedCountry.slice(1);
+    const localCurrency = getCurrencyForCountry(countryName);
+
+    // Use the SAME data hook as the dashboard for guaranteed consistency
     const {
-        loading, rates, countryOrders,
-        localCurrency, countryName,
-        calculatedAdSpend,
-    } = useCountryData();
+        loading, rawOrders, exchangeRates: rates,
+        filteredAds, kpis: dashboardKpis,
+    } = useDashboardData();
 
     const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
 
@@ -141,8 +95,28 @@ export default function CountryPLPage() {
         setSelectedProduct('Todos');
     }, [countryName]);
 
+    // All orders for this country (unfiltered by date)
+    const countryOrders = useMemo(() => {
+        return rawOrders.filter(o => isMatchingCountry((o as any).country || '', decodedCountry));
+    }, [rawOrders, decodedCountry]);
+
+    // Apply global filters using parseDropiDate (same as dashboard)
     const filteredOrders = useMemo(() => {
-        let orders = filterByGlobalDate(countryOrders, dateRange, startDateCustom, endDateCustom);
+        let startDate = getStartDateForRange(dateRange);
+        let endDate = getEndDateForRange(dateRange);
+        if (dateRange === 'Personalizado' && startDateCustom && endDateCustom) {
+            startDate = new Date(startDateCustom + 'T00:00:00');
+            endDate = new Date(endDateCustom + 'T23:59:59');
+        }
+
+        let orders = dateRange === 'Todos'
+            ? countryOrders
+            : countryOrders.filter(o => {
+                const d = parseDropiDate(o.FECHA);
+                if (!d || d.getTime() === 0) return false;
+                return d >= startDate && d <= endDate;
+            });
+
         if (selectedProduct && selectedProduct !== 'Todos') {
             orders = orders.filter(o => o.PRODUCTO === selectedProduct);
         }
@@ -154,6 +128,9 @@ export default function CountryPLPage() {
         countryOrders.forEach(o => { if (o.PRODUCTO) products.add(o.PRODUCTO); });
         return ['Todos', ...Array.from(products).sort()];
     }, [countryOrders]);
+
+    // Use dashboard's pre-computed ad spend (already split by country/product)
+    const calculatedAdSpend = dashboardKpis?.g_ads || 0;
 
     const kpis = useMemo(() => {
         if (filteredOrders.length === 0 || !rates) return null;
@@ -642,6 +619,89 @@ export default function CountryPLPage() {
                     );
                 })()}
             </div>
+
+            {/* ===== SECTION 4b: Unit Economics Grid ===== */}
+            {kpis && kpis.n_ent > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                    {/* AOV (Average Order Value) */}
+                    <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">AOV</span>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10">
+                                <Receipt className="w-3.5 h-3.5 text-blue-400" />
+                            </div>
+                        </div>
+                        <p className="text-xl font-black tracking-tight font-mono text-blue-400">{formatCurrency(kpis.ing_real / kpis.n_ent, 'COP')}</p>
+                        <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">Ing. Real / Entregas</p>
+                    </div>
+
+                    {/* Avg Product Cost */}
+                    <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Costo Prom.</span>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-red-500/10">
+                                <Minus className="w-3.5 h-3.5 text-red-400" />
+                            </div>
+                        </div>
+                        <p className="text-xl font-black tracking-tight font-mono text-red-400">{formatCurrency(kpis.cpr / kpis.n_ent, 'COP')}</p>
+                        <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">COGS / Entregas</p>
+                    </div>
+
+                    {/* Avg Freight (Entrega) */}
+                    <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Flete Ent.</span>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-cyan-500/10">
+                                <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+                            </div>
+                        </div>
+                        <p className="text-xl font-black tracking-tight font-mono text-cyan-400">{formatCurrency(kpis.fl_ent / kpis.n_ent, 'COP')}</p>
+                        <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">Flete / Entregas</p>
+                    </div>
+
+                    {/* Avg Freight (Devolución) */}
+                    <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Flete Dev.</span>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-500/10">
+                                <RotateCcw className="w-3.5 h-3.5 text-orange-400" />
+                            </div>
+                        </div>
+                        <p className="text-xl font-black tracking-tight font-mono text-orange-400">{formatCurrency(kpis.n_dev > 0 ? kpis.fl_dev / kpis.n_dev : 0, 'COP')}</p>
+                        <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">Flete / Devoluciones</p>
+                    </div>
+
+                    {/* Gross Margin per unit */}
+                    {(() => {
+                        const margin = (kpis.ing_real - kpis.cpr) / kpis.n_ent;
+                        const color = margin > 30000 ? 'emerald' : margin > 10000 ? 'amber' : 'red';
+                        return (
+                            <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-black text-muted uppercase tracking-widest">Margen Bruto</span>
+                                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
+                                        <TrendingUp className={`w-3.5 h-3.5 text-${color}-400`} />
+                                    </div>
+                                </div>
+                                <p className={`text-xl font-black tracking-tight font-mono text-${color}-400`}>{formatCurrency(margin, 'COP')}</p>
+                                <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">(AOV - COGS) / Ent</p>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Facturación Neta / Orden */}
+                    <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Fact/Orden</span>
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10">
+                                <Receipt className="w-3.5 h-3.5 text-violet-400" />
+                            </div>
+                        </div>
+                        <p className="text-xl font-black tracking-tight font-mono text-violet-400">{formatCurrency(kpis.n_nc > 0 ? kpis.fact_neto / kpis.n_nc : 0, 'COP')}</p>
+                        <p className="text-[10px] text-muted mt-1 uppercase tracking-wider">Fact. Neta / No-Can</p>
+                    </div>
+                </div>
+            )}
 
             {/* ===== SECTION 5: Top & Bottom Products ===== */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
