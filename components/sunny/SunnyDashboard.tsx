@@ -30,7 +30,7 @@ export const SunnyDashboard: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                             <h3 className="text-3xl font-black italic tracking-tighter font-mono">{stat.value}</h3>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-muted flex items-center gap-1">{stat.label} <InfoTooltip text={stat.tooltip} /></p>
+                            <div className="text-[10px] font-black uppercase tracking-widest text-muted flex items-center gap-1">{stat.label} <InfoTooltip text={stat.tooltip} /></div>
                         </div>
                     </div>
                 ))}

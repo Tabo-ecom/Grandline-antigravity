@@ -427,7 +427,7 @@ export default function CountryOperationPage() {
             <div className="bg-card rounded-2xl border border-card-border shadow-lg overflow-hidden">
                 {/* Status Distribution Bar */}
                 <div className="p-5 border-b border-card-border">
-                    <p className="text-xs font-bold text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">Distribución de Estados <span className="text-muted/50">(sin cancelados)</span> <InfoTooltip text="Proporción de órdenes despachadas según su estado actual: entregadas, en tránsito o devueltas. No incluye canceladas." /></p>
+                    <div className="text-xs font-bold text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">Distribución de Estados <span className="text-muted/50">(sin cancelados)</span> <InfoTooltip text="Proporción de órdenes despachadas según su estado actual: entregadas, en tránsito o devueltas. No incluye canceladas." /></div>
                     <div className="flex h-9 rounded-lg overflow-hidden gap-0.5 mb-3">
                         {[
                             { label: 'Entregado', count: statusStats.entregados, perc: statusStats.percents.entregados, bg: 'bg-emerald-500' },
