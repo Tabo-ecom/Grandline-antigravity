@@ -532,13 +532,17 @@ export default function LogPosePage() {
                                         <BarChart3 className="w-4 h-4 text-accent" /> Desglose de Proyeccion P&L <InfoTooltip text="Cascada de pérdidas y ganancias: desde ventas totales hasta utilidad neta, pasando por cancelaciones, devoluciones y costos." />
                                     </h3>
 
-                                    {/* Orders funnel */}
-                                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-                                        <FunnelStep label="Ventas Totales" value={projection.ventasTotales} unit="uds" color="text-foreground" />
-                                        <FunnelStep label="Canceladas" value={projection.canceladas} unit="uds" color="text-amber-400" prefix="-" />
-                                        <FunnelStep label="Despachadas" value={projection.despachadas} unit="uds" color="text-blue-400" />
-                                        <FunnelStep label="Entregadas" value={projection.entregadas} unit="uds" color="text-emerald-400" />
-                                        <FunnelStep label="No Entregadas" value={projection.noEntregadas} unit="uds" color="text-rose-400" />
+                                    {/* Orders funnel — 2 top + 3 bottom */}
+                                    <div className="mb-6 space-y-2">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <FunnelStep label="Ventas Totales" value={projection.ventasTotales} unit="órdenes" color="text-foreground" size="lg" />
+                                            <FunnelStep label="Canceladas" value={projection.canceladas} unit="órdenes" color="text-amber-400" prefix="-" />
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <FunnelStep label="Despachadas" value={projection.despachadas} unit="órdenes" color="text-blue-400" />
+                                            <FunnelStep label="Entregadas" value={projection.entregadas} unit="órdenes" color="text-emerald-400" />
+                                            <FunnelStep label="No Entregadas" value={projection.noEntregadas} unit="órdenes" color="text-rose-400" />
+                                        </div>
                                     </div>
 
                                     {/* Financial waterfall */}
@@ -793,14 +797,16 @@ function NumberInput({ label, value, icon: Icon, iconColor, onChange }: {
     );
 }
 
-function FunnelStep({ label, value, unit, color, prefix = '' }: {
-    label: string; value: number; unit: string; color: string; prefix?: string;
+function FunnelStep({ label, value, unit, color, prefix = '', size = 'sm' }: {
+    label: string; value: number; unit: string; color: string; prefix?: string; size?: 'sm' | 'lg';
 }) {
     return (
-        <div className="bg-hover-bg border border-card-border rounded-xl p-3 text-center">
-            <p className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">{label}</p>
-            <p className={`text-lg font-black ${color}`}>{prefix}{value.toLocaleString()}</p>
-            <p className="text-[9px] text-muted/60">{unit}</p>
+        <div className="bg-hover-bg border border-card-border rounded-xl px-3 py-2.5 flex items-center gap-3">
+            <p className={`${size === 'lg' ? 'text-xl' : 'text-lg'} font-black font-mono ${color} shrink-0`}>{prefix}{value.toLocaleString()}</p>
+            <div className="min-w-0">
+                <p className="text-[9px] font-bold text-muted uppercase tracking-wider truncate">{label}</p>
+                <p className="text-[9px] text-muted/50">{unit}</p>
+            </div>
         </div>
     );
 }
