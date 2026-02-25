@@ -36,7 +36,6 @@ import {
     deleteProductGroup,
     getEffectiveProductId,
     getAdSettings,
-    saveAdSpend,
     saveBulkAdSpend,
     clearAdSpendHistory,
     type BulkAdSpendRow,
@@ -655,6 +654,7 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                         let skippedZeroSpend = 0;
                         let skippedBadData = 0;
                         let mappedCount = 0;
+                        const bulkRows: BulkAdSpendRow[] = [];
 
                         for (const row of dataRows) {
                             if (!Array.isArray(row) || row.every(c => c === undefined || c === null || c === '')) {
@@ -699,12 +699,20 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                             const formattedDate = parseDate(dateStr);
                             if (!formattedDate) { skippedBadData++; continue; }
 
-                            await saveAdSpend(
-                                rowTargetCountry, formattedDate, spend, rowCurrency,
-                                'tiktok', 'global', cleanName, effectiveUid || '',
-                                'api', 'admin', {}, importId
-                            );
+                            bulkRows.push({
+                                country: rowTargetCountry,
+                                date: formattedDate,
+                                amount: spend,
+                                currency: rowCurrency,
+                                platform: 'tiktok',
+                                campaignName: cleanName,
+                                userId: effectiveUid || '',
+                            });
                             importedCount++;
+                        }
+
+                        if (bulkRows.length > 0) {
+                            await saveBulkAdSpend(bulkRows);
                         }
 
                         if (importedCount > 0) {
