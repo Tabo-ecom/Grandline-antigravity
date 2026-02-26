@@ -902,19 +902,19 @@ export default function GlobalDashboard() {
                         {(() => {
                             const totalOrders = logisticStats.entregados + logisticStats.transito + logisticStats.devoluciones + logisticStats.cancelados;
                             const cancelPct = totalOrders > 0 ? ((logisticStats.cancelados / totalOrders) * 100) : 0;
-                            const cancelBg = cancelPct <= 10 ? 'bg-emerald-500/5 border-emerald-500/10' : cancelPct <= 15 ? 'bg-amber-500/5 border-amber-500/10' : 'bg-red-500/5 border-red-500/10';
+                            const cancelColor = cancelPct <= 10 ? { bg: 'rgba(16,185,129,0.05)', border: 'rgba(16,185,129,0.1)' } : cancelPct <= 15 ? { bg: 'rgba(245,158,11,0.05)', border: 'rgba(245,158,11,0.1)' } : { bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.1)' };
                             return (
-                                <div className={`relative z-10 mb-4 p-4 rounded-xl border ${cancelBg}`}>
+                                <div className="relative z-10 mb-4 p-4 rounded-xl" style={{ backgroundColor: cancelColor.bg, border: `1px solid ${cancelColor.border}` }}>
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-[10px] text-muted font-black uppercase tracking-widest">% Cancelación</span>
-                                        <span className={`text-2xl font-black font-mono ${getHealthColor(findTarget(kpiTargets, 'tasa_can') ? evaluateHealth(cancelPct, findTarget(kpiTargets, 'tasa_can')!) : cancelPct > 30 ? 'bad' : cancelPct > 15 ? 'warning' : 'good')}`}>
+                                        <span className="text-2xl font-black font-mono" style={{ color: cancelPct <= 10 ? '#10b981' : cancelPct <= 15 ? '#f59e0b' : '#ef4444' }}>
                                             {cancelPct.toFixed(1)}%
                                         </span>
                                     </div>
                                     <div className="h-2 bg-card-border rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full rounded-full transition-all ${({ good: 'bg-emerald-500', warning: 'bg-amber-500', bad: 'bg-red-500' })[findTarget(kpiTargets, 'tasa_can') ? evaluateHealth(cancelPct, findTarget(kpiTargets, 'tasa_can')!) : cancelPct > 30 ? 'bad' : cancelPct > 15 ? 'warning' : 'good']}`}
-                                            style={{ width: `${Math.min(cancelPct, 100)}%` }}
+                                            className="h-full rounded-full transition-all"
+                                            style={{ width: `${Math.min(cancelPct, 100)}%`, backgroundColor: cancelPct <= 10 ? '#10b981' : cancelPct <= 15 ? '#f59e0b' : '#ef4444' }}
                                         />
                                     </div>
                                     <div className="flex justify-between mt-1.5">
