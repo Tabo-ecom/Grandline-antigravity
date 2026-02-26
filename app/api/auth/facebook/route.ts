@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { encrypt } from '@/lib/api/crypto';
 
 const META_API_VERSION = 'v21.0';
-const SCOPES = 'ads_management,ads_read,business_management';
+const SCOPES = 'ads_management,ads_read';
 
 /**
  * GET /api/auth/facebook — Initiate Facebook OAuth flow
