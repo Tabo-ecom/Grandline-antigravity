@@ -27,6 +27,8 @@ import {
     Minimize2,
     Bot,
     Sparkles,
+    Trophy,
+    AlertTriangle,
 } from 'lucide-react';
 import FilterHeader from '@/components/FilterHeader';
 import InfoTooltip from '@/components/common/InfoTooltip';
@@ -144,6 +146,35 @@ export default function GlobalDashboard() {
             });
         });
         return Array.from(productMap.values()).sort((a, b) => b.orderCount - a.orderCount);
+    }, [metricsByCountry]);
+
+    // Product rankings: top 5 & bottom 5 by projected profit
+    const { topProducts, bottomProducts } = useMemo(() => {
+        const productMap = new Map<string, { name: string; orders: number; cancelCount: number; netSales: number; ads: number; projectedProfit: number }>();
+        metricsByCountry.forEach((ctry: any) => {
+            ctry.products.forEach((p: ProductMetric) => {
+                const existing = productMap.get(p.name) || { name: p.name, orders: 0, cancelCount: 0, netSales: 0, ads: 0, projectedProfit: 0 };
+                const cancelCount = p.orderCount > 0 ? Math.round(p.orderCount * p.cancelRate / 100) : 0;
+                productMap.set(p.name, {
+                    ...existing,
+                    orders: existing.orders + p.orderCount,
+                    cancelCount: existing.cancelCount + cancelCount,
+                    netSales: existing.netSales + p.netSales,
+                    ads: existing.ads + p.adSpend,
+                    projectedProfit: existing.projectedProfit + p.projectedProfit,
+                });
+            });
+        });
+        const all = Array.from(productMap.values())
+            .filter(p => p.orders > 0 || p.ads > 0)
+            .map(p => {
+                const cancelRate = p.orders > 0 ? (p.cancelCount / p.orders) * 100 : 0;
+                const cpaDesp = p.orders > 0 ? p.ads / p.orders : 0;
+                const utilPerOrder = p.orders > 0 ? p.projectedProfit / p.orders : 0;
+                return { ...p, cancelRate, cpaDesp, utilPerOrder };
+            })
+            .sort((a, b) => b.projectedProfit - a.projectedProfit);
+        return { topProducts: all.slice(0, 5), bottomProducts: all.slice(-5).reverse() };
     }, [metricsByCountry]);
 
     // VEGA quick analysis
@@ -968,6 +999,105 @@ export default function GlobalDashboard() {
                     )}
                 </div>
 
+
+                {/* Top 5 & Bottom 5 Product Rankings */}
+                {!loading && (topProducts.length > 0 || bottomProducts.length > 0) && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Top 5 */}
+                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-card-border">
+                                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                    <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+                                </div>
+                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Top 5 Productos</h3>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-[11px]">
+                                    <thead>
+                                        <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
+                                            <th className="px-4 py-2.5 text-left">Producto</th>
+                                            <th className="px-4 py-2.5 text-right">Ventas</th>
+                                            <th className="px-4 py-2.5 text-right">CPA Desp.</th>
+                                            <th className="px-4 py-2.5 text-right">Utd. Proy.</th>
+                                            <th className="px-4 py-2.5 text-right">Utd/Orden</th>
+                                            <th className="px-4 py-2.5 text-center">% Canc.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-card-border">
+                                        {topProducts.map((p, i) => (
+                                            <tr key={i} className="hover:bg-hover-bg transition-colors">
+                                                <td className="px-4 py-2.5 font-medium text-foreground truncate max-w-[180px]" title={p.name}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-black text-emerald-400 w-4">{i + 1}</span>
+                                                        <span className="truncate">{p.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
+                                                <td className="px-4 py-2.5 text-right font-mono">
+                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono">
+                                                    <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-center">
+                                                    <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Bottom 5 */}
+                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-card-border">
+                                <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                </div>
+                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Bottom 5 Productos</h3>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-[11px]">
+                                    <thead>
+                                        <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
+                                            <th className="px-4 py-2.5 text-left">Producto</th>
+                                            <th className="px-4 py-2.5 text-right">Ventas</th>
+                                            <th className="px-4 py-2.5 text-right">CPA Desp.</th>
+                                            <th className="px-4 py-2.5 text-right">Utd. Proy.</th>
+                                            <th className="px-4 py-2.5 text-right">Utd/Orden</th>
+                                            <th className="px-4 py-2.5 text-center">% Canc.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-card-border">
+                                        {bottomProducts.map((p, i) => (
+                                            <tr key={i} className="hover:bg-hover-bg transition-colors">
+                                                <td className="px-4 py-2.5 font-medium text-foreground truncate max-w-[180px]" title={p.name}>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-black text-red-400 w-4">{i + 1}</span>
+                                                        <span className="truncate">{p.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
+                                                <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
+                                                <td className="px-4 py-2.5 text-right font-mono">
+                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right font-mono">
+                                                    <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-center">
+                                                    <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <CountryTable
                     metricsByCountry={metricsByCountry}
