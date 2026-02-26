@@ -6,6 +6,7 @@
 import type { KPIResults } from '@/lib/calculations/kpis';
 import type { ExtendedDropiOrder } from '@/lib/hooks/useDashboardData';
 import { isEntregado, isCancelado, isDevolucion, isTransit } from '@/lib/utils/status';
+import { getLocalDateKey } from '@/lib/utils/date-parsers';
 
 export interface VegaDataContext {
     kpis: KPIResults | null;
@@ -251,6 +252,90 @@ export function buildDataContext(data: VegaDataContext): string {
             const profit = day.profit || day.projected_profit || 0;
             lines.push(`${date} | ${orders} | $${Math.round(sales).toLocaleString()} | $${Math.round(ads).toLocaleString()} | $${Math.round(profit).toLocaleString()}`);
         });
+    }
+
+    // Per-product daily breakdown (last 7 days) for date-specific product queries
+    if (filteredOrders && filteredOrders.length > 0) {
+        // Determine last 7 days from the data
+        const dayKeys = new Set<string>();
+        filteredOrders.forEach(o => {
+            const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
+            if (k && k !== 'unknown') dayKeys.add(k);
+        });
+        if (filteredAds) {
+            filteredAds.forEach((ad: any) => {
+                const k = ad.date ? getLocalDateKey(ad.date) : '';
+                if (k && k !== 'unknown') dayKeys.add(k);
+            });
+        }
+        const sortedDays = [...dayKeys].sort().slice(-7);
+
+        if (sortedDays.length > 0) {
+            // Build per-product-per-day stats
+            const dayProductStats: Record<string, Record<string, { name: string; orders: number; delivered: number; canceled: number; sales: number; ads: number }>> = {};
+            const seenIds: Record<string, Set<string>> = {};
+
+            sortedDays.forEach(d => { dayProductStats[d] = {}; seenIds[d] = new Set(); });
+
+            filteredOrders.forEach(o => {
+                const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
+                if (!k || !dayProductStats[k]) return;
+                const pid = o.PRODUCTO_ID?.toString() || o.PRODUCTO?.toString() || 'unknown';
+                const pName = o.PRODUCTO?.toString() || pid;
+                if (!dayProductStats[k][pid]) {
+                    dayProductStats[k][pid] = { name: pName, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
+                }
+                const orderId = o.ID?.toString() || '';
+                if (orderId && !seenIds[k].has(orderId)) {
+                    seenIds[k].add(orderId);
+                    dayProductStats[k][pid].orders++;
+                    if (isEntregado(o.ESTATUS)) dayProductStats[k][pid].delivered++;
+                    if (isCancelado(o.ESTATUS)) dayProductStats[k][pid].canceled++;
+                    if (!isCancelado(o.ESTATUS)) dayProductStats[k][pid].sales += (o["TOTAL DE LA ORDEN"] || 0);
+                }
+            });
+
+            // Add ads per product per day
+            if (filteredAds) {
+                filteredAds.forEach((ad: any) => {
+                    const k = ad.date ? getLocalDateKey(ad.date) : '';
+                    if (!k || !dayProductStats[k]) return;
+                    const pid = ad.productId?.toString() || '';
+                    if (!pid || pid === 'unmapped' || pid === 'unknown' || pid === '') return;
+                    if (!dayProductStats[k][pid]) {
+                        dayProductStats[k][pid] = { name: pid, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
+                    }
+                    dayProductStats[k][pid].ads += (ad.amount || 0);
+                });
+            }
+
+            // Format output
+            const todayKey = new Date().toISOString().slice(0, 10);
+            const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+            const yesterdayKey = yesterdayDate.toISOString().slice(0, 10);
+            const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+            lines.push('', '--- DATOS DIARIOS POR PRODUCTO (últimos 7 días — para preguntas sobre fechas específicas) ---');
+            sortedDays.forEach(dayKey => {
+                const products = dayProductStats[dayKey];
+                const entries = Object.entries(products).filter(([, s]) => s.orders > 0 || s.ads > 0);
+                if (entries.length === 0) return;
+
+                // Sort by orders descending, take top 10
+                entries.sort((a, b) => b[1].orders - a[1].orders);
+                const top = entries.slice(0, 10);
+
+                const d = new Date(dayKey + 'T12:00:00');
+                const dayLabel = dayKey === todayKey ? 'hoy' : dayKey === yesterdayKey ? 'ayer' : dayNames[d.getDay()];
+                lines.push(`== ${dayKey} (${dayLabel}) ==`);
+                top.forEach(([pid, s]) => {
+                    lines.push(`  ${s.name} (ID:${pid}): ${s.orders} órd | ${s.delivered} ent | ${s.canceled} can | Ventas: $${Math.round(s.sales).toLocaleString()} | Ads: $${Math.round(s.ads).toLocaleString()}`);
+                });
+                if (entries.length > 10) {
+                    lines.push(`  ... y ${entries.length - 10} productos más`);
+                }
+            });
+        }
     }
 
     // Berry expenses (operational costs)

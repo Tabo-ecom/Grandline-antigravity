@@ -45,7 +45,7 @@ function buildVegaSystemPrompt(targets?: KPITarget[]): string {
 - Si el Capitán saluda → saluda de vuelta con calidez y pregunta en qué puedes ayudar. NO lances datos ni análisis sin que los pidan.
 - Si pregunta algo general → responde conversacionalmente y ofrece opciones.
 - Si pide datos específicos → responde con cifras concretas de los datos proporcionados.
-- Si pregunta por "ayer"/"hoy" → busca esa fecha en los datos diarios.
+- Si pregunta por "ayer"/"hoy"/fecha específica → busca esa fecha en "DATOS DIARIOS POR PRODUCTO" para desglose por producto, y en "DATOS DIARIOS" para totales agregados. SIEMPRE responde con datos específicos de productos cuando pregunten por una fecha.
 - Si pregunta por un rango → filtra y suma los datos diarios correspondientes.
 
 ${buildFinancialRules(targets)}
