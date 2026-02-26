@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Shield, RefreshCw, Save, Loader2, CheckCircle2, Brain, Sparkles } from 'lucide-react';
+import { Shield, RefreshCw, Save, Loader2, CheckCircle2, Brain, Sparkles, FlaskConical, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { fetchMetaAdAccounts } from '@/lib/services/meta';
 import { fetchTikTokAdAccounts } from '@/lib/services/tiktok';
 import { getAdSettings, saveAdSettings } from '@/lib/services/marketing';
+import { authFetch } from '@/lib/api/client';
 
 interface AdAccount {
     id: string;
@@ -43,6 +44,12 @@ export default function SettingsPage() {
     const [ttAccounts, setTtAccounts] = useState<any[]>([]);
     const [fetchingFb, setFetchingFb] = useState(false);
     const [fetchingTt, setFetchingTt] = useState(false);
+
+    // Demo seed state
+    const [seeding, setSeeding] = useState(false);
+    const [seedResult, setSeedResult] = useState<{ email: string; password: string; stats: any } | null>(null);
+    const [seedError, setSeedError] = useState('');
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         async function loadSettings() {
@@ -98,6 +105,39 @@ export default function SettingsPage() {
             console.error('Error saving settings:', error);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSeedDemo = async () => {
+        setSeeding(true);
+        setSeedError('');
+        setSeedResult(null);
+        try {
+            const res = await authFetch('/api/seed', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error creando cuenta demo');
+            setSeedResult({ email: data.demo.email, password: data.demo.password, stats: data.demo.stats });
+        } catch (err: any) {
+            setSeedError(err.message || 'Error desconocido');
+        } finally {
+            setSeeding(false);
+        }
+    };
+
+    const handleDeleteDemo = async () => {
+        if (!confirm('¿Eliminar la cuenta demo y todos sus datos?')) return;
+        setDeleting(true);
+        setSeedError('');
+        try {
+            const res = await authFetch('/api/seed', { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error eliminando');
+            setSeedResult(null);
+            alert('Cuenta demo eliminada correctamente');
+        } catch (err: any) {
+            setSeedError(err.message || 'Error desconocido');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -383,6 +423,79 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </form>
+
+            {/* Demo Account Section */}
+            <div className="bg-card border border-card-border p-8 rounded-3xl space-y-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-3xl -mr-16 -mt-16"></div>
+                <div className="flex items-center gap-3 text-cyan-400">
+                    <FlaskConical className="w-5 h-5" />
+                    <h3 className="font-bold uppercase tracking-widest text-sm italic">Cuenta Demo</h3>
+                </div>
+                <p className="text-xs text-muted leading-relaxed">
+                    Crea una cuenta de ejemplo con datos ficticios para tutoriales y demostraciones.
+                    Genera 30 días de órdenes, publicidad, gastos y configuración completa.
+                </p>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={handleSeedDemo}
+                        disabled={seeding}
+                        className="px-6 py-3 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {seeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+                        {seeding ? 'Generando...' : 'Crear Cuenta Demo'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleDeleteDemo}
+                        disabled={deleting}
+                        className="px-6 py-3 bg-red-500/10 border border-red-500/20 text-red-400 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-red-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        {deleting ? 'Eliminando...' : 'Eliminar Demo'}
+                    </button>
+                </div>
+
+                {seedError && (
+                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
+                        {seedError}
+                    </div>
+                )}
+
+                {seedResult && (
+                    <div className="p-4 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-3">
+                        <div className="flex items-center gap-2 text-cyan-400">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span className="text-xs font-bold uppercase tracking-widest">Cuenta Demo Creada</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                            <div>
+                                <span className="text-muted block text-[10px] uppercase tracking-widest mb-1">Email</span>
+                                <span className="text-foreground font-mono">{seedResult.email}</span>
+                            </div>
+                            <div>
+                                <span className="text-muted block text-[10px] uppercase tracking-widest mb-1">Password</span>
+                                <span className="text-foreground font-mono">{seedResult.password}</span>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-2">
+                            <div className="p-2 bg-hover-bg rounded-lg text-center">
+                                <span className="text-foreground font-bold text-sm block">{seedResult.stats.orders}</span>
+                                <span className="text-muted text-[9px] uppercase tracking-widest">Órdenes</span>
+                            </div>
+                            <div className="p-2 bg-hover-bg rounded-lg text-center">
+                                <span className="text-foreground font-bold text-sm block">{seedResult.stats.adEntries}</span>
+                                <span className="text-muted text-[9px] uppercase tracking-widest">Ads</span>
+                            </div>
+                            <div className="p-2 bg-hover-bg rounded-lg text-center">
+                                <span className="text-foreground font-bold text-sm block">{seedResult.stats.campaigns}</span>
+                                <span className="text-muted text-[9px] uppercase tracking-widest">Campañas</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
