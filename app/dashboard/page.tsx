@@ -148,34 +148,33 @@ export default function GlobalDashboard() {
         return Array.from(productMap.values()).sort((a, b) => b.orderCount - a.orderCount);
     }, [metricsByCountry]);
 
-    // Product rankings: top 5 & bottom 5 by projected profit
-    const { topProducts, bottomProducts } = useMemo(() => {
-        const productMap = new Map<string, { name: string; orders: number; cancelCount: number; netSales: number; ads: number; projectedProfit: number }>();
+    // Product rankings per country: profitable vs losing
+    const { profitableProducts, losingProducts } = useMemo(() => {
+        const FLAG_MAP: Record<string, string> = {
+            'Colombia': 'co', 'México': 'mx', 'Perú': 'pe', 'Ecuador': 'ec',
+            'Panamá': 'pa', 'Chile': 'cl', 'España': 'es', 'Guatemala': 'gt',
+        };
+        const all: { name: string; country: string; flag: string; orders: number; cancelRate: number; netSales: number; ads: number; projectedProfit: number; cpaDesp: number; utilPerOrder: number; roiPct: number }[] = [];
         metricsByCountry.forEach((ctry: any) => {
             ctry.products.forEach((p: ProductMetric) => {
-                const existing = productMap.get(p.name) || { name: p.name, orders: 0, cancelCount: 0, netSales: 0, ads: 0, projectedProfit: 0 };
-                const cancelCount = p.orderCount > 0 ? Math.round(p.orderCount * p.cancelRate / 100) : 0;
-                productMap.set(p.name, {
-                    ...existing,
-                    orders: existing.orders + p.orderCount,
-                    cancelCount: existing.cancelCount + cancelCount,
-                    netSales: existing.netSales + p.netSales,
-                    ads: existing.ads + p.adSpend,
-                    projectedProfit: existing.projectedProfit + p.projectedProfit,
+                if (p.orderCount === 0 && p.adSpend === 0) return;
+                const cancelRate = p.cancelRate;
+                const cpaDesp = p.orderCount > 0 ? p.adSpend / p.orderCount : 0;
+                const utilPerOrder = p.orderCount > 0 ? p.projectedProfit / p.orderCount : 0;
+                const roiPct = p.adSpend > 0 ? (p.projectedProfit / p.adSpend) * 100 : 0;
+                all.push({
+                    name: p.name, country: ctry.name, flag: FLAG_MAP[ctry.name] || 'un',
+                    orders: p.orderCount, cancelRate, netSales: p.netSales, ads: p.adSpend,
+                    projectedProfit: p.projectedProfit, cpaDesp, utilPerOrder, roiPct,
                 });
             });
         });
-        const all = Array.from(productMap.values())
-            .filter(p => p.orders > 0 || p.ads > 0)
-            .map(p => {
-                const cancelRate = p.orders > 0 ? (p.cancelCount / p.orders) * 100 : 0;
-                const cpaDesp = p.orders > 0 ? p.ads / p.orders : 0;
-                const utilPerOrder = p.orders > 0 ? p.projectedProfit / p.orders : 0;
-                return { ...p, cancelRate, cpaDesp, utilPerOrder };
-            })
-            .sort((a, b) => b.projectedProfit - a.projectedProfit);
-        return { topProducts: all.slice(0, 5), bottomProducts: all.slice(-5).reverse() };
+        const profitable = all.filter(p => p.projectedProfit >= 0).sort((a, b) => b.projectedProfit - a.projectedProfit);
+        const losing = all.filter(p => p.projectedProfit < 0).sort((a, b) => a.projectedProfit - b.projectedProfit);
+        return { profitableProducts: profitable, losingProducts: losing };
     }, [metricsByCountry]);
+    const [showAllProfitable, setShowAllProfitable] = useState(false);
+    const [showAllLosing, setShowAllLosing] = useState(false);
 
     // VEGA quick analysis
     const [vegaResponse, setVegaResponse] = useState<string | null>(null);
@@ -1000,16 +999,24 @@ export default function GlobalDashboard() {
                 </div>
 
 
-                {/* Top 5 & Bottom 5 Product Rankings */}
-                {!loading && (topProducts.length > 0 || bottomProducts.length > 0) && (
+                {/* Profitable & Losing Product Rankings */}
+                {!loading && (profitableProducts.length > 0 || losingProducts.length > 0) && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Top 5 */}
+                        {/* Profitable products */}
                         <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
-                            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-card-border">
-                                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                    <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                        <Trophy className="w-3.5 h-3.5 text-emerald-400" />
+                                    </div>
+                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos Rentables</h3>
+                                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">{profitableProducts.length}</span>
                                 </div>
-                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Top 5 Productos</h3>
+                                {profitableProducts.length > 5 && (
+                                    <button onClick={() => setShowAllProfitable(!showAllProfitable)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
+                                        {showAllProfitable ? 'Ver menos' : `Ver todos (${profitableProducts.length})`}
+                                    </button>
+                                )}
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-[11px]">
@@ -1024,18 +1031,22 @@ export default function GlobalDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-card-border">
-                                        {topProducts.map((p, i) => (
-                                            <tr key={i} className="hover:bg-hover-bg transition-colors">
-                                                <td className="px-4 py-2.5 font-medium text-foreground truncate max-w-[180px]" title={p.name}>
+                                        {(showAllProfitable ? profitableProducts : profitableProducts.slice(0, 5)).map((p, i) => (
+                                            <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
+                                                <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] font-black text-emerald-400 w-4">{i + 1}</span>
-                                                        <span className="truncate">{p.name}</span>
+                                                        <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
+                                                        <span className="truncate max-w-[140px]">{p.name}</span>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
                                                 <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
                                                 <td className="px-4 py-2.5 text-right font-mono">
-                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                    <div className="flex flex-col items-end gap-0.5">
+                                                        <span className="text-emerald-400">{formatCurrency(p.projectedProfit)}</span>
+                                                        {p.ads > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${p.roiPct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{p.roiPct >= 0 ? '+' : ''}{p.roiPct.toFixed(0)}% ROI</span>}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-mono">
                                                     <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
@@ -1050,13 +1061,21 @@ export default function GlobalDashboard() {
                             </div>
                         </div>
 
-                        {/* Bottom 5 */}
+                        {/* Losing products */}
                         <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
-                            <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-card-border">
-                                <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                    </div>
+                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos en Pérdida</h3>
+                                    <span className="text-[10px] font-mono text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">{losingProducts.length}</span>
                                 </div>
-                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Bottom 5 Productos</h3>
+                                {losingProducts.length > 5 && (
+                                    <button onClick={() => setShowAllLosing(!showAllLosing)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
+                                        {showAllLosing ? 'Ver menos' : `Ver todos (${losingProducts.length})`}
+                                    </button>
+                                )}
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-[11px]">
@@ -1071,18 +1090,22 @@ export default function GlobalDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-card-border">
-                                        {bottomProducts.map((p, i) => (
-                                            <tr key={i} className="hover:bg-hover-bg transition-colors">
-                                                <td className="px-4 py-2.5 font-medium text-foreground truncate max-w-[180px]" title={p.name}>
+                                        {(showAllLosing ? losingProducts : losingProducts.slice(0, 5)).map((p, i) => (
+                                            <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
+                                                <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] font-black text-red-400 w-4">{i + 1}</span>
-                                                        <span className="truncate">{p.name}</span>
+                                                        <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
+                                                        <span className="truncate max-w-[140px]">{p.name}</span>
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
                                                 <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
                                                 <td className="px-4 py-2.5 text-right font-mono">
-                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                    <div className="flex flex-col items-end gap-0.5">
+                                                        <span className="text-red-400">{formatCurrency(p.projectedProfit)}</span>
+                                                        {p.ads > 0 && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{p.roiPct.toFixed(0)}% ROI</span>}
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right font-mono">
                                                     <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
