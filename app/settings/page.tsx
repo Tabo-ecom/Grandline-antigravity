@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Shield, RefreshCw, Save, Loader2, CheckCircle2, Brain, Sparkles, FlaskConical, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { Shield, RefreshCw, Save, Loader2, CheckCircle2, Brain, Sparkles, FlaskConical, Trash2, Link2, Unlink } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { fetchMetaAdAccounts } from '@/lib/services/meta';
 import { fetchTikTokAdAccounts } from '@/lib/services/tiktok';
 import { getAdSettings, saveAdSettings } from '@/lib/services/marketing';
 import { authFetch } from '@/lib/api/client';
+import { useSearchParams } from 'next/navigation';
+import { auth as firebaseAuth } from '@/lib/firebase/config';
 
 interface AdAccount {
     id: string;
@@ -25,11 +27,13 @@ interface AdSettings {
     ai_auto_map?: boolean;
 }
 
-export default function SettingsPage() {
+function SettingsPageContent() {
     const { user, effectiveUid } = useAuth();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [fbConnectMsg, setFbConnectMsg] = useState('');
     const [settings, setSettings] = useState<AdSettings>({
         fb_token: '',
         fb_account_ids: [],
@@ -51,19 +55,41 @@ export default function SettingsPage() {
     const [seedError, setSeedError] = useState('');
     const [deleting, setDeleting] = useState(false);
 
-    useEffect(() => {
-        async function loadSettings() {
-            try {
-                const data = await getAdSettings(effectiveUid || '');
-                if (data) setSettings(data);
-            } catch (error) {
-                console.error('Error loading settings:', error);
-            } finally {
-                setLoading(false);
-            }
+    const loadSettings = async () => {
+        try {
+            const data = await getAdSettings(effectiveUid || '');
+            if (data) setSettings(data);
+        } catch (error) {
+            console.error('Error loading settings:', error);
+        } finally {
+            setLoading(false);
         }
+    };
+
+    useEffect(() => {
         loadSettings();
     }, []);
+
+    // Detect Facebook OAuth redirect result
+    useEffect(() => {
+        const fbStatus = searchParams.get('fb');
+        if (fbStatus === 'connected') {
+            setFbConnectMsg('Facebook conectado exitosamente');
+            loadSettings(); // Reload to get new token/accounts
+            setTimeout(() => setFbConnectMsg(''), 5000);
+            // Clean URL
+            window.history.replaceState({}, '', '/settings');
+        } else if (fbStatus === 'denied') {
+            setFbConnectMsg('Permisos de Facebook denegados');
+            setTimeout(() => setFbConnectMsg(''), 5000);
+            window.history.replaceState({}, '', '/settings');
+        } else if (fbStatus === 'error') {
+            const reason = searchParams.get('reason') || 'unknown';
+            setFbConnectMsg(`Error al conectar Facebook: ${reason}`);
+            setTimeout(() => setFbConnectMsg(''), 8000);
+            window.history.replaceState({}, '', '/settings');
+        }
+    }, [searchParams]);
 
     const handleFetchFb = async () => {
         if (!settings.fb_token) return;
@@ -107,6 +133,25 @@ export default function SettingsPage() {
             setSaving(false);
         }
     };
+
+    const handleConnectFacebook = async () => {
+        // We need to pass the Firebase ID token via the redirect so the API can verify the user
+        const token = await firebaseAuth.currentUser?.getIdToken();
+        if (!token) {
+            alert('Debes iniciar sesión primero');
+            return;
+        }
+        // Navigate to the OAuth start endpoint with token in header via a form POST-like approach
+        // Since we can't set headers on a redirect, we pass the token temporarily via a cookie
+        document.cookie = `fb_auth_token=${token}; path=/; max-age=300; SameSite=Lax`;
+        window.location.href = '/api/auth/facebook';
+    };
+
+    const handleDisconnectFacebook = () => {
+        setSettings({ ...settings, fb_token: '', fb_account_ids: [] });
+    };
+
+    const fbConnected = !!(settings.fb_token && settings.fb_account_ids.length > 0);
 
     const handleSeedDemo = async () => {
         setSeeding(true);
@@ -177,75 +222,120 @@ export default function SettingsPage() {
                         </div>
 
                         <div className="space-y-4">
+                            {/* Facebook Connection */}
                             <div>
-                                <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Meta (Facebook) Token</label>
-                                <input
-                                    type="password"
-                                    value={settings.fb_token}
-                                    onChange={(e) => setSettings({ ...settings, fb_token: e.target.value })}
-                                    className="w-full bg-hover-bg border border-card-border rounded-xl px-4 py-3 text-sm focus:border-accent outline-none transition-colors font-mono"
-                                    placeholder="EAAB..."
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Moneda Cuenta Meta</label>
-                                <select
-                                    value={settings.fb_currency || 'USD'}
-                                    onChange={(e) => setSettings({ ...settings, fb_currency: e.target.value })}
-                                    className="w-full bg-hover-bg border border-card-border rounded-xl px-4 py-2 text-xs focus:border-accent outline-none transition-colors"
-                                >
-                                    <option value="USD">Dólar (USD)</option>
-                                    <option value="COP">Peso Colombiano (COP)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest block">Meta Account ID</label>
+                                <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Meta (Facebook)</label>
+                                {fbConnected ? (
+                                    <div className="p-4 bg-green-500/5 border border-green-500/15 rounded-xl space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                                                <span className="text-xs font-bold text-green-400 uppercase tracking-widest">Conectado</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleConnectFacebook}
+                                                    className="text-[10px] text-accent font-bold uppercase hover:underline"
+                                                >
+                                                    Reconectar
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleDisconnectFacebook}
+                                                    className="text-[10px] text-red-400 font-bold uppercase hover:underline"
+                                                >
+                                                    Desconectar
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="text-[10px] text-muted">
+                                            {settings.fb_account_ids.length} cuenta{settings.fb_account_ids.length !== 1 ? 's' : ''} publicitaria{settings.fb_account_ids.length !== 1 ? 's' : ''} vinculada{settings.fb_account_ids.length !== 1 ? 's' : ''}
+                                        </div>
+                                    </div>
+                                ) : (
                                     <button
                                         type="button"
-                                        onClick={handleFetchFb}
-                                        disabled={!settings.fb_token || fetchingFb}
-                                        className="text-[10px] text-accent font-bold uppercase hover:underline disabled:opacity-30"
+                                        onClick={handleConnectFacebook}
+                                        className="w-full flex items-center justify-center gap-3 px-4 py-3.5 bg-[#1877F2]/10 border border-[#1877F2]/20 rounded-xl text-[#1877F2] font-bold text-xs uppercase tracking-widest hover:bg-[#1877F2]/20 transition-all"
                                     >
-                                        {fetchingFb ? 'Buscando...' : 'Obtener Cuentas'}
+                                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                        Conectar con Facebook
                                     </button>
-                                </div>
-                                <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto p-3 bg-hover-bg border border-card-border rounded-xl custom-scrollbar">
-                                    {(() => {
-                                        const accountMap = new Map();
-                                        settings.fb_account_ids.forEach(a => accountMap.set(a.id, a));
-                                        fbAccounts.forEach(acc => {
-                                            const id = `act_${acc.account_id}`;
-                                            accountMap.set(id, { id, name: acc.name });
-                                        });
-                                        return Array.from(accountMap.values()).map(acc => {
-                                            const isSelected = settings.fb_account_ids.some(a => a.id === acc.id);
-                                            return (
-                                                <label key={acc.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-hover-bg border border-transparent'}`}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isSelected}
-                                                        onChange={(e) => {
-                                                            const newAccounts = e.target.checked
-                                                                ? [...settings.fb_account_ids, acc]
-                                                                : settings.fb_account_ids.filter(a => a.id !== acc.id);
-                                                            setSettings({ ...settings, fb_account_ids: newAccounts });
-                                                        }}
-                                                        className="w-4 h-4 accent-orange-500"
-                                                    />
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[11px] font-bold text-foreground">{acc.name}</span>
-                                                        <span className="text-[9px] text-muted font-mono">{acc.id}</span>
-                                                    </div>
-                                                </label>
-                                            );
-                                        });
-                                    })()}
-                                    {fbAccounts.length === 0 && settings.fb_account_ids.length === 0 && (
-                                        <div className="text-[10px] text-muted italic px-2 py-1">No se han cargado cuentas. Usa el botón &quot;Obtener Cuentas&quot;.</div>
-                                    )}
-                                </div>
+                                )}
+                                {fbConnectMsg && (
+                                    <div className={`mt-2 p-3 rounded-xl text-xs font-bold ${fbConnectMsg.includes('exitosamente') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                                        {fbConnectMsg}
+                                    </div>
+                                )}
                             </div>
+
+                            {/* Facebook Currency (only if connected) */}
+                            {fbConnected && (
+                                <div>
+                                    <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Moneda Cuenta Meta</label>
+                                    <select
+                                        value={settings.fb_currency || 'USD'}
+                                        onChange={(e) => setSettings({ ...settings, fb_currency: e.target.value })}
+                                        className="w-full bg-hover-bg border border-card-border rounded-xl px-4 py-2 text-xs focus:border-accent outline-none transition-colors"
+                                    >
+                                        <option value="USD">Dólar (USD)</option>
+                                        <option value="COP">Peso Colombiano (COP)</option>
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Facebook Account Selection (only if connected) */}
+                            {fbConnected && (
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-[10px] font-bold text-muted uppercase tracking-widest block">Cuentas Publicitarias</label>
+                                        <button
+                                            type="button"
+                                            onClick={handleFetchFb}
+                                            disabled={!settings.fb_token || fetchingFb}
+                                            className="text-[10px] text-accent font-bold uppercase hover:underline disabled:opacity-30"
+                                        >
+                                            {fetchingFb ? 'Buscando...' : 'Refrescar Cuentas'}
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto p-3 bg-hover-bg border border-card-border rounded-xl custom-scrollbar">
+                                        {(() => {
+                                            const accountMap = new Map();
+                                            settings.fb_account_ids.forEach(a => accountMap.set(a.id, a));
+                                            fbAccounts.forEach(acc => {
+                                                const id = `act_${acc.account_id}`;
+                                                accountMap.set(id, { id, name: acc.name });
+                                            });
+                                            return Array.from(accountMap.values()).map(acc => {
+                                                const isSelected = settings.fb_account_ids.some(a => a.id === acc.id);
+                                                return (
+                                                    <label key={acc.id} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-orange-500/10 border border-orange-500/30' : 'hover:bg-hover-bg border border-transparent'}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={(e) => {
+                                                                const newAccounts = e.target.checked
+                                                                    ? [...settings.fb_account_ids, acc]
+                                                                    : settings.fb_account_ids.filter(a => a.id !== acc.id);
+                                                                setSettings({ ...settings, fb_account_ids: newAccounts });
+                                                            }}
+                                                            className="w-4 h-4 accent-orange-500"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[11px] font-bold text-foreground">{acc.name}</span>
+                                                            <span className="text-[9px] text-muted font-mono">{acc.id}</span>
+                                                        </div>
+                                                    </label>
+                                                );
+                                            });
+                                        })()}
+                                        {fbAccounts.length === 0 && settings.fb_account_ids.length === 0 && (
+                                            <div className="text-[10px] text-muted italic px-2 py-1">No se encontraron cuentas.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="h-px bg-card-border my-4"></div>
 
@@ -497,5 +587,18 @@ export default function SettingsPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function SettingsPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="w-10 h-10 text-accent animate-spin mb-4" />
+                <p className="text-muted font-mono text-xs uppercase tracking-widest">Cargando...</p>
+            </div>
+        }>
+            <SettingsPageContent />
+        </Suspense>
     );
 }
