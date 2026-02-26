@@ -286,18 +286,20 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         });
     }
 
-    // Distribute country-level global spend proportionally across products by order count
+    // Distribute country-level global spend proportionally across products that already have direct ad spend
     countries.forEach(cntry => {
         const globalSpend = countryGlobalSpends[cntry] || 0;
         if (globalSpend > 0) {
-            const cntryOrders = filteredOrders.filter(o => o.country === cntry);
-            const totalOrders = cntryOrders.length || 1;
-            const pidsWithOrders = new Set(cntryOrders.map(o => o.PRODUCTO_ID?.toString() || 'unknown').filter(id => id !== 'unknown'));
-            if (!adsByCountryProduct[cntry]) adsByCountryProduct[cntry] = {};
-            pidsWithOrders.forEach(pid => {
-                const pOrdersCount = cntryOrders.filter(o => o.PRODUCTO_ID?.toString() === pid).length;
-                adsByCountryProduct[cntry][pid] = (adsByCountryProduct[cntry][pid] || 0) + (globalSpend * (pOrdersCount / totalOrders));
-            });
+            const existingPids = Object.keys(adsByCountryProduct[cntry] || {});
+            if (existingPids.length > 0) {
+                const cntryOrders = filteredOrders.filter(o => o.country === cntry);
+                const mappedOrders = cntryOrders.filter(o => existingPids.includes(o.PRODUCTO_ID?.toString() || ''));
+                const totalMapped = mappedOrders.length || 1;
+                existingPids.forEach(pid => {
+                    const pOrdersCount = mappedOrders.filter(o => o.PRODUCTO_ID?.toString() === pid).length || 1;
+                    adsByCountryProduct[cntry][pid] = (adsByCountryProduct[cntry][pid] || 0) + (globalSpend * (pOrdersCount / totalMapped));
+                });
+            }
         }
     });
 
@@ -343,8 +345,8 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
             const pDeliveryRate = pOverrides[pid] !== undefined ? pOverrides[pid] : defaultDeliveryPercent;
             const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, buffer, { [pid]: pAds });
             const baseProj = pproj.reduce((s, p) => s + p.utilidad, 0);
-            // If no orders for this product, projection is 0 (matching dashboard line 603)
-            const utilProy = pOrders.length === 0 ? 0 : baseProj;
+            // If no orders but has ads, projected profit is negative (pure loss)
+            const utilProy = pOrders.length === 0 ? -pAds : baseProj;
 
             const name = pOrders[0]?.PRODUCTO?.toString() || pid;
             return {

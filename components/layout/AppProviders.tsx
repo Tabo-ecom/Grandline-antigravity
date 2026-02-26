@@ -15,6 +15,11 @@ const VegaChatBubble = dynamic(
     { ssr: false }
 );
 
+const OnboardingFlow = dynamic(
+    () => import('@/components/onboarding/OnboardingFlow'),
+    { ssr: false }
+);
+
 const ADMIN_ONLY_ROUTES = ['/settings', '/usuarios'];
 const MODULE_ROUTE_MAP: Record<string, string> = {
     '/dashboard': 'dashboard',
@@ -73,6 +78,7 @@ export default function AppProviders({ children }: { children: React.ReactNode }
                             {children}
                         </ProtectedContent>
                         <VegaChatBubble />
+                        <OnboardingFlow />
                     </VegaProvider>
                 </SunnyProvider>
             </SidebarProvider>

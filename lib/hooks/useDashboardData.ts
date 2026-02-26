@@ -402,15 +402,19 @@ export function useDashboardData(): DashboardDataHook {
         activeCountries.forEach(country => {
             const globalSpend = countryGlobalSpends[country] || 0;
             if (globalSpend > 0) {
-                // Use filteredOrders to respect date/product filters (matching Log Pose)
-                const cntryOrders = filteredOrders.filter(o => o.country === country);
-                const totalOrders = cntryOrders.length || 1;
-                const pidsWithOrders = new Set(cntryOrders.map(o => o.PRODUCTO_ID?.toString() || 'unknown').filter(id => id !== 'unknown'));
-                if (!result[country]) result[country] = {};
-                pidsWithOrders.forEach(pid => {
-                    const pOrdersCount = cntryOrders.filter(o => o.PRODUCTO_ID?.toString() === pid).length;
-                    result[country][pid] = (result[country][pid] || 0) + (globalSpend * (pOrdersCount / totalOrders));
-                });
+                // Only distribute global spend to products that ALREADY have direct ad spend
+                // Products with no mapped campaigns should NOT receive global spend
+                const existingPids = Object.keys(result[country] || {});
+                if (existingPids.length > 0) {
+                    const cntryOrders = filteredOrders.filter(o => o.country === country);
+                    const mappedOrders = cntryOrders.filter(o => existingPids.includes(o.PRODUCTO_ID?.toString() || ''));
+                    const totalMapped = mappedOrders.length || 1;
+                    if (!result[country]) result[country] = {};
+                    existingPids.forEach(pid => {
+                        const pOrdersCount = mappedOrders.filter(o => o.PRODUCTO_ID?.toString() === pid).length || 1;
+                        result[country][pid] = (result[country][pid] || 0) + (globalSpend * (pOrdersCount / totalMapped));
+                    });
+                }
             }
         });
 
@@ -598,9 +602,8 @@ export function useDashboardData(): DashboardDataHook {
 
                 const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: pAds });
                 const baseProj = pproj.reduce((s, p) => s + p.utilidad, 0);
-                // If no orders exist for this product, projected profit is 0 (nothing to project).
-                // Ad spend without orders is already reflected in u_real.
-                const finalProj = pOrders.length === 0 ? 0 : baseProj;
+                // If no orders but has ads, projected profit is negative (pure loss)
+                const finalProj = pOrders.length === 0 ? -pAds : baseProj;
 
                 return {
                     id: pid,
