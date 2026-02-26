@@ -902,8 +902,9 @@ export default function GlobalDashboard() {
                         {(() => {
                             const totalOrders = logisticStats.entregados + logisticStats.transito + logisticStats.devoluciones + logisticStats.cancelados;
                             const cancelPct = totalOrders > 0 ? ((logisticStats.cancelados / totalOrders) * 100) : 0;
+                            const cancelBg = cancelPct <= 10 ? 'bg-emerald-500/5 border-emerald-500/10' : cancelPct <= 15 ? 'bg-amber-500/5 border-amber-500/10' : 'bg-red-500/5 border-red-500/10';
                             return (
-                                <div className="relative z-10 mb-4 p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+                                <div className={`relative z-10 mb-4 p-4 rounded-xl border ${cancelBg}`}>
                                     <div className="flex items-center justify-between mb-2">
                                         <span className="text-[10px] text-muted font-black uppercase tracking-widest">% Cancelación</span>
                                         <span className={`text-2xl font-black font-mono ${getHealthColor(findTarget(kpiTargets, 'tasa_can') ? evaluateHealth(cancelPct, findTarget(kpiTargets, 'tasa_can')!) : cancelPct > 30 ? 'bad' : cancelPct > 15 ? 'warning' : 'good')}`}>
