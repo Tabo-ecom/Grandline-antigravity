@@ -1001,9 +1001,9 @@ export default function GlobalDashboard() {
 
                 {/* Profitable & Losing Product Rankings */}
                 {!loading && (profitableProducts.length > 0 || losingProducts.length > 0) && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:grid-rows-[1fr]">
                         {/* Profitable products */}
-                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden flex flex-col">
                             <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
                                 <div className="flex items-center gap-2.5">
                                     <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
@@ -1018,7 +1018,7 @@ export default function GlobalDashboard() {
                                     </button>
                                 )}
                             </div>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto flex-1">
                                 <table className="w-full text-[11px]">
                                     <thead>
                                         <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
@@ -1062,7 +1062,7 @@ export default function GlobalDashboard() {
                         </div>
 
                         {/* Losing products */}
-                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden flex flex-col">
                             <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
                                 <div className="flex items-center gap-2.5">
                                     <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
@@ -1077,7 +1077,7 @@ export default function GlobalDashboard() {
                                     </button>
                                 )}
                             </div>
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto flex-1">
                                 <table className="w-full text-[11px]">
                                     <thead>
                                         <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">

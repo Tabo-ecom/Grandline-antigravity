@@ -323,9 +323,11 @@ export function useDashboardData(): DashboardDataHook {
         sourceOrders.forEach(o => {
             const id = o.PRODUCTO_ID?.toString() || 'unknown';
             if (id !== 'unknown' && o.PRODUCTO) {
-                const group = getProductGroup(o.PRODUCTO, productGroups);
-                if (group) {
-                    productMap.set(group.id, group.name);
+                // PRODUCTO_ID is already resolved to group ID during normalization,
+                // so check directly if the ID matches a group
+                const groupById = productGroups.find(g => g.id === id);
+                if (groupById) {
+                    productMap.set(groupById.id, groupById.name);
                 } else {
                     productMap.set(id, o.PRODUCTO);
                 }
