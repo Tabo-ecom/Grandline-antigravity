@@ -1,31 +1,31 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { X, PlayCircle } from 'lucide-react';
 import type { TutorialConfig } from '@/lib/config/tutorials';
 
 interface Props {
     tutorial: TutorialConfig;
     onClose: () => void;
-    onDismiss?: () => void; // mark as "don't show again"
+    onDismiss?: () => void;
 }
 
 function toEmbedUrl(url: string): string {
     if (!url) return '';
-    // YouTube: youtu.be/ID or youtube.com/watch?v=ID
     const ytShort = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
     if (ytShort) return `https://www.youtube.com/embed/${ytShort[1]}`;
     const ytLong = url.match(/youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/);
     if (ytLong) return `https://www.youtube.com/embed/${ytLong[1]}`;
     if (url.includes('youtube.com/embed/')) return url;
-    // Loom: /share/ → /embed/
     if (url.includes('loom.com')) return url.replace('/share/', '/embed/');
     return url;
 }
 
 export default function VideoTutorialModal({ tutorial, onClose, onDismiss }: Props) {
-    const hasVideo = !!tutorial.videoUrl;
-    const embedUrl = toEmbedUrl(tutorial.videoUrl);
+    const [activeIdx, setActiveIdx] = useState(0);
+    const hasVideos = tutorial.videos.length > 0;
+    const activeVideo = tutorial.videos[activeIdx];
+    const embedUrl = activeVideo ? toEmbedUrl(activeVideo.url) : '';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -50,10 +50,30 @@ export default function VideoTutorialModal({ tutorial, onClose, onDismiss }: Pro
                     </button>
                 </div>
 
+                {/* Video tabs (only if multiple) */}
+                {tutorial.videos.length > 1 && (
+                    <div className="px-6 pb-2 flex gap-2">
+                        {tutorial.videos.map((v, i) => (
+                            <button
+                                key={i}
+                                onClick={() => setActiveIdx(i)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                    i === activeIdx
+                                        ? 'bg-[#d75c33] text-white'
+                                        : 'bg-[#d75c33]/10 text-[#d75c33] hover:bg-[#d75c33]/20'
+                                }`}
+                            >
+                                {v.title}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {/* Video */}
                 <div className="px-6 pb-4">
-                    {hasVideo ? (
+                    {hasVideos ? (
                         <iframe
+                            key={activeIdx}
                             src={embedUrl}
                             allowFullScreen
                             className="w-full aspect-video rounded-xl border border-card-border"
