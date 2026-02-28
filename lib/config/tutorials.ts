@@ -31,7 +31,9 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'dashboard',
         title: 'Wheel — Dashboard Principal',
         description: 'El centro de comando de tu operacion',
-        videos: [],
+        videos: [
+            { title: 'Wheel', url: 'https://youtu.be/pTNcX8qsY_8' },
+        ],
         steps: [
             'Filtra por pais, producto y rango de fechas para ver metricas especificas',
             'Revisa los KPIs clave: ROAS, CPA, tasa de entrega y margen',
@@ -72,7 +74,9 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'sunny',
         title: 'Sunny — Modulo de Ads',
         description: 'Lanza y gestiona campanas publicitarias',
-        videos: [],
+        videos: [
+            { title: 'Sunny', url: 'https://youtu.be/wNOu894Gm3A' },
+        ],
         steps: [
             'Conecta tu cuenta de Facebook Ads desde configuracion',
             'Genera copies con IA para tus campanas',
@@ -96,7 +100,9 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'vega',
         title: 'Vega AI — Inteligencia Artificial',
         description: 'Tu analista de datos con IA',
-        videos: [],
+        videos: [
+            { title: 'Vega AI', url: 'https://youtu.be/RH4W5ADJh28' },
+        ],
         steps: [
             'Chatea con Vega para obtener analisis de tu operacion en lenguaje natural',
             'Configura alertas automaticas para metricas criticas (ROAS, CPA, entregas)',
