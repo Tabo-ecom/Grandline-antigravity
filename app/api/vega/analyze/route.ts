@@ -25,8 +25,11 @@ export async function POST(req: NextRequest) {
 
         const { type, dataContext, kpiTargets, kpis, metricsByCountry, adPlatformMetrics, prevKpis, period, berryExpenses } = await req.json();
 
-        if (!type) {
-            return NextResponse.json({ error: 'Tipo de análisis requerido' }, { status: 400 });
+        if (!type || !(type in ANALYSIS_TITLES)) {
+            return NextResponse.json(
+                { error: `Tipo de análisis inválido. Válidos: ${Object.keys(ANALYSIS_TITLES).join(', ')}` },
+                { status: 400 },
+            );
         }
 
         const response = await vegaAnalyze(type, dataContext || '', kpiTargets);

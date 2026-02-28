@@ -7,6 +7,44 @@ import type { KPITarget } from '@/lib/types/kpi-targets';
 import { DEFAULT_KPI_TARGETS } from '@/lib/types/kpi-targets';
 
 type AIProvider = 'gemini' | 'openai';
+type AITemperature = 'precise' | 'balanced';
+
+// --- Prompt cache ---
+let cachedPrompt: string | null = null;
+let cachedTargetsHash: string | null = null;
+
+function targetsHash(targets?: KPITarget[]): string {
+    if (!targets) return 'default';
+    return targets.map(t => `${t.key}:${t.good}:${t.warning}`).join('|');
+}
+
+function getCachedSystemPrompt(targets?: KPITarget[]): string {
+    const hash = targetsHash(targets);
+    if (cachedPrompt && cachedTargetsHash === hash) return cachedPrompt;
+    cachedPrompt = buildVegaSystemPrompt(targets);
+    cachedTargetsHash = hash;
+    return cachedPrompt;
+}
+
+// --- Retry logic ---
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES = 2;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            return await fn();
+        } catch (err: any) {
+            const isRetryable = err?.status && RETRYABLE_STATUSES.has(err.status) ||
+                err?.message?.includes('429') || err?.message?.includes('503') ||
+                err?.name === 'AbortError';
+            if (!isRetryable || attempt === retries) throw err;
+            const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    throw new Error('Max retries exceeded');
+}
 
 function buildFinancialRules(targets?: KPITarget[]): string {
     const t = targets || DEFAULT_KPI_TARGETS;
@@ -119,110 +157,122 @@ function detectProvider(): { provider: AIProvider; apiKey: string } {
     throw new Error('No hay API key configurada. Agrega GEMINI_API_KEY o OPENAI_API_KEY en tu .env.local');
 }
 
-async function callGemini(apiKey: string, prompt: string, systemContext?: string, kpiTargets?: KPITarget[]): Promise<string> {
-    const systemPrompt = buildVegaSystemPrompt(kpiTargets);
+async function callGemini(apiKey: string, prompt: string, systemContext?: string, kpiTargets?: KPITarget[], temp: AITemperature = 'balanced'): Promise<string> {
+    const systemPrompt = getCachedSystemPrompt(kpiTargets);
     const fullPrompt = systemContext
         ? `${systemPrompt}\n\n--- CONTEXTO DE DATOS ---\n${systemContext}\n\n--- SOLICITUD ---\n${prompt}`
         : `${systemPrompt}\n\n${prompt}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
+    const temperature = temp === 'precise' ? 0.2 : 0.4;
 
-    try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: fullPrompt }] }],
-                    generationConfig: {
-                        temperature: 0.4,
-                        maxOutputTokens: 4096,
-                    },
-                }),
-                signal: controller.signal,
+    return withRetry(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120_000);
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: fullPrompt }] }],
+                        generationConfig: {
+                            temperature,
+                            maxOutputTokens: 4096,
+                        },
+                    }),
+                    signal: controller.signal,
+                }
+            );
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const err: any = new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 200)}`);
+                err.status = response.status;
+                throw err;
             }
-        );
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 200)}`);
-        }
+            const data = await response.json();
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                const blockReason = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || 'unknown';
+                throw new Error(`Respuesta inválida de Gemini (reason: ${blockReason})`);
+            }
 
-        const data = await response.json();
-        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-            const blockReason = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || 'unknown';
-            throw new Error(`Respuesta inválida de Gemini (reason: ${blockReason})`);
+            return data.candidates[0].content.parts[0].text;
+        } catch (err: any) {
+            if (err.name === 'AbortError') {
+                throw new Error('La solicitud a Gemini tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
+            }
+            throw err;
+        } finally {
+            clearTimeout(timeout);
         }
-
-        return data.candidates[0].content.parts[0].text;
-    } catch (err: any) {
-        if (err.name === 'AbortError') {
-            throw new Error('La solicitud a Gemini tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
-        }
-        throw err;
-    } finally {
-        clearTimeout(timeout);
-    }
+    });
 }
 
-async function callOpenAI(apiKey: string, prompt: string, systemContext?: string, kpiTargets?: KPITarget[]): Promise<string> {
-    const systemPrompt = buildVegaSystemPrompt(kpiTargets);
+async function callOpenAI(apiKey: string, prompt: string, systemContext?: string, kpiTargets?: KPITarget[], temp: AITemperature = 'balanced'): Promise<string> {
+    const systemPrompt = getCachedSystemPrompt(kpiTargets);
     const systemMessage = systemContext
         ? `${systemPrompt}\n\n--- CONTEXTO DE DATOS ---\n${systemContext}`
         : systemPrompt;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
+    const temperature = temp === 'precise' ? 0.2 : 0.4;
 
-    try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: 'gpt-4o-mini',
-                messages: [
-                    { role: 'system', content: systemMessage },
-                    { role: 'user', content: prompt },
-                ],
-                temperature: 0.4,
-                max_tokens: 4096,
-            }),
-            signal: controller.signal,
-        });
+    return withRetry(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 120_000);
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`OpenAI API error (${response.status}): ${errorText.substring(0, 200)}`);
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: systemMessage },
+                        { role: 'user', content: prompt },
+                    ],
+                    temperature,
+                    max_tokens: 4096,
+                }),
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                const err: any = new Error(`OpenAI API error (${response.status}): ${errorText.substring(0, 200)}`);
+                err.status = response.status;
+                throw err;
+            }
+
+            const data = await response.json();
+            if (!data.choices?.[0]?.message?.content) {
+                throw new Error('Respuesta inválida de OpenAI');
+            }
+
+            return data.choices[0].message.content;
+        } catch (err: any) {
+            if (err.name === 'AbortError') {
+                throw new Error('La solicitud a OpenAI tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
+            }
+            throw err;
+        } finally {
+            clearTimeout(timeout);
         }
-
-        const data = await response.json();
-        if (!data.choices?.[0]?.message?.content) {
-            throw new Error('Respuesta inválida de OpenAI');
-        }
-
-        return data.choices[0].message.content;
-    } catch (err: any) {
-        if (err.name === 'AbortError') {
-            throw new Error('La solicitud a OpenAI tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
-        }
-        throw err;
-    } finally {
-        clearTimeout(timeout);
-    }
+    });
 }
 
-async function callAI(prompt: string, systemContext?: string, kpiTargets?: KPITarget[]): Promise<string> {
+async function callAI(prompt: string, systemContext?: string, kpiTargets?: KPITarget[], temp: AITemperature = 'balanced'): Promise<string> {
     const { provider, apiKey } = detectProvider();
 
     if (provider === 'gemini') {
-        return callGemini(apiKey, prompt, systemContext, kpiTargets);
+        return callGemini(apiKey, prompt, systemContext, kpiTargets, temp);
     } else {
-        return callOpenAI(apiKey, prompt, systemContext, kpiTargets);
+        return callOpenAI(apiKey, prompt, systemContext, kpiTargets, temp);
     }
 }
 
@@ -340,7 +390,7 @@ Evaluación de cada mercado. Cuáles son sostenibles.
 
 export async function vegaGenerateReport(type: string, dataContext: string, period: string, kpiTargets?: KPITarget[]): Promise<string> {
     const prompt = getReportPrompt(type, period);
-    return callAI(prompt, dataContext, kpiTargets);
+    return callAI(prompt, dataContext, kpiTargets, 'precise');
 }
 
 function getReportPrompt(type: string, period: string): string {

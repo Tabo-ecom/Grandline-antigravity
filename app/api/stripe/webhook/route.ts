@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
                             currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
                             updatedAt: new Date(),
                         }, { merge: true });
-                        console.log(`User ${userId} subscribed to ${plan} successfully.`);
+                        // Subscription activated
                     } else {
                         console.error('User ID not found in session for checkout.session.completed');
                     }
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
                         currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
                         updatedAt: new Date(),
                     }, { merge: true });
-                    console.log(`User ${userDoc.id} subscription updated to ${plan} (${subscription.status}).`);
+                    // Subscription updated
                 } else {
                     console.error(`User not found with Stripe Customer ID: ${subscription.customer}`);
                 }

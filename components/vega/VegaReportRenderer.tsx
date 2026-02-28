@@ -2,9 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-    AlertTriangle, AlertCircle, Info, ChevronDown, ChevronRight,
-    TrendingUp, Target, DollarSign, Percent, Globe,
-    Package, Truck, XCircle, RotateCcw
+    ChevronDown, ChevronRight, TrendingUp, Target, DollarSign, Percent
 } from 'lucide-react';
 import { evaluateHealth, findTarget } from '@/lib/utils/health';
 import { DEFAULT_KPI_TARGETS } from '@/lib/types/kpi-targets';

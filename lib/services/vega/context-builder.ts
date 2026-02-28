@@ -1,6 +1,7 @@
 /**
  * Vega AI - Data Context Builder
  * Collects ALL operational data and formats it for AI prompts
+ * Built in tiers: essential data first, granular details last
  */
 
 import type { KPIResults } from '@/lib/calculations/kpis';
@@ -27,6 +28,8 @@ export interface VegaDataContext {
     campaignNames?: string[];
 }
 
+const MAX_CONTEXT_CHARS = 80_000;
+
 export function buildDataContext(data: VegaDataContext): string {
     const {
         kpis, prevKpis, orderCount, countries, adPlatformMetrics, projectedProfit,
@@ -36,6 +39,43 @@ export function buildDataContext(data: VegaDataContext): string {
 
     if (!kpis) return 'No hay datos disponibles para el período seleccionado.';
 
+    // Build each tier independently, then assemble within budget
+    const tier1 = buildTier1Essential(data, kpis);
+    const tier2 = buildTier2Country(data, kpis);
+    const tier3 = buildTier3ProductDetail(data);
+    const tier4 = buildTier4Campaigns(data);
+
+    // Assemble tiers within budget
+    const tiers = [tier1, tier2, tier3, tier4];
+    let result = '';
+
+    for (const tier of tiers) {
+        if (!tier) continue;
+        if (result.length + tier.length <= MAX_CONTEXT_CHARS) {
+            result += tier;
+        } else {
+            // Try to fit partial content, cutting at a section boundary
+            const remaining = MAX_CONTEXT_CHARS - result.length;
+            if (remaining > 500) {
+                const truncated = tier.substring(0, remaining);
+                const lastSection = truncated.lastIndexOf('\n\n---');
+                if (lastSection > 0) {
+                    result += tier.substring(0, lastSection);
+                } else {
+                    result += truncated;
+                }
+                result += '\n\n[... Datos adicionales omitidos por límite de contexto.]';
+            }
+            break;
+        }
+    }
+
+    return result;
+}
+
+// ===== TIER 1: Essential KPIs, financials, ads, Berry expenses =====
+function buildTier1Essential(data: VegaDataContext, kpis: KPIResults): string {
+    const { adPlatformMetrics, countries, orderCount, dateRange, berryExpenses, berryExpenseTotal } = data;
     const today = new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
     const lines: string[] = [
@@ -77,6 +117,34 @@ export function buildDataContext(data: VegaDataContext): string {
         `Gasto Google: $${adPlatformMetrics.google.toLocaleString()}`,
     ];
 
+    // Berry expenses — essential for profitability analysis
+    if (berryExpenses && berryExpenses.length > 0) {
+        lines.push('', '--- GASTOS OPERATIVOS BERRY (COSTOS FIJOS) ---');
+        berryExpenses.forEach(e => {
+            lines.push(`  ${e.category}: $${e.amount.toLocaleString()}`);
+        });
+        lines.push(`  **TOTAL GASTOS OPERATIVOS**: $${(berryExpenseTotal || 0).toLocaleString()}`);
+        if (kpis.u_real !== 0) {
+            const utilidadDespuesGastos = kpis.u_real - (berryExpenseTotal || 0);
+            lines.push(`  Utilidad después de gastos operativos: $${utilidadDespuesGastos.toLocaleString()}`);
+            lines.push(`  Break-even: ${utilidadDespuesGastos >= 0 ? 'ALCANZADO ✓' : 'NO ALCANZADO ✗ — la operación no cubre costos fijos'}`);
+        }
+    }
+
+    lines.push(
+        '',
+        `Países activos: ${countries.join(', ')}`,
+        `Total pedidos en sistema: ${orderCount}`,
+    );
+
+    return lines.join('\n');
+}
+
+// ===== TIER 2: Country breakdown, previous period, daily aggregate =====
+function buildTier2Country(data: VegaDataContext, kpis: KPIResults): string {
+    const { prevKpis, metricsByCountry, dailySalesData } = data;
+    const lines: string[] = [];
+
     // Previous period comparison
     if (prevKpis) {
         lines.push(
@@ -94,7 +162,7 @@ export function buildDataContext(data: VegaDataContext): string {
         );
     }
 
-    // Detailed country + product breakdown
+    // Country + product breakdown
     if (metricsByCountry.length > 0) {
         lines.push('', '--- MÉTRICAS POR PAÍS Y PRODUCTO (DESGLOSE COMPLETO) ---');
         metricsByCountry.forEach((c: any) => {
@@ -111,7 +179,7 @@ export function buildDataContext(data: VegaDataContext): string {
                 `  ROAS Real: ${(ck?.roas_real || 0).toFixed(2)}x | CPA: $${Math.round(ck?.cpa || 0).toLocaleString()}`,
             );
 
-            // Product breakdown within country — DESGLOSE INDIVIDUAL POR PRODUCTO
+            // Product breakdown within country
             if (c.products && c.products.length > 0) {
                 lines.push(`  --- Productos en ${c.countryName || c.name} (desglose individual) ---`);
                 c.products.forEach((p: any) => {
@@ -122,9 +190,7 @@ export function buildDataContext(data: VegaDataContext): string {
                     const ads = p.ads ?? p.adSpend ?? 0;
                     const can = p.n_can ?? 0;
                     const nc = ord - can;
-                    // CPA = Ads / Non-canceled (same as dashboard)
                     const cpa = p.cpa ?? (nc > 0 ? ads / nc : 0);
-                    // CPA Despachado = Ads / (Entregados + Devoluciones)
                     const dev = p.n_dev ?? 0;
                     const dispatched = ent + dev;
                     const cpaDesp = p.cpaDesp ?? (dispatched > 0 ? ads / dispatched : 0);
@@ -142,6 +208,28 @@ export function buildDataContext(data: VegaDataContext): string {
             }
         });
     }
+
+    // Daily aggregate sales data
+    if (dailySalesData && dailySalesData.length > 0) {
+        lines.push('', '--- DATOS DIARIOS ---');
+        lines.push('Fecha | Órdenes | Ventas ($) | Gasto Ads ($) | Utilidad Proy ($)');
+        dailySalesData.forEach((day: any) => {
+            const date = day.date || day.name || '';
+            const orders = day.orders || 0;
+            const sales = day.sales || day.revenue || 0;
+            const ads = day.ads || day.spend || 0;
+            const profit = day.profit || day.projected_profit || 0;
+            lines.push(`${date} | ${orders} | $${Math.round(sales).toLocaleString()} | $${Math.round(ads).toLocaleString()} | $${Math.round(profit).toLocaleString()}`);
+        });
+    }
+
+    return lines.join('\n');
+}
+
+// ===== TIER 3: Per-product daily data, product summary =====
+function buildTier3ProductDetail(data: VegaDataContext): string {
+    const { filteredOrders, filteredAds, availableProducts } = data;
+    const lines: string[] = [];
 
     // Products list
     if (availableProducts && availableProducts.length > 0) {
@@ -179,22 +267,97 @@ export function buildDataContext(data: VegaDataContext): string {
                 lines.push(`  ${p.product}: ${p.orders} órd, ${p.delivered} entreg, ${p.canceled} cancel, Entrega=${deliveryRate}%, Fact=$${p.revenue.toLocaleString()}`);
             });
         }
+    }
 
-        // City breakdown (top 15)
-        const cityStats: Record<string, number> = {};
+    // Per-product daily breakdown (last 7 days)
+    if (filteredOrders && filteredOrders.length > 0) {
+        const dayKeys = new Set<string>();
         filteredOrders.forEach(o => {
-            const city = o["CIUDAD DESTINO"] || o.CIUDAD || 'Desconocida';
-            if (!cityStats[city]) cityStats[city] = 0;
-            cityStats[city]++;
+            const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
+            if (k && k !== 'unknown') dayKeys.add(k);
         });
-        const topCities = Object.entries(cityStats).sort((a, b) => b[1] - a[1]).slice(0, 15);
-        if (topCities.length > 0) {
-            lines.push('', '--- TOP CIUDADES ---');
-            topCities.forEach(([city, count]) => lines.push(`  ${city}: ${count} órdenes`));
+        if (filteredAds) {
+            filteredAds.forEach((ad: any) => {
+                const k = ad.date ? getLocalDateKey(ad.date) : '';
+                if (k && k !== 'unknown') dayKeys.add(k);
+            });
+        }
+        const sortedDays = [...dayKeys].sort().slice(-7);
+
+        if (sortedDays.length > 0) {
+            const dayProductStats: Record<string, Record<string, { name: string; orders: number; delivered: number; canceled: number; sales: number; ads: number }>> = {};
+            const seenIds: Record<string, Set<string>> = {};
+
+            sortedDays.forEach(d => { dayProductStats[d] = {}; seenIds[d] = new Set(); });
+
+            filteredOrders.forEach(o => {
+                const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
+                if (!k || !dayProductStats[k]) return;
+                const pid = o.PRODUCTO_ID?.toString() || o.PRODUCTO?.toString() || 'unknown';
+                const pName = o.PRODUCTO?.toString() || pid;
+                if (!dayProductStats[k][pid]) {
+                    dayProductStats[k][pid] = { name: pName, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
+                }
+                const orderId = o.ID?.toString() || '';
+                if (orderId && !seenIds[k].has(orderId)) {
+                    seenIds[k].add(orderId);
+                    dayProductStats[k][pid].orders++;
+                    if (isEntregado(o.ESTATUS)) dayProductStats[k][pid].delivered++;
+                    if (isCancelado(o.ESTATUS)) dayProductStats[k][pid].canceled++;
+                    if (!isCancelado(o.ESTATUS)) dayProductStats[k][pid].sales += (o["TOTAL DE LA ORDEN"] || 0);
+                }
+            });
+
+            // Add ads per product per day
+            if (filteredAds) {
+                filteredAds.forEach((ad: any) => {
+                    const k = ad.date ? getLocalDateKey(ad.date) : '';
+                    if (!k || !dayProductStats[k]) return;
+                    const pid = ad.productId?.toString() || '';
+                    if (!pid || pid === 'unmapped' || pid === 'unknown' || pid === '') return;
+                    if (!dayProductStats[k][pid]) {
+                        dayProductStats[k][pid] = { name: pid, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
+                    }
+                    dayProductStats[k][pid].ads += (ad.amount || 0);
+                });
+            }
+
+            const todayKey = new Date().toISOString().slice(0, 10);
+            const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+            const yesterdayKey = yesterdayDate.toISOString().slice(0, 10);
+            const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+
+            lines.push('', '--- DATOS DIARIOS POR PRODUCTO (últimos 7 días) ---');
+            sortedDays.forEach(dayKey => {
+                const products = dayProductStats[dayKey];
+                const entries = Object.entries(products).filter(([, s]) => s.orders > 0 || s.ads > 0);
+                if (entries.length === 0) return;
+
+                entries.sort((a, b) => b[1].orders - a[1].orders);
+                const top = entries.slice(0, 10);
+
+                const d = new Date(dayKey + 'T12:00:00');
+                const dayLabel = dayKey === todayKey ? 'hoy' : dayKey === yesterdayKey ? 'ayer' : dayNames[d.getDay()];
+                lines.push(`== ${dayKey} (${dayLabel}) ==`);
+                top.forEach(([pid, s]) => {
+                    lines.push(`  ${s.name} (ID:${pid}): ${s.orders} órd | ${s.delivered} ent | ${s.canceled} can | Ventas: $${Math.round(s.sales).toLocaleString()} | Ads: $${Math.round(s.ads).toLocaleString()}`);
+                });
+                if (entries.length > 10) {
+                    lines.push(`  ... y ${entries.length - 10} productos más`);
+                }
+            });
         }
     }
 
-    // Ad campaigns summary — DESGLOSE COMPLETO POR CAMPAÑA
+    return lines.join('\n');
+}
+
+// ===== TIER 4: Campaigns, cities, campaign names =====
+function buildTier4Campaigns(data: VegaDataContext): string {
+    const { filteredAds, filteredOrders, campaignNames } = data;
+    const lines: string[] = [];
+
+    // Campaign detailed metrics
     if (filteredAds && filteredAds.length > 0) {
         const campaignStats: Record<string, {
             spend: number; platform: string; product: string;
@@ -240,115 +403,18 @@ export function buildDataContext(data: VegaDataContext): string {
         }
     }
 
-    // Daily data for granular queries
-    if (dailySalesData && dailySalesData.length > 0) {
-        lines.push('', '--- DATOS DIARIOS (para preguntas sobre "ayer", "hoy", fechas específicas) ---');
-        lines.push('Fecha | Órdenes | Ventas ($) | Gasto Ads ($) | Utilidad Proy ($)');
-        dailySalesData.forEach((day: any) => {
-            const date = day.date || day.name || '';
-            const orders = day.orders || 0;
-            const sales = day.sales || day.revenue || 0;
-            const ads = day.ads || day.spend || 0;
-            const profit = day.profit || day.projected_profit || 0;
-            lines.push(`${date} | ${orders} | $${Math.round(sales).toLocaleString()} | $${Math.round(ads).toLocaleString()} | $${Math.round(profit).toLocaleString()}`);
-        });
-    }
-
-    // Per-product daily breakdown (last 7 days) for date-specific product queries
+    // City breakdown (top 15)
     if (filteredOrders && filteredOrders.length > 0) {
-        // Determine last 7 days from the data
-        const dayKeys = new Set<string>();
+        const cityStats: Record<string, number> = {};
         filteredOrders.forEach(o => {
-            const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
-            if (k && k !== 'unknown') dayKeys.add(k);
+            const city = o["CIUDAD DESTINO"] || o.CIUDAD || 'Desconocida';
+            if (!cityStats[city]) cityStats[city] = 0;
+            cityStats[city]++;
         });
-        if (filteredAds) {
-            filteredAds.forEach((ad: any) => {
-                const k = ad.date ? getLocalDateKey(ad.date) : '';
-                if (k && k !== 'unknown') dayKeys.add(k);
-            });
-        }
-        const sortedDays = [...dayKeys].sort().slice(-7);
-
-        if (sortedDays.length > 0) {
-            // Build per-product-per-day stats
-            const dayProductStats: Record<string, Record<string, { name: string; orders: number; delivered: number; canceled: number; sales: number; ads: number }>> = {};
-            const seenIds: Record<string, Set<string>> = {};
-
-            sortedDays.forEach(d => { dayProductStats[d] = {}; seenIds[d] = new Set(); });
-
-            filteredOrders.forEach(o => {
-                const k = o.FECHA ? getLocalDateKey(o.FECHA) : '';
-                if (!k || !dayProductStats[k]) return;
-                const pid = o.PRODUCTO_ID?.toString() || o.PRODUCTO?.toString() || 'unknown';
-                const pName = o.PRODUCTO?.toString() || pid;
-                if (!dayProductStats[k][pid]) {
-                    dayProductStats[k][pid] = { name: pName, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
-                }
-                const orderId = o.ID?.toString() || '';
-                if (orderId && !seenIds[k].has(orderId)) {
-                    seenIds[k].add(orderId);
-                    dayProductStats[k][pid].orders++;
-                    if (isEntregado(o.ESTATUS)) dayProductStats[k][pid].delivered++;
-                    if (isCancelado(o.ESTATUS)) dayProductStats[k][pid].canceled++;
-                    if (!isCancelado(o.ESTATUS)) dayProductStats[k][pid].sales += (o["TOTAL DE LA ORDEN"] || 0);
-                }
-            });
-
-            // Add ads per product per day
-            if (filteredAds) {
-                filteredAds.forEach((ad: any) => {
-                    const k = ad.date ? getLocalDateKey(ad.date) : '';
-                    if (!k || !dayProductStats[k]) return;
-                    const pid = ad.productId?.toString() || '';
-                    if (!pid || pid === 'unmapped' || pid === 'unknown' || pid === '') return;
-                    if (!dayProductStats[k][pid]) {
-                        dayProductStats[k][pid] = { name: pid, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
-                    }
-                    dayProductStats[k][pid].ads += (ad.amount || 0);
-                });
-            }
-
-            // Format output
-            const todayKey = new Date().toISOString().slice(0, 10);
-            const yesterdayDate = new Date(); yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-            const yesterdayKey = yesterdayDate.toISOString().slice(0, 10);
-            const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-
-            lines.push('', '--- DATOS DIARIOS POR PRODUCTO (últimos 7 días — para preguntas sobre fechas específicas) ---');
-            sortedDays.forEach(dayKey => {
-                const products = dayProductStats[dayKey];
-                const entries = Object.entries(products).filter(([, s]) => s.orders > 0 || s.ads > 0);
-                if (entries.length === 0) return;
-
-                // Sort by orders descending, take top 10
-                entries.sort((a, b) => b[1].orders - a[1].orders);
-                const top = entries.slice(0, 10);
-
-                const d = new Date(dayKey + 'T12:00:00');
-                const dayLabel = dayKey === todayKey ? 'hoy' : dayKey === yesterdayKey ? 'ayer' : dayNames[d.getDay()];
-                lines.push(`== ${dayKey} (${dayLabel}) ==`);
-                top.forEach(([pid, s]) => {
-                    lines.push(`  ${s.name} (ID:${pid}): ${s.orders} órd | ${s.delivered} ent | ${s.canceled} can | Ventas: $${Math.round(s.sales).toLocaleString()} | Ads: $${Math.round(s.ads).toLocaleString()}`);
-                });
-                if (entries.length > 10) {
-                    lines.push(`  ... y ${entries.length - 10} productos más`);
-                }
-            });
-        }
-    }
-
-    // Berry expenses (operational costs)
-    if (berryExpenses && berryExpenses.length > 0) {
-        lines.push('', '--- GASTOS OPERATIVOS BERRY (COSTOS FIJOS) ---');
-        berryExpenses.forEach(e => {
-            lines.push(`  ${e.category}: $${e.amount.toLocaleString()}`);
-        });
-        lines.push(`  **TOTAL GASTOS OPERATIVOS**: $${(berryExpenseTotal || 0).toLocaleString()}`);
-        if (kpis && kpis.u_real !== 0) {
-            const utilidadDespuesGastos = kpis.u_real - (berryExpenseTotal || 0);
-            lines.push(`  Utilidad después de gastos operativos: $${utilidadDespuesGastos.toLocaleString()}`);
-            lines.push(`  Break-even: ${utilidadDespuesGastos >= 0 ? 'ALCANZADO ✓' : 'NO ALCANZADO ✗ — la operación no cubre costos fijos'}`);
+        const topCities = Object.entries(cityStats).sort((a, b) => b[1] - a[1]).slice(0, 15);
+        if (topCities.length > 0) {
+            lines.push('', '--- TOP CIUDADES ---');
+            topCities.forEach(([city, count]) => lines.push(`  ${city}: ${count} órdenes`));
         }
     }
 
@@ -363,19 +429,5 @@ export function buildDataContext(data: VegaDataContext): string {
         }
     }
 
-    lines.push(
-        '',
-        `Países activos: ${countries.join(', ')}`,
-        `Total pedidos en sistema: ${orderCount}`,
-    );
-
-    let result = lines.join('\n');
-
-    // Cap context size at ~80K chars (~20K tokens) to avoid AI API limits
-    const MAX_CONTEXT_CHARS = 80_000;
-    if (result.length > MAX_CONTEXT_CHARS) {
-        result = result.substring(0, MAX_CONTEXT_CHARS) + '\n\n[... Datos truncados por tamaño. Se incluyeron los datos más importantes.]';
-    }
-
-    return result;
+    return lines.join('\n');
 }

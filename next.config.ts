@@ -12,7 +12,6 @@ const nextConfig: NextConfig = {
       'firebase/app',
       'xlsx',
       'jspdf',
-      'papaparse',
     ],
   },
   async headers() {

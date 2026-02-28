@@ -41,10 +41,7 @@ export async function POST(req: NextRequest) {
         }
 
         const contextStr = dataContext || '';
-        console.log(`[Vega Reports] Generating ${type} report. Context size: ${contextStr.length} chars`);
-
         const content = await vegaGenerateReport(type, contextStr, period || 'Actual', kpiTargets);
-        console.log(`[Vega Reports] Report generated. Content size: ${content.length} chars`);
 
         // Build metadata for visual rendering (map dashboard field names to VegaReportMetadata format)
         let metadata: VegaReportMetadata | undefined;
