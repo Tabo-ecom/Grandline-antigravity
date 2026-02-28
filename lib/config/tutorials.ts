@@ -61,7 +61,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         description: 'Control total de tu inversion publicitaria',
         videos: [
             { title: 'Conecta la API de Facebook', url: 'https://youtu.be/avR23mXHixc' },
-            { title: 'Genera Reporte TikTok', url: 'https://youtu.be/Kuhe1W12BeQ' },
+            { title: 'Subir Reportes TikTok', url: 'https://youtu.be/Kuhe1W12BeQ' },
         ],
         steps: [
             'Conecta tu token de Facebook o sube CSVs de TikTok para importar datos',
