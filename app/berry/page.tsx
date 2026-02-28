@@ -546,11 +546,8 @@ export default function BerryPage() {
                 {/* ── Header ─────────────────────────────────────────────── */}
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-black tracking-tight flex items-center gap-3">
-                            <span className="text-2xl">🍇</span>
-                            Berry
-                            <span className="text-sm font-mono text-muted tracking-widest uppercase ml-3">Centro de Gastos</span>
-                        </h1>
+                        <img src="/logos/berry-logo.png" alt="Berry" className="h-12 w-auto object-contain hidden dark:block" />
+                        <img src="/logos/berry-logo-dark.png" alt="Berry" className="h-12 w-auto object-contain block dark:hidden" />
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 bg-card border border-card-border rounded-xl p-1 mr-2">

@@ -6,7 +6,6 @@ import {
     Zap,
     Cpu,
     Globe,
-    Rocket,
     Loader2
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
@@ -31,17 +30,12 @@ export default function SunnyPage() {
             <div className="relative z-10 p-4 md:p-8 max-w-[1600px] mx-auto space-y-6">
                 {/* Header Section */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-card-border pb-6">
-                    <div>
-                        <div className="flex items-center gap-2 mb-1">
-                            <div className="p-1 px-2 bg-accent/10 rounded border border-accent/20">
-                                <span className="text-[10px] font-black tracking-widest text-accent uppercase">System Active</span>
-                            </div>
+                    <div className="flex items-center gap-4">
+                        <img src="/logos/sunny-logo.png" alt="Sunny" className="h-12 w-auto object-contain hidden dark:block" />
+                        <img src="/logos/sunny-logo-dark.png" alt="Sunny" className="h-12 w-auto object-contain block dark:hidden" />
+                        <div className="p-1 px-2 bg-accent/10 rounded border border-accent/20">
+                            <span className="text-[10px] font-black tracking-widest text-accent uppercase">System Active</span>
                         </div>
-                        <h1 className="text-4xl font-black italic uppercase tracking-tighter flex items-center gap-3">
-                            Módulo <span className="text-accent">Sunny</span>
-                            <Rocket className="w-8 h-8 text-accent animate-pulse" />
-                        </h1>
-                        <p className="text-muted text-sm font-medium mt-1 uppercase tracking-widest">El Cañón de Campañas Masivas</p>
                     </div>
 
                     <div className="flex items-center gap-4 bg-card backdrop-blur-xl p-2 rounded-2xl border border-card-border">

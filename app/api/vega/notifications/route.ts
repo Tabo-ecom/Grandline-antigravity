@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getNotificationConfig, saveNotificationConfig, sendTelegramMessage, sendSlackMessage } from '@/lib/services/vega/notifications';
+import { sendReportEmail } from '@/lib/services/vega/email';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
 import type { VegaNotificationConfig } from '@/lib/types/vega';
 
@@ -39,6 +40,18 @@ export async function POST(req: NextRequest) {
                 results.slack = await sendSlackMessage(
                     testConfig.slackWebhookUrl,
                     '🧪 *VEGA TEST* - Notificación de prueba configurada correctamente.'
+                );
+            }
+
+            if (testConfig.emailEnabled && auth.email) {
+                results.email = await sendReportEmail(
+                    auth.email,
+                    '🧪 VEGA TEST — Notificación de prueba',
+                    `<div style="font-family: Arial, sans-serif; padding: 24px; background: #0A0A0F; color: #ededed;">
+                        <h2 style="color: #d75c33;">VEGA TEST</h2>
+                        <p>Notificación de prueba configurada correctamente.</p>
+                        <p style="color: #6b7280; font-size: 12px;">Los reportes diarios se enviarán a este correo.</p>
+                    </div>`
                 );
             }
 

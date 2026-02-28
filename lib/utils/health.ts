@@ -1,6 +1,8 @@
 import type { KPITarget } from '@/lib/types/kpi-targets';
+import type { KPIResults } from '@/lib/calculations/kpis';
 
 export type HealthStatus = 'good' | 'warning' | 'bad';
+export type OverallHealthLevel = 'EXCELENTE' | 'MUY BUENO' | 'BUENO' | 'ALERTA' | 'CRITICO';
 
 export function evaluateHealth(value: number, target: KPITarget): HealthStatus {
     if (target.inverse) {
@@ -46,4 +48,45 @@ export function getHealthLabel(status: HealthStatus, kpiKey: string): string {
 
 export function findTarget(targets: KPITarget[], key: string): KPITarget | undefined {
     return targets.find(t => t.key === key);
+}
+
+export function calculateOverallHealth(
+    kpis: KPIResults,
+    targets: KPITarget[]
+): { level: OverallHealthLevel; score: number } {
+    const weights: { key: string; weight: number; getValue: (k: KPIResults) => number }[] = [
+        { key: 'roas_real', weight: 0.25, getValue: k => k.roas_real },
+        { key: 'tasa_ent', weight: 0.20, getValue: k => k.tasa_ent },
+        { key: 'tasa_can', weight: 0.15, getValue: k => k.tasa_can },
+        { key: 'perc_ads_revenue', weight: 0.15, getValue: k => k.perc_ads_revenue },
+    ];
+
+    let weightedScore = 0;
+    let totalWeight = 0;
+
+    for (const w of weights) {
+        const target = findTarget(targets, w.key);
+        if (!target) continue;
+        const status = evaluateHealth(w.getValue(kpis), target);
+        const points = status === 'good' ? 100 : status === 'warning' ? 50 : 10;
+        weightedScore += points * w.weight;
+        totalWeight += w.weight;
+    }
+
+    // Utilidad real (25% weight) — special handling: positive = good, zero = warning, negative = bad
+    const uRealWeight = 0.25;
+    const uRealPoints = kpis.u_real > 0 ? 100 : kpis.u_real === 0 ? 50 : 10;
+    weightedScore += uRealPoints * uRealWeight;
+    totalWeight += uRealWeight;
+
+    const score = totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 50;
+
+    let level: OverallHealthLevel;
+    if (score >= 85) level = 'EXCELENTE';
+    else if (score >= 70) level = 'MUY BUENO';
+    else if (score >= 55) level = 'BUENO';
+    else if (score >= 35) level = 'ALERTA';
+    else level = 'CRITICO';
+
+    return { level, score };
 }

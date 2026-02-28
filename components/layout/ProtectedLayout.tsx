@@ -31,14 +31,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         setIsLandingDomain(!isApp);
     }, []);
 
-    const isPublicPage = pathname === '/' || pathname === '/login';
+    const isPublicPage = pathname === '/' || pathname === '/login' || pathname === '/diagnostico';
 
     React.useEffect(() => {
         if (isLandingDomain === null || loading) return;
 
         // Landing domain (grandline.com.co): only serve landing page, redirect everything else to app subdomain
         if (isLandingDomain) {
-            if (pathname !== '/') {
+            if (pathname !== '/' && pathname !== '/diagnostico') {
                 window.location.href = `https://app.grandline.com.co${pathname}`;
             }
             return;
@@ -55,9 +55,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Wait for domain detection
     if (isLandingDomain === null) return null;
 
-    // Landing domain — always show landing page at /
+    // Landing domain — always show landing page and public pages
     if (isLandingDomain) {
-        if (pathname === '/') return <>{children}</>;
+        if (pathname === '/' || pathname === '/diagnostico') return <>{children}</>;
         return null; // redirecting to app subdomain
     }
 
@@ -79,6 +79,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Redirecting — show nothing
     if (!user && !isPublicPage) return null;
     if (user && (pathname === '/login' || pathname === '/')) return <>{children}</>;
+
+    // Public pages that should NEVER load AppProviders (even when logged in)
+    if (pathname === '/diagnostico') return <>{children}</>;
 
     // Plan-based access check: block modules the user's plan doesn't include
     const moduleId = pathname.replace('/', '').split('/')[0]; // e.g. "sunny", "berry", "vega-ai"

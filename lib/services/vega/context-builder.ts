@@ -369,5 +369,13 @@ export function buildDataContext(data: VegaDataContext): string {
         `Total pedidos en sistema: ${orderCount}`,
     );
 
-    return lines.join('\n');
+    let result = lines.join('\n');
+
+    // Cap context size at ~80K chars (~20K tokens) to avoid AI API limits
+    const MAX_CONTEXT_CHARS = 80_000;
+    if (result.length > MAX_CONTEXT_CHARS) {
+        result = result.substring(0, MAX_CONTEXT_CHARS) + '\n\n[... Datos truncados por tamaño. Se incluyeron los datos más importantes.]';
+    }
+
+    return result;
 }

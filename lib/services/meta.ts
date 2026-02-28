@@ -117,6 +117,21 @@ function extractActions(actions: any[] = [], type: string): number {
     return match ? parseFloat(match.value) : 0;
 }
 
+/** Try multiple action types in order, return first non-zero match */
+function extractActionsMulti(actions: any[] = [], types: string[]): number {
+    for (const type of types) {
+        const val = extractActions(actions, type);
+        if (val > 0) return val;
+    }
+    return 0;
+}
+
+// Action type fallback chains (FB API v21.0 may use omni_ prefixed types)
+const PURCHASE_TYPES = ['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase', 'onsite_web_purchase'];
+const ADD_TO_CART_TYPES = ['add_to_cart', 'omni_add_to_cart', 'offsite_conversion.fb_pixel_add_to_cart', 'onsite_web_add_to_cart'];
+const PAGE_VISIT_TYPES = ['landing_page_view', 'link_click', 'omni_view_content'];
+const LEAD_TYPES = ['lead', 'offsite_conversion.fb_pixel_lead', 'omni_lead'];
+
 // ─── Paginated Fetch for Insights ────────────────────────────────────
 async function fetchAllInsightsPages(initialUrl: string, context: string): Promise<any[]> {
     const allData: any[] = [];
@@ -197,7 +212,7 @@ export async function fetchMetaAdSpend(token: string, accountId: string, startDa
 
     const timeRange = JSON.stringify({ since: startDate, until: endDate });
     const params = new URLSearchParams({
-        fields: 'campaign_id,campaign_name,spend,impressions,clicks,inline_link_click_ctr,cpc,reach,actions,action_values,date_start,date_stop',
+        fields: 'campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,inline_link_click_ctr,cpc,reach,actions,action_values,date_start,date_stop',
         time_range: timeRange,
         time_increment: '1',
         level: 'campaign',
@@ -210,14 +225,26 @@ export async function fetchMetaAdSpend(token: string, accountId: string, startDa
     // Use pagination to get ALL results (not just first 500)
     const allItems = await fetchAllInsightsPages(url, 'Fetch ad spend');
 
-    return allItems.map((item: any) => ({
-        ...item,
-        purchases: extractActions(item.actions, 'purchase') || extractActions(item.actions, 'offsite_conversion.fb_pixel_purchase'),
-        revenue: extractActions(item.action_values, 'purchase') || extractActions(item.action_values, 'offsite_conversion.fb_pixel_purchase'),
-        leads: extractActions(item.actions, 'lead') || extractActions(item.actions, 'offsite_conversion.fb_pixel_lead'),
-        page_visits: extractActions(item.actions, 'landing_page_view') || extractActions(item.actions, 'link_click'),
-        add_to_cart: extractActions(item.actions, 'add_to_cart') || extractActions(item.actions, 'offsite_conversion.fb_pixel_add_to_cart')
-    }));
+    return allItems.map((item: any) => {
+        // Actions-based metrics (require Facebook Pixel)
+        const pixelPageVisits = extractActionsMulti(item.actions, PAGE_VISIT_TYPES);
+        const pixelAddToCart = extractActionsMulti(item.actions, ADD_TO_CART_TYPES);
+        const pixelPurchases = extractActionsMulti(item.actions, PURCHASE_TYPES);
+        const pixelRevenue = extractActionsMulti(item.action_values, PURCHASE_TYPES);
+
+        // Top-level metrics (always available, no pixel needed)
+        const inlineLinkClicks = parseInt(item.inline_link_clicks || '0') || 0;
+
+        return {
+            ...item,
+            purchases: pixelPurchases,
+            revenue: pixelRevenue,
+            leads: extractActionsMulti(item.actions, LEAD_TYPES),
+            // Use pixel page_visits if available, otherwise use inline_link_clicks (no pixel needed)
+            page_visits: pixelPageVisits > 0 ? pixelPageVisits : inlineLinkClicks,
+            add_to_cart: pixelAddToCart,
+        };
+    });
 }
 
 export async function fetchMetaAdCreatives(token: string, accountId: string, startDate: string, endDate: string): Promise<any[]> {
@@ -225,7 +252,7 @@ export async function fetchMetaAdCreatives(token: string, accountId: string, sta
     try {
         const timeRange = JSON.stringify({ since: startDate, until: endDate });
         const params = new URLSearchParams({
-            fields: 'ad_id,ad_name,campaign_name,campaign_id,spend,impressions,clicks,inline_link_click_ctr,actions,action_values',
+            fields: 'ad_id,ad_name,campaign_name,campaign_id,spend,impressions,clicks,inline_link_clicks,inline_link_click_ctr,actions,action_values',
             time_range: timeRange,
             level: 'ad',
             limit: '100',
@@ -235,7 +262,10 @@ export async function fetchMetaAdCreatives(token: string, accountId: string, sta
         const url = `https://graph.facebook.com/${META_INSIGHTS_VERSION}/${accountId}/insights?${params.toString()}`;
         const allItems = await fetchAllInsightsPages(url, 'Fetch ad creatives');
 
-        return allItems.map((item: any) => ({
+        return allItems.map((item: any) => {
+            const pixelPageVisits = extractActionsMulti(item.actions, PAGE_VISIT_TYPES);
+            const inlineLinkClicks = parseInt(item.inline_link_clicks || '0') || 0;
+            return {
             id: item.ad_id,
             name: item.ad_name,
             campaign_name: item.campaign_name || '',
@@ -244,14 +274,117 @@ export async function fetchMetaAdCreatives(token: string, accountId: string, sta
             impressions: parseInt(item.impressions || 0),
             clicks: parseInt(item.clicks || 0),
             ctr: parseFloat(item.inline_link_click_ctr || 0),
-            conversions: extractActions(item.actions, 'purchase') || extractActions(item.actions, 'offsite_conversion.fb_pixel_purchase'),
-            revenue: extractActions(item.action_values, 'purchase') || extractActions(item.action_values, 'offsite_conversion.fb_pixel_purchase'),
-            page_visits: extractActions(item.actions, 'landing_page_view') || extractActions(item.actions, 'link_click'),
-            add_to_cart: extractActions(item.actions, 'add_to_cart') || extractActions(item.actions, 'offsite_conversion.fb_pixel_add_to_cart'),
+            conversions: extractActionsMulti(item.actions, PURCHASE_TYPES),
+            revenue: extractActionsMulti(item.action_values, PURCHASE_TYPES),
+            page_visits: pixelPageVisits > 0 ? pixelPageVisits : inlineLinkClicks,
+            add_to_cart: extractActionsMulti(item.actions, ADD_TO_CART_TYPES),
             platform: 'facebook'
-        }));
+        };
+        });
     } catch (error) {
         console.error('Error fetching Meta creatives:', error);
+        if (error instanceof MetaTokenExpiredError) throw error;
+        return [];
+    }
+}
+
+/**
+ * Fetch ad set level insights for all campaigns in an account.
+ * Returns array with metrics per ad set per day.
+ */
+export async function fetchMetaAdSetInsights(token: string, accountId: string, startDate: string, endDate: string): Promise<any[]> {
+    if (!token || !accountId) return [];
+    try {
+        const timeRange = JSON.stringify({ since: startDate, until: endDate });
+        const params = new URLSearchParams({
+            fields: 'adset_id,adset_name,campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,inline_link_click_ctr,cpc,actions,action_values,date_start,date_stop',
+            time_range: timeRange,
+            level: 'adset',
+            limit: '500',
+            access_token: token
+        });
+
+        const url = `https://graph.facebook.com/${META_INSIGHTS_VERSION}/${accountId}/insights?${params.toString()}`;
+        const allItems = await fetchAllInsightsPages(url, 'Fetch adset insights');
+
+        return allItems.map((item: any) => {
+            const pixelPageVisits = extractActionsMulti(item.actions, PAGE_VISIT_TYPES);
+            const pixelAddToCart = extractActionsMulti(item.actions, ADD_TO_CART_TYPES);
+            const pixelPurchases = extractActionsMulti(item.actions, PURCHASE_TYPES);
+            const pixelRevenue = extractActionsMulti(item.action_values, PURCHASE_TYPES);
+            const inlineLinkClicks = parseInt(item.inline_link_clicks || '0') || 0;
+
+            return {
+                adset_id: item.adset_id,
+                adset_name: item.adset_name,
+                campaign_id: item.campaign_id,
+                campaign_name: item.campaign_name,
+                spend: parseFloat(item.spend || '0'),
+                impressions: parseInt(item.impressions || '0'),
+                clicks: parseInt(item.clicks || '0'),
+                cpc: parseFloat(item.cpc || '0'),
+                ctr: parseFloat(item.inline_link_click_ctr || '0'),
+                purchases: pixelPurchases,
+                revenue: pixelRevenue,
+                page_visits: pixelPageVisits > 0 ? pixelPageVisits : inlineLinkClicks,
+                add_to_cart: pixelAddToCart,
+                date_start: item.date_start,
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching Meta adset insights:', error);
+        if (error instanceof MetaTokenExpiredError) throw error;
+        return [];
+    }
+}
+
+/**
+ * Fetch ad level insights for all ads in an account.
+ * Returns array with metrics per ad per day.
+ */
+export async function fetchMetaAdLevelInsights(token: string, accountId: string, startDate: string, endDate: string): Promise<any[]> {
+    if (!token || !accountId) return [];
+    try {
+        const timeRange = JSON.stringify({ since: startDate, until: endDate });
+        const params = new URLSearchParams({
+            fields: 'ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,inline_link_click_ctr,cpc,actions,action_values,date_start,date_stop',
+            time_range: timeRange,
+            level: 'ad',
+            limit: '500',
+            access_token: token
+        });
+
+        const url = `https://graph.facebook.com/${META_INSIGHTS_VERSION}/${accountId}/insights?${params.toString()}`;
+        const allItems = await fetchAllInsightsPages(url, 'Fetch ad level insights');
+
+        return allItems.map((item: any) => {
+            const pixelPageVisits = extractActionsMulti(item.actions, PAGE_VISIT_TYPES);
+            const pixelAddToCart = extractActionsMulti(item.actions, ADD_TO_CART_TYPES);
+            const pixelPurchases = extractActionsMulti(item.actions, PURCHASE_TYPES);
+            const pixelRevenue = extractActionsMulti(item.action_values, PURCHASE_TYPES);
+            const inlineLinkClicks = parseInt(item.inline_link_clicks || '0') || 0;
+
+            return {
+                ad_id: item.ad_id,
+                ad_name: item.ad_name,
+                adset_id: item.adset_id,
+                adset_name: item.adset_name,
+                campaign_id: item.campaign_id,
+                campaign_name: item.campaign_name,
+                spend: parseFloat(item.spend || '0'),
+                impressions: parseInt(item.impressions || '0'),
+                clicks: parseInt(item.clicks || '0'),
+                cpc: parseFloat(item.cpc || '0'),
+                ctr: parseFloat(item.inline_link_click_ctr || '0'),
+                purchases: pixelPurchases,
+                revenue: pixelRevenue,
+                page_visits: pixelPageVisits > 0 ? pixelPageVisits : inlineLinkClicks,
+                add_to_cart: pixelAddToCart,
+                date_start: item.date_start,
+            };
+        });
+    } catch (error) {
+        console.error('Error fetching Meta ad level insights:', error);
         if (error instanceof MetaTokenExpiredError) throw error;
         return [];
     }

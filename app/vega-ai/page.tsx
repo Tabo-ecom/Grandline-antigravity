@@ -1,21 +1,19 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bot, Activity, Bell, FileText, Settings } from 'lucide-react';
+import { Activity, Bell, Settings } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 // Lazy-loaded tab components (only one visible at a time)
 const VegaCoreMonitoring = dynamic(() => import('@/components/vega/VegaCoreMonitoring').then(m => ({ default: m.VegaCoreMonitoring })));
 const VegaActiveAlerts = dynamic(() => import('@/components/vega/VegaActiveAlerts').then(m => ({ default: m.VegaActiveAlerts })));
 const VegaAlertConfigPanel = dynamic(() => import('@/components/vega/VegaAlertConfigPanel').then(m => ({ default: m.VegaAlertConfigPanel })));
-const VegaRecentReports = dynamic(() => import('@/components/vega/VegaRecentReports').then(m => ({ default: m.VegaRecentReports })));
 const VegaNotificationSettings = dynamic(() => import('@/components/vega/VegaNotificationSettings').then(m => ({ default: m.VegaNotificationSettings })));
 const KPICalibration = dynamic(() => import('@/components/settings/KPICalibration').then(m => ({ default: m.KPICalibration })));
 
 const TABS = [
     { key: 'monitoring', label: 'Monitoreo', icon: Activity },
     { key: 'alerts', label: 'Alertas', icon: Bell },
-    { key: 'reports', label: 'Reportes', icon: FileText },
     { key: 'config', label: 'Configuración', icon: Settings },
 ];
 
@@ -27,13 +25,8 @@ export default function VegaAIPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                        <Bot className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-black text-foreground tracking-tight">VEGA AI</h1>
-                        <p className="text-xs text-muted">Inteligencia Operativa &middot; Auditoría Automatizada &middot; Alertas en Tiempo Real</p>
-                    </div>
+                    <img src="/logos/vega-logo.png" alt="Vega AI" className="h-12 w-auto object-contain hidden dark:block" />
+                    <img src="/logos/vega-logo-dark.png" alt="Vega AI" className="h-12 w-auto object-contain block dark:hidden" />
                 </div>
             </div>
 
@@ -67,8 +60,6 @@ export default function VegaAIPage() {
                     <VegaAlertConfigPanel />
                 </div>
             )}
-
-            {activeTab === 'reports' && <VegaRecentReports />}
 
             {activeTab === 'config' && (
                 <div className="space-y-6">

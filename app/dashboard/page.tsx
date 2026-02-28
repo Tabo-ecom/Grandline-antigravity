@@ -443,6 +443,7 @@ export default function GlobalDashboard() {
                     availableProducts={availableProducts}
                     title="Wheel"
                     icon={LayoutGrid}
+                    logo="/logos/wheel-logo.png"
                 />
 
                 {/* Health Semaphore Bar */}

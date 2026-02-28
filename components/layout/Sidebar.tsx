@@ -30,12 +30,12 @@ import { useSidebar } from '@/lib/context/SidebarContext';
 import { usePlanAccess } from '@/lib/hooks/usePlanAccess';
 
 const NAV_ITEMS = [
-    { name: 'Wheel', icon: LayoutDashboard, href: '/dashboard' },
+    { name: 'Wheel', icon: LayoutDashboard, href: '/dashboard', isotipo: '/logos/wheel-isotipo.png' },
     { name: 'Log Pose', icon: MapIcon, href: '/log-pose' },
     { name: 'Publicidad', icon: Zap, href: '/publicidad' },
-    { name: 'Módulo Sunny', icon: Rocket, href: '/sunny' },
-    { name: 'Berry', icon: Wallet, href: '/berry' },
-    { name: 'Vega AI', icon: Bot, href: '/vega-ai' },
+    { name: 'Módulo Sunny', icon: Rocket, href: '/sunny', isotipo: '/logos/sunny-isotipo.png' },
+    { name: 'Berry', icon: Wallet, href: '/berry', isotipo: '/logos/berry-isotipo.png' },
+    { name: 'Vega AI', icon: Bot, href: '/vega-ai', isotipo: '/logos/vega-isotipo.png' },
 ];
 
 const ALL_COUNTRIES = [
@@ -82,7 +82,8 @@ export default function Sidebar() {
             <div className="p-4 border-b border-sidebar-border flex items-center justify-between shrink-0">
                 {!collapsed && (
                     <div className="flex items-center gap-3 min-w-0">
-                        <div className="text-2xl shrink-0">⚓</div>
+                        <img src="/logos/grandline-isotipo.png" alt="Grand Line" className="w-7 h-7 shrink-0 hidden dark:block" />
+                        <img src="/logos/grandline-isotipo-dark.png" alt="Grand Line" className="w-7 h-7 shrink-0 block dark:hidden" />
                         <div className="min-w-0">
                             <h1 className="text-sm font-bold tracking-tighter text-foreground">GRAND LINE</h1>
                             <p className="text-[10px] text-muted font-mono tracking-widest uppercase">Command Center</p>
@@ -91,7 +92,8 @@ export default function Sidebar() {
                 )}
                 {collapsed && (
                     <div className="w-full flex justify-center">
-                        <span className="text-xl">⚓</span>
+                        <img src="/logos/grandline-isotipo.png" alt="Grand Line" className="w-6 h-6 hidden dark:block" />
+                        <img src="/logos/grandline-isotipo-dark.png" alt="Grand Line" className="w-6 h-6 block dark:hidden" />
                     </div>
                 )}
                 <button
@@ -144,7 +146,14 @@ export default function Sidebar() {
                                         : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'
                                         } ${collapsed ? 'justify-center' : ''}`}
                                 >
-                                    <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#d75c33]' : 'text-muted group-hover:text-foreground/80'}`} />
+                                    {item.isotipo ? (
+                                        <>
+                                            <img src={item.isotipo} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity hidden dark:block ${isActive ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`} />
+                                            <img src={item.isotipo.replace('.png', '-dark.png')} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity block dark:hidden ${isActive ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`} />
+                                        </>
+                                    ) : (
+                                        <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#d75c33]' : 'text-muted group-hover:text-foreground/80'}`} />
+                                    )}
                                     {!collapsed && <span className="truncate">{item.name}</span>}
                                 </Link>
                             );

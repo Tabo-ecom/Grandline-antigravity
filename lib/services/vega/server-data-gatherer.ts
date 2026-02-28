@@ -71,6 +71,8 @@ export interface ReportData {
     period: string;
     kpis: any;
     metricsByCountry: any[];
+    adPlatformMetrics: { fb: number; tiktok: number; google: number };
+    prevKpis: any;
 }
 
 export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', userId: string): Promise<ReportData> {
@@ -223,6 +225,7 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         if (h.platform === 'facebook') fb += cop;
         if (h.platform === 'tiktok') tiktok += cop;
     });
+    const google = 0; // Google Ads not yet integrated
 
     // Build adsByCountryProduct (matching dashboard useDashboardData.ts lines 339-417 exactly)
     const adsByCountryProduct: Record<string, Record<string, number>> = {};
@@ -419,13 +422,57 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
     });
     const availableProducts = Array.from(productMap.entries()).map(([id, label]) => ({ id, label }));
 
+    // Loss streak calculation (daily reports only)
+    if (type === 'daily') {
+        // Look at last 7 days to find consecutive loss days per product
+        const streakDays = 7;
+        const today = new Date();
+        const streakDates: string[] = [];
+        for (let d = 1; d <= streakDays; d++) {
+            const dt = new Date(today);
+            dt.setDate(dt.getDate() - d);
+            streakDates.push(getLocalDateKey(dt));
+        }
+        // streakDates[0] = yesterday, [1] = day before, etc.
+
+        metricsByCountry.forEach(c => {
+            const cSettings = projectionSettings?.countries?.[c.countryName];
+            const pOverrides: Record<string, number> = projectionSettings?.products?.[c.countryName] || {};
+            const defaultDP = cSettings?.delivery_percent ?? 80;
+            const buffer = cSettings?.buffer ?? 1.4;
+
+            c.products.forEach((p: any) => {
+                let streak = 0;
+                for (const dateKey of streakDates) {
+                    const dayOrders = allOrders.filter(o =>
+                        o.country === c.countryName &&
+                        (o.PRODUCTO_ID?.toString() || 'unknown') === p.id &&
+                        getLocalDateKey(o.FECHA) === dateKey
+                    );
+                    const dayAds = resolvedAds.filter(h =>
+                        getLocalDateKey(h.date) === dateKey &&
+                        h.productId === p.id
+                    ).reduce((s, h) => s + (h.currency === 'COP' ? h.amount : toCOP(h.amount, h.currency, rates)), 0);
+
+                    if (dayOrders.length === 0 && dayAds === 0) break; // No activity = end streak check
+                    const pDP = pOverrides[p.id] !== undefined ? pOverrides[p.id] : defaultDP;
+                    const proj = calculateProjection(dayOrders, 'PRODUCTO_ID', { [p.id]: pDP }, buffer, { [p.id]: dayAds });
+                    const dayUtil = dayOrders.length === 0 ? -dayAds : proj.reduce((s, x) => s + x.utilidad, 0);
+                    if (dayUtil < 0) streak++;
+                    else break; // Streak broken
+                }
+                p.lossStreak = streak;
+            });
+        });
+    }
+
     // Build context
     const vegaData: VegaDataContext = {
         kpis,
         prevKpis,
         orderCount: filteredOrders.length,
         countries,
-        adPlatformMetrics: { fb, tiktok, google: 0 },
+        adPlatformMetrics: { fb, tiktok, google },
         projectedProfit: 0,
         metricsByCountry,
         dateRange: range.label,
@@ -449,5 +496,7 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         period: range.label,
         kpis,
         metricsByCountry,
+        adPlatformMetrics: { fb, tiktok, google },
+        prevKpis,
     };
 }

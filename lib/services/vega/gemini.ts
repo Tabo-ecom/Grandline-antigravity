@@ -125,32 +125,46 @@ async function callGemini(apiKey: string, prompt: string, systemContext?: string
         ? `${systemPrompt}\n\n--- CONTEXTO DE DATOS ---\n${systemContext}\n\n--- SOLICITUD ---\n${prompt}`
         : `${systemPrompt}\n\n${prompt}`;
 
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: fullPrompt }] }],
-                generationConfig: {
-                    temperature: 0.4,
-                    maxOutputTokens: 4096,
-                },
-            }),
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
+
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: fullPrompt }] }],
+                    generationConfig: {
+                        temperature: 0.4,
+                        maxOutputTokens: 4096,
+                    },
+                }),
+                signal: controller.signal,
+            }
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 200)}`);
         }
-    );
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 200)}`);
+        const data = await response.json();
+        if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            const blockReason = data.candidates?.[0]?.finishReason || data.promptFeedback?.blockReason || 'unknown';
+            throw new Error(`Respuesta inválida de Gemini (reason: ${blockReason})`);
+        }
+
+        return data.candidates[0].content.parts[0].text;
+    } catch (err: any) {
+        if (err.name === 'AbortError') {
+            throw new Error('La solicitud a Gemini tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
     }
-
-    const data = await response.json();
-    if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        throw new Error('Respuesta inválida de Gemini');
-    }
-
-    return data.candidates[0].content.parts[0].text;
 }
 
 async function callOpenAI(apiKey: string, prompt: string, systemContext?: string, kpiTargets?: KPITarget[]): Promise<string> {
@@ -159,34 +173,47 @@ async function callOpenAI(apiKey: string, prompt: string, systemContext?: string
         ? `${systemPrompt}\n\n--- CONTEXTO DE DATOS ---\n${systemContext}`
         : systemPrompt;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-                { role: 'system', content: systemMessage },
-                { role: 'user', content: prompt },
-            ],
-            temperature: 0.4,
-            max_tokens: 4096,
-        }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000); // 2 min timeout
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenAI API error (${response.status}): ${errorText.substring(0, 200)}`);
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                messages: [
+                    { role: 'system', content: systemMessage },
+                    { role: 'user', content: prompt },
+                ],
+                temperature: 0.4,
+                max_tokens: 4096,
+            }),
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error (${response.status}): ${errorText.substring(0, 200)}`);
+        }
+
+        const data = await response.json();
+        if (!data.choices?.[0]?.message?.content) {
+            throw new Error('Respuesta inválida de OpenAI');
+        }
+
+        return data.choices[0].message.content;
+    } catch (err: any) {
+        if (err.name === 'AbortError') {
+            throw new Error('La solicitud a OpenAI tardó demasiado (timeout 2 min). Intenta con un rango de fechas más corto.');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
     }
-
-    const data = await response.json();
-    if (!data.choices?.[0]?.message?.content) {
-        throw new Error('Respuesta inválida de OpenAI');
-    }
-
-    return data.choices[0].message.content;
 }
 
 async function callAI(prompt: string, systemContext?: string, kpiTargets?: KPITarget[]): Promise<string> {
@@ -213,15 +240,101 @@ export async function vegaChat(
 }
 
 export async function vegaAnalyze(type: string, dataContext: string, kpiTargets?: KPITarget[]): Promise<string> {
+    const structuredFormat = `
+INSTRUCCIONES DE FORMATO OBLIGATORIAS:
+1. Empieza con <!-- EXECUTIVE_SUMMARY --> conteniendo 2-3 frases simples del hallazgo principal de este análisis.
+2. Incluye <!-- ALERTS --> con alertas clasificadas:
+<!-- ALERTS -->
+[CRITICA] Alerta crítica si aplica
+[ATENCION] Alerta de atención si aplica
+[INFO] Dato informativo
+<!-- /ALERTS -->
+3. Usa secciones ## para organizar el análisis narrativo.
+4. NO inventes datos. Usa SOLO los datos proporcionados.
+5. NO generes tablas de KPIs — el sistema las genera automáticamente.
+6. En las recomendaciones usa tags de acción:
+   [ESCALAR] para escalar lo rentable
+   [PAUSAR] para detener lo que genera pérdida
+   [OPTIMIZAR] para ajustar métricas
+   [MONITOREAR] para vigilar situaciones`;
+
     const prompts: Record<string, string> = {
-        audit: 'Realiza una auditoría completa de la operación. Evalúa cada métrica clave, identifica problemas y oportunidades, y proporciona un plan de acción priorizado.',
-        forecast: 'Basándote en los datos actuales, genera un pronóstico para los próximos 30 días. Incluye proyecciones de ventas, gasto publicitario óptimo y utilidad esperada.',
-        efficiency: 'Analiza la eficiencia operativa. Evalúa tasas de entrega, cancelación y devolución por país. Identifica cuellos de botella y propone mejoras.',
-        ads: 'Analiza el rendimiento publicitario. Evalúa ROAS, CPA y distribución de gasto por plataforma. Recomienda optimizaciones de presupuesto.',
-        profitability: 'Analiza la rentabilidad del negocio. Desglosa costos, márgenes por producto/país y evalúa la sostenibilidad del modelo actual.',
+        audit: `Realiza una auditoría completa de la operación.
+${structuredFormat}
+
+Genera estas secciones:
+## Diagnóstico General
+Evaluación integral de cada métrica clave. Qué está bien, qué está mal, y por qué.
+
+## Problemas Identificados
+Lista de problemas encontrados con severidad y impacto estimado.
+
+## Oportunidades
+Áreas donde se puede crecer o mejorar.
+
+## Plan de Acción
+5-7 acciones priorizadas con tags: [ESCALAR], [PAUSAR], [OPTIMIZAR], [MONITOREAR]`,
+
+        forecast: `Genera un pronóstico para los próximos 30 días.
+${structuredFormat}
+
+Genera estas secciones:
+## Proyección de Ventas
+Estimación basada en tendencia actual.
+
+## Presupuesto Publicitario Óptimo
+Recomendación de gasto por plataforma.
+
+## Utilidad Esperada
+Escenario optimista, esperado y pesimista.
+
+## Recomendaciones
+3-5 acciones con tags de acción.`,
+
+        efficiency: `Analiza la eficiencia operativa.
+${structuredFormat}
+
+Genera estas secciones:
+## Análisis Logístico
+Tasas de entrega, cancelación y devolución por país. Compara con benchmarks del negocio.
+
+## Cuellos de Botella
+Países o productos con peor rendimiento logístico y por qué.
+
+## Plan de Mejora
+5 acciones concretas con tags: [OPTIMIZAR], [MONITOREAR], [PAUSAR]`,
+
+        ads: `Analiza el rendimiento publicitario.
+${structuredFormat}
+
+Genera estas secciones:
+## Rendimiento por Plataforma
+ROAS, CPA y gasto de cada plataforma (Facebook, TikTok). Cuál es más eficiente.
+
+## Campañas Destacadas
+Top campañas por eficiencia y las que necesitan atención urgente.
+
+## Optimización de Presupuesto
+Redistribución recomendada del gasto con tags: [ESCALAR], [PAUSAR], [OPTIMIZAR]`,
+
+        profitability: `Analiza la rentabilidad del negocio.
+${structuredFormat}
+
+Genera estas secciones:
+## Estado de Resultados
+Desglose: Ingresos → Costos Variables → Costos Fijos → Resultado. Márgenes reales.
+
+## Rentabilidad por Producto
+Top productos rentables vs productos en pérdida. Impacto de cada uno.
+
+## Rentabilidad por País
+Evaluación de cada mercado. Cuáles son sostenibles.
+
+## Acciones de Rentabilidad
+5 acciones con tags: [ESCALAR] productos rentables, [PAUSAR] los que generan pérdida, [OPTIMIZAR] costos`,
     };
 
-    const prompt = prompts[type] || `Realiza el siguiente análisis: ${type}`;
+    const prompt = prompts[type] || `Realiza el siguiente análisis: ${type}\n${structuredFormat}`;
     return callAI(prompt, dataContext, kpiTargets);
 }
 
@@ -233,150 +346,83 @@ export async function vegaGenerateReport(type: string, dataContext: string, peri
 function getReportPrompt(type: string, period: string): string {
     const structuredInstructions = `
 INSTRUCCIONES DE FORMATO OBLIGATORIAS:
-1. SIEMPRE empieza con un bloque <!-- EXECUTIVE_SUMMARY --> que contenga 2-3 frases en lenguaje MUY simple explicando cómo va el negocio. Una persona sin conocimiento financiero debe entender esto. Ejemplo: "El negocio vendió 450 pedidos esta semana y ganó $2.3M. La publicidad está siendo rentable."
-2. SIEMPRE incluye un bloque <!-- HERO_KPIS --> con EXACTAMENTE 4 KPIs principales en este formato:
-<!-- HERO_KPIS -->
-[LABEL_1]: [VALOR_1] | [LABEL_2]: [VALOR_2] | [LABEL_3]: [VALOR_3] | [LABEL_4]: [VALOR_4]
-<!-- /HERO_KPIS -->
-Ejemplo: Utilidad Real: $2,340,000 | ROAS Real: 2.45x | Tasa Entrega: 67.2% | CPA: $18,500
-3. SIEMPRE incluye un bloque <!-- ALERTS --> con alertas clasificadas por severidad:
+1. SIEMPRE empieza con un bloque <!-- EXECUTIVE_SUMMARY --> que contenga 2-3 frases en lenguaje MUY simple explicando cómo va el negocio. Menciona la utilidad proyectada y si el negocio fue rentable. Una persona sin conocimiento financiero debe entender esto. Ejemplo: "El negocio vendió 450 pedidos y la utilidad proyectada es de $2.3M. La publicidad está siendo rentable con ROAS de 2.8x."
+2. SIEMPRE incluye un bloque <!-- ALERTS --> con alertas clasificadas por severidad:
 <!-- ALERTS -->
 [CRITICA] Descripción corta de la alerta crítica
 [ATENCION] Descripción corta de la alerta de atención
 [INFO] Dato informativo importante
 <!-- /ALERTS -->
 Si no hay alertas de algún nivel, no pongas esa línea. Si todo está bien, pon: [INFO] Todas las métricas dentro de los rangos saludables.
-4. Después de estos bloques estructurados, continúa con el reporte narrativo normal usando markdown.
-5. NO inventes datos. Usa SOLO los datos proporcionados.`;
+Incluye alertas sobre productos con días consecutivos en pérdida si los datos lo muestran.
+3. Después de estos bloques estructurados, continúa con el reporte narrativo normal usando markdown.
+4. NO inventes datos. Usa SOLO los datos proporcionados.
+5. NO generes tablas de comparación de KPIs ni bloques de HERO_KPIS — el sistema los genera automáticamente desde los datos.
+6. En las recomendaciones, usa SIEMPRE tags de acción al inicio de cada línea:
+   [ESCALAR] para productos/campañas rentables que deben crecer
+   [PAUSAR] para productos/campañas en pérdida que deben detenerse
+   [OPTIMIZAR] para métricas que necesitan ajustes
+   [MONITOREAR] para situaciones que requieren vigilancia`;
 
     const prompts: Record<string, string> = {
         daily: `Genera el reporte diario "El Latido del Negocio" para ${period}.
 ${structuredInstructions}
 
-Después de los bloques estructurados, usa este formato para el contenido narrativo:
+IMPORTANTE para reportes DIARIOS: Las órdenes de hoy llevan apenas 1 día, la mayoría está en tránsito. NO analices tasa de entrega como problema — es normal que sea baja. Enfócate en la UTILIDAD PROYECTADA que es lo que realmente importa para evaluar el día.
+
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
 
 ## Resumen del Dia
-| Métrica | Hoy | Ayer | Cambio |
-|---|---|---|---|
-| Órdenes Totales | X | X | ↑/↓ X% |
-| Facturación Neta | $X | $X | ↑/↓ X% |
-| Tasa de Entrega | X% | X% | ↑/↓ |
-| Tasa de Cancelación | X% | X% | ↑/↓ |
-| ROAS Real | Xx | Xx | ↑/↓ |
-| CPA | $X | $X | ↑/↓ X% |
-| Gasto Ads | $X | $X | ↑/↓ X% |
-| Utilidad Real | $X | $X | ↑/↓ X% |
+Un párrafo de análisis narrativo del día: qué pasó, cómo se compara con ayer, qué destaca. Menciona productos clave. NO uses tabla — el sistema la genera automáticamente.
 
-## Top 3 Productos del Dia
-1. [Producto]: X órdenes, ROAS Xx, Utilidad $X
-2. ...
-3. ...
-
-## Recomendacion del Primer Oficial
-[1-3 acciones concretas y accionables para mañana. Sé específico.]
-
-Si no hay datos del día anterior en los datos diarios, indica "sin comparación".`,
+## Recomendaciones del Primer Oficial
+3-5 acciones concretas con tags de acción. Ejemplo:
+- [ESCALAR] Aumentar presupuesto de "Producto X" en Facebook — ROAS 3.5x y utilidad proyectada positiva
+- [PAUSAR] Detener campañas de "Producto Y" — lleva 3 días consecutivos en pérdida proyectada
+- [OPTIMIZAR] Revisar segmentación de TikTok — CPA subió a $28K vs $22K ayer
+- [MONITOREAR] "Producto Z" entró en zona de alerta con CPA cercano al umbral`,
 
         weekly: `Genera el reporte semanal "La Brujula Tactica" para ${period}.
 ${structuredInstructions}
 
-Después de los bloques estructurados, usa este formato para el contenido narrativo:
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
 
-## Resumen Semanal
-| Métrica | Esta Semana | Semana Anterior | Cambio |
-|---|---|---|---|
-| Órdenes Totales | X | X | ↑/↓ X% |
-| Facturación Neta | $X | $X | ↑/↓ X% |
-| Ingreso Real (Entregados) | $X | $X | ↑/↓ X% |
-| Tasa de Entrega | X% | X% | ↑/↓ |
-| ROAS Real | Xx | Xx | ↑/↓ |
-| CPA | $X | $X | ↑/↓ X% |
-| Utilidad Real | $X | $X | ↑/↓ X% |
-| Gasto Ads Total | $X | $X | ↑/↓ X% |
+## Análisis Semanal
+2-3 párrafos de análisis narrativo: tendencias de la semana, comparación con semana anterior (si hay datos prevKpis), productos destacados y problemáticos, evolución de la rentabilidad. Menciona utilidad proyectada Y utilidad real.
 
-## Rendimiento por Pais
-Para cada país activo:
-- **[País]**: X órdenes, Entrega X%, ROAS Xx, Utilidad $X
-  - Mejor producto: [nombre] (X órd, ROAS Xx)
-  - Producto en riesgo: [nombre] (razón)
+## Análisis Publicitario
+Análisis de eficiencia publicitaria por plataforma y campañas destacadas. Menciona top 3 campañas por eficiencia y las que necesitan atención.
 
-## Rendimiento Publicitario
-- **Facebook**: $X gastado, ROAS Xx
-- **TikTok**: $X gastado, ROAS Xx
-- Campañas destacadas: [top 3 por ROAS o por gasto]
+## Plan Táctico Siguiente Semana
+3-5 acciones concretas con tags de acción:
+- [ESCALAR] ...
+- [PAUSAR] ...
+- [OPTIMIZAR] ...
 
-## P&L Semanal
-- Facturación Neta: $X
-- (-) Costo Producto: $X (X% del ingreso)
-- (-) Fletes: $X
-- (-) Gasto Ads: $X (X% del revenue)
-- (-) Gastos Operativos Berry: $X (si disponible)
-- = **Utilidad Real**: $X (margen: X%)
-
-## Plan Tactico Siguiente Semana
-1. [Acción concreta y específica]
-2. [Acción concreta y específica]
-3. [Acción concreta y específica]
-
-Si hay datos de período anterior (prevKpis), úsalos para la comparación.`,
+Si hay datos de período anterior (prevKpis), úsalos para las comparaciones narrativas.`,
 
         monthly: `Genera el reporte mensual "La Vision del Almirante" para ${period}.
 ${structuredInstructions}
 
-Después de los bloques estructurados, usa este formato para el contenido narrativo:
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
 
-## Dashboard Ejecutivo
-| Métrica | Este Mes | Mes Anterior | Cambio | Estado |
-|---|---|---|---|---|
-| Órdenes Totales | X | X | X% | BUENO/ATENCION/CRITICO |
-| Facturación Neta | $X | $X | X% | BUENO/ATENCION/CRITICO |
-| Ingreso Real | $X | $X | X% | BUENO/ATENCION/CRITICO |
-| Tasa Entrega | X% | X% | X% | BUENO/ATENCION/CRITICO |
-| Tasa Cancelación | X% | X% | X% | BUENO/ATENCION/CRITICO |
-| ROAS Real | Xx | Xx | X% | BUENO/ATENCION/CRITICO |
-| CPA | $X | $X | X% | BUENO/ATENCION/CRITICO |
-| Utilidad Real | $X | $X | X% | BUENO/ATENCION/CRITICO |
+## Análisis Ejecutivo
+Análisis profundo del mes: evolución de rentabilidad, tendencias, comparación con mes anterior. Honesto con los problemas.
 
-Estados: BUENO = Dentro de objetivo, ATENCION = En riesgo, CRITICO = Fuera de rango
+## Análisis por País
+Para cada país activo: evaluación con productos destacados, oportunidades y riesgos.
 
-## P&L Completo del Mes
-**INGRESOS:**
-- Ingreso Real (Entregados): $X
-- Facturación en Tránsito: $X
-
-**COSTOS VARIABLES:**
-- Costo de Producto: $X (X% del ingreso)
-- Fletes Entrega: $X
-- Fletes Devolución: $X
-- Fletes Tránsito: $X
-- Gasto Publicitario: $X (X% del revenue)
-
-**COSTOS FIJOS (Berry):**
-[Desglose por categoría si disponible]
-- Total Gastos Operativos: $X
-
-**RESULTADO:**
-- **Utilidad Operativa**: $X
-- **Margen Neto**: X%
-- **Break-Even**: [Alcanzado/No alcanzado]
-
-## Analisis por Pais
-[Para cada país: resumen con productos, ROAS, oportunidades]
-
-## Analisis Publicitario
-- Distribución de gasto por plataforma
-- Top 5 campañas por eficiencia
-- Campañas a pausar/escalar
+## Análisis Publicitario
+Eficiencia por plataforma, campañas top, distribución del gasto. Qué escalar, qué pausar.
 
 ## Proyecciones y Tendencias
-- Tendencia de órdenes (creciendo/estable/decreciendo)
-- Proyección de utilidad si se mantiene la tendencia
-- Productos con momentum positivo vs negativo
+Tendencias de órdenes, proyección si se mantiene la trayectoria, productos con momentum positivo vs negativo.
 
-## Roadmap del Proximo Mes
-1. [Prioridad alta — acción específica]
-2. [Prioridad media — acción específica]
-3. [Optimización — acción específica]
+## Roadmap del Próximo Mes
+3-5 prioridades con tags de acción:
+- [ESCALAR] Prioridad alta — acción específica
+- [OPTIMIZAR] Prioridad media — acción específica
+- [MONITOREAR] Vigilar — aspecto específico
 
 Compara con período anterior cuando esté disponible. Sé honesto con los problemas.`,
 

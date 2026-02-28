@@ -35,7 +35,7 @@ async function fetchAdSpend(token: string, accountId: string, startDate: string,
     const accId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
     const timeRange = JSON.stringify({ since: startDate, until: endDate });
     const params = new URLSearchParams({
-        fields: 'campaign_id,campaign_name,spend,impressions,clicks,inline_link_click_ctr,cpc,date_start,date_stop,actions,action_values',
+        fields: 'campaign_id,campaign_name,spend,impressions,clicks,inline_link_clicks,inline_link_click_ctr,cpc,date_start,date_stop,actions,action_values',
         time_range: timeRange,
         time_increment: '1',
         level: 'campaign',
@@ -189,8 +189,10 @@ export async function GET(req: NextRequest) {
                                 clicks: parseInt(row.clicks || 0),
                                 ctr: parseFloat(row.inline_link_click_ctr || 0),
                                 cpc: parseFloat(row.cpc || 0),
-                                conversions: extractAction(row.actions, 'purchase') || extractAction(row.actions, 'offsite_conversion.fb_pixel_purchase'),
-                                revenue_attributed: extractAction(row.action_values, 'purchase') || extractAction(row.action_values, 'offsite_conversion.fb_pixel_purchase'),
+                                conversions: extractAction(row.actions, 'purchase') || extractAction(row.actions, 'omni_purchase') || extractAction(row.actions, 'offsite_conversion.fb_pixel_purchase'),
+                                revenue_attributed: extractAction(row.action_values, 'purchase') || extractAction(row.action_values, 'omni_purchase') || extractAction(row.action_values, 'offsite_conversion.fb_pixel_purchase'),
+                                page_visits: extractAction(row.actions, 'landing_page_view') || extractAction(row.actions, 'link_click') || extractAction(row.actions, 'omni_view_content') || parseInt(row.inline_link_clicks || '0') || 0,
+                                add_to_cart: extractAction(row.actions, 'add_to_cart') || extractAction(row.actions, 'omni_add_to_cart') || extractAction(row.actions, 'offsite_conversion.fb_pixel_add_to_cart'),
                             }, { merge: true });
 
                             batchCount++;

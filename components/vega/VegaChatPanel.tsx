@@ -98,7 +98,7 @@ export const VegaChatPanel: React.FC = () => {
             <div className="flex items-center justify-between px-4 py-3 border-b border-card-border bg-card shrink-0">
                 <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                        <Bot className="w-4 h-4 text-purple-400" />
+                        <img src="/logos/vega-isotipo.png" alt="Vega" className="w-5 h-5 object-contain" />
                     </div>
                     <div>
                         <h3 className="text-[11px] font-black text-foreground uppercase tracking-widest">Vega AI</h3>

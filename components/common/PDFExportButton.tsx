@@ -19,7 +19,7 @@ export const PDFExportButton: React.FC<PDFExportButtonProps> = ({ getData, label
             // Dynamic import to avoid loading jspdf in the main bundle
             const { downloadPDFReport } = await import('@/lib/services/pdf/generator');
             const data = getData();
-            downloadPDFReport(data);
+            await downloadPDFReport(data);
         } catch (err) {
             console.error('Error generating PDF:', err);
         } finally {

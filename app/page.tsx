@@ -4,11 +4,11 @@ import React, { useState } from 'react';
 const APP_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
     ? '' : 'https://app.grandline.com.co';
 import {
-    BarChart3, Compass, Megaphone, Sun, Bot,
+    BarChart3, Compass, Megaphone, Bot,
     ChevronDown, ChevronUp, ArrowRight, Check, Zap, Shield,
-    Globe, TrendingUp, DollarSign, Package, Star,
-    Anchor, AlertTriangle, Brain, Rocket, Target,
-    Calculator, Users, FileText, Bell, MapPin
+    Globe, TrendingUp, Package, Star,
+    Brain, Rocket, Target,
+    Calculator, FileText, Bell, MapPin
 } from 'lucide-react';
 
 /* ─── FAQ Data ─────────────────────────────────────────────── */
@@ -43,6 +43,7 @@ const faqs = [
 const modules = [
     {
         icon: Compass,
+        isotipo: '/logos/wheel-isotipo.png',
         name: 'WHEEL',
         subtitle: 'Dashboard de Operación',
         tagline: 'Los números no mienten.',
@@ -55,6 +56,7 @@ const modules = [
     },
     {
         icon: BarChart3,
+        isotipo: '/logos/berry-isotipo.png',
         name: 'BERRY',
         subtitle: 'Control Financiero',
         tagline: 'Controla tus gastos.',
@@ -67,6 +69,7 @@ const modules = [
     },
     {
         icon: MapPin,
+        isotipo: '/logos/ship-isotipo.png',
         name: 'SHIP',
         subtitle: 'Control Logístico',
         tagline: 'Controla tu logística.',
@@ -79,6 +82,7 @@ const modules = [
     },
     {
         icon: Brain,
+        isotipo: '/logos/vega-isotipo.png',
         name: 'VEGA IA',
         subtitle: 'Tu Oficial al Mando',
         tagline: 'Tu segundo al mando. Siempre alerta.',
@@ -92,6 +96,7 @@ const modules = [
     },
     {
         icon: Rocket,
+        isotipo: '/logos/sunny-isotipo.png',
         name: 'SUNNY',
         subtitle: 'Ads Launcher',
         tagline: 'Lanza y escala tus anuncios.',
@@ -224,9 +229,7 @@ export default function LandingPage() {
             <nav className="fixed top-0 w-full z-50 bg-[#0A0A0F]/80 backdrop-blur-xl border-b border-white/5">
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#d75c33] to-orange-500 flex items-center justify-center text-sm font-bold">
-                            GL
-                        </div>
+                        <img src="/logos/grandline-isotipo.png" alt="Grand Line" className="w-8 h-8" />
                         <span className="text-lg font-bold tracking-tight">GRAND LINE</span>
                     </div>
                     <div className="hidden md:flex items-center gap-8 text-sm text-gray-400">
@@ -319,13 +322,17 @@ export default function LandingPage() {
                 <div className="max-w-5xl mx-auto">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
                         {[
-                            { value: 'LATAM', label: 'Cobertura completa', icon: Globe },
-                            { value: '8+', label: 'Módulos integrados', icon: Package },
-                            { value: '100K+', label: 'Órdenes procesadas', icon: TrendingUp },
-                            { value: '24/7', label: 'Vega IA — Tu oficial al mando', icon: Brain },
-                        ].map(({ value, label, icon: Icon }) => (
+                            { value: 'LATAM', label: 'Cobertura completa', icon: Globe, isotipo: null },
+                            { value: '8+', label: 'Módulos integrados', icon: Package, isotipo: '/logos/grandline-isotipo.png' },
+                            { value: '100K+', label: 'Órdenes procesadas', icon: TrendingUp, isotipo: '/logos/wheel-isotipo.png' },
+                            { value: '24/7', label: 'Vega IA — Tu oficial al mando', icon: Brain, isotipo: '/logos/vega-isotipo.png' },
+                        ].map(({ value, label, icon: Icon, isotipo }) => (
                             <div key={label} className="space-y-2">
-                                <Icon className={`w-5 h-5 mx-auto mb-1 ${label.includes('Vega') ? 'text-indigo-400' : 'text-[#d75c33]'}`} />
+                                {isotipo ? (
+                                    <img src={isotipo} alt={label} className="w-5 h-5 mx-auto mb-1 object-contain" />
+                                ) : (
+                                    <Icon className="w-5 h-5 mx-auto mb-1 text-[#d75c33]" />
+                                )}
                                 <div className="text-3xl md:text-4xl font-bold">{value}</div>
                                 <div className={`text-sm ${label.includes('Vega') ? 'text-indigo-300 font-medium' : 'text-gray-500'}`}>{label}</div>
                             </div>
@@ -351,13 +358,13 @@ export default function LandingPage() {
 
                     {/* Top row: 3 main modules */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                        {modules.slice(0, 3).map(({ icon: Icon, name, subtitle, tagline, color, borderColor, glowColor, description, features }) => (
+                        {modules.slice(0, 3).map(({ isotipo, name, subtitle, tagline, color, borderColor, glowColor, description, features }) => (
                             <div
                                 key={name}
                                 className={`group relative bg-white/[0.03] border ${borderColor} rounded-2xl p-7 hover:bg-white/[0.06] transition-all duration-300 shadow-lg ${glowColor}`}
                             >
                                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-4 shadow-lg`}>
-                                    <Icon className="w-5 h-5 text-white" />
+                                    <img src={isotipo} alt={name} className="w-6 h-6 object-contain brightness-0 invert" />
                                 </div>
 
                                 <h3 className="text-xl font-bold text-white mb-0.5">{name}</h3>
@@ -382,7 +389,7 @@ export default function LandingPage() {
 
                     {/* Bottom row: Vega (featured) + Sunny */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {modules.slice(3).map(({ icon: Icon, name, subtitle, tagline, color, borderColor, glowColor, description, features, isVega }) => (
+                        {modules.slice(3).map(({ isotipo, name, subtitle, tagline, color, borderColor, glowColor, description, features, isVega }) => (
                             <div
                                 key={name}
                                 className={`group relative rounded-2xl p-7 transition-all duration-300 ${
@@ -394,13 +401,13 @@ export default function LandingPage() {
                                 {isVega && (
                                     <div className="absolute -top-3 right-6">
                                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-xs font-semibold text-indigo-300">
-                                            <Brain className="w-3 h-3" /> IA Integrada
+                                            <img src="/logos/vega-isotipo.png" alt="Vega" className="w-3 h-3 object-contain" /> IA Integrada
                                         </span>
                                     </div>
                                 )}
 
                                 <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-4 shadow-lg`}>
-                                    <Icon className="w-5 h-5 text-white" />
+                                    <img src={isotipo} alt={name} className="w-6 h-6 object-contain brightness-0 invert" />
                                 </div>
 
                                 <h3 className="text-xl font-bold text-white mb-0.5">{name}</h3>
@@ -524,7 +531,7 @@ export default function LandingPage() {
                 <div className="max-w-4xl mx-auto relative z-10">
                     <div className="text-center mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 rounded-full border border-indigo-400/20 bg-indigo-500/10 text-sm text-indigo-300">
-                            <Brain className="w-4 h-4" />
+                            <img src="/logos/vega-isotipo.png" alt="Vega" className="w-4 h-4 object-contain" />
                             Inteligencia Artificial
                         </div>
                         <h2 className="text-3xl md:text-5xl font-bold mb-4">
@@ -684,9 +691,7 @@ export default function LandingPage() {
                 <div className="max-w-7xl mx-auto">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#d75c33] to-orange-500 flex items-center justify-center text-xs font-bold">
-                                GL
-                            </div>
+                            <img src="/logos/grandline-isotipo.png" alt="Grand Line" className="w-7 h-7" />
                             <span className="text-sm font-semibold">GRAND LINE v8.0</span>
                         </div>
 

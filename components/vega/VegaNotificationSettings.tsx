@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Send, Check, X, Loader2 } from 'lucide-react';
+import { Send, Check, X, Loader2, Mail } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { authFetch } from '@/lib/api/client';
 import type { VegaNotificationConfig } from '@/lib/types/vega';
 
 export const VegaNotificationSettings: React.FC = () => {
-    useAuth(); // Ensures user is authenticated
+    const { user } = useAuth();
     const [config, setConfig] = useState<VegaNotificationConfig>({
         telegramBotToken: '',
         telegramChatId: '',
@@ -118,6 +118,34 @@ export const VegaNotificationSettings: React.FC = () => {
                         placeholder="Webhook URL"
                         className="w-full px-3 py-2 bg-card border border-card-border rounded-xl text-xs text-foreground placeholder:text-muted outline-none focus:border-accent/30 transition-all"
                     />
+                </div>
+
+                {/* Email */}
+                <div className="p-4 bg-hover-bg rounded-xl border border-card-border">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Email</span>
+                        {testResults?.email !== undefined && (
+                            testResults.email
+                                ? <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                : <X className="w-3.5 h-3.5 text-red-400" />
+                        )}
+                    </div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <div
+                            onClick={() => setConfig(prev => ({ ...prev, emailEnabled: !prev.emailEnabled }))}
+                            className={`relative w-9 h-5 rounded-full transition-colors ${config.emailEnabled ? 'bg-emerald-500' : 'bg-card-border'}`}
+                        >
+                            <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${config.emailEnabled ? 'translate-x-4' : ''}`} />
+                        </div>
+                        <span className="text-xs text-foreground">Enviar reportes por email</span>
+                    </label>
+                    {config.emailEnabled && user?.email && (
+                        <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-card border border-card-border rounded-xl">
+                            <Mail className="w-3.5 h-3.5 text-muted" />
+                            <span className="text-xs text-muted">Se enviarán a</span>
+                            <span className="text-xs text-foreground font-semibold">{user.email}</span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Actions */}

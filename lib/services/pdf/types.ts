@@ -1,5 +1,6 @@
 import type { KPIResults } from '@/lib/calculations/kpis';
 import type { KPITarget } from '@/lib/types/kpi-targets';
+import type { VegaReportMetadata } from '@/lib/types/vega';
 
 export interface PDFAlert {
     level: 'CRITICA' | 'ATENCION' | 'INFO';
@@ -30,6 +31,8 @@ export interface PDFReportData {
     vegaAnalysis?: string;
     executiveSummary?: string;
     alerts?: PDFAlert[];
+    reportType?: 'daily' | 'weekly' | 'monthly';
+    reportMetadata?: VegaReportMetadata;
 }
 
 export const PDF_COLORS = {

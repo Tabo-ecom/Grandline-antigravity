@@ -465,6 +465,7 @@ export default function CountryOperationPage() {
                 availableCountries={[countryName]}
                 title={countryName}
                 icon={Activity}
+                logo="/logos/ship-logo.png"
             />
 
             {/* === ROW 1: Unified — Status Bar + City Summary (ABOVE map) === */}

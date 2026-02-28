@@ -527,6 +527,7 @@ export default function AdvertisingPage() {
                                 campaignName: cleanName,
                                 userId: effectiveUid || '',
                                 metrics: {
+                                    campaign_id: row.campaign_id || '',
                                     impressions: parseInt(row.impressions || 0),
                                     clicks: parseInt(row.clicks || 0),
                                     ctr: parseFloat(row.inline_link_click_ctr || 0),
@@ -1347,6 +1348,8 @@ export default function AdvertisingPage() {
                                 customMetrics={adSettings?.custom_metrics}
                                 startDate={startDate}
                                 endDate={endDate}
+                                fbToken={adSettings?.fb_token || null}
+                                fbAccountIds={(adSettings?.fb_account_ids || []).map((a: any) => a.id)}
                             />
                         </div>
 

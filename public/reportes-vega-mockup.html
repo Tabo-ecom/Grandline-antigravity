@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VEGA - Reportes Visuales | Grand Line</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0A0A0F;
+            --bg-card: rgba(255,255,255,0.03);
+            --border: rgba(255,255,255,0.08);
+            --text: #ededed;
+            --text-muted: #6b7280;
+            --accent: #d75c33;
+            --accent-glow: rgba(215, 92, 51, 0.15);
+            --green: #10b981; --green-bg: rgba(16, 185, 129, 0.1);
+            --orange: #f59e0b; --orange-bg: rgba(245, 158, 11, 0.1);
+            --red: #ef4444; --red-bg: rgba(239, 68, 68, 0.1);
+            --blue: #3b82f6; --blue-bg: rgba(59, 130, 246, 0.1);
+            --purple: #8b5cf6; --purple-bg: rgba(139, 92, 246, 0.1);
+        }
+        body { font-family: 'Space Grotesk', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+
+        /* NAV */
+        .nav-tabs { position: sticky; top: 0; z-index: 100; background: rgba(10,10,15,0.9); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); padding: 16px 40px; display: flex; align-items: center; gap: 24px; }
+        .nav-tabs .brand { display: flex; align-items: center; gap: 10px; margin-right: 24px; }
+        .nav-tabs .brand img { height: 28px; }
+        .nav-tab { padding: 8px 20px; border-radius: 12px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; color: var(--text-muted); background: transparent; }
+        .nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+        .nav-tab.active { color: var(--accent); background: var(--accent-glow); border-color: rgba(215,92,51,0.3); }
+
+        .report-section { display: none; max-width: 1200px; margin: 0 auto; padding: 40px; }
+        .report-section.active { display: block; }
+
+        /* PORTADA */
+        .portada { text-align: center; padding: 60px 40px; border: 1px solid var(--border); border-radius: 24px; background: linear-gradient(135deg, rgba(215,92,51,0.05) 0%, transparent 50%, rgba(139,92,246,0.05) 100%); margin-bottom: 40px; position: relative; overflow: hidden; }
+        .portada::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: radial-gradient(circle at 30% 30%, rgba(215,92,51,0.08) 0%, transparent 50%); pointer-events: none; }
+        .portada .logo-area { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 24px; }
+        .portada .logo-area img { height: 48px; }
+        .portada .divider-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.5; }
+        .portada .report-type { font-size: 11px; font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
+        .portada h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 8px; }
+        .portada .subtitle { font-size: 16px; color: var(--text-muted); font-weight: 500; }
+        .portada .date-badge { display: inline-flex; align-items: center; gap: 8px; margin-top: 20px; padding: 8px 20px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 100px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+        .portada .date-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* HEALTH SCORE BADGE */
+        .health-score { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; padding: 12px 28px; border-radius: 16px; font-size: 14px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+        .health-score.excelente { background: rgba(16,185,129,0.15); border: 2px solid rgba(16,185,129,0.3); color: var(--green); }
+        .health-score.bueno { background: rgba(59,130,246,0.15); border: 2px solid rgba(59,130,246,0.3); color: var(--blue); }
+        .health-score.alerta { background: rgba(245,158,11,0.15); border: 2px solid rgba(245,158,11,0.3); color: var(--orange); }
+        .health-score.critico { background: rgba(239,68,68,0.15); border: 2px solid rgba(239,68,68,0.3); color: var(--red); }
+        .health-score .score-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .health-score.excelente .score-dot { background: var(--green); box-shadow: 0 0 12px var(--green); }
+        .health-score.bueno .score-dot { background: var(--blue); box-shadow: 0 0 12px var(--blue); }
+        .health-score.alerta .score-dot { background: var(--orange); box-shadow: 0 0 12px var(--orange); }
+        .health-score.critico .score-dot { background: var(--red); box-shadow: 0 0 12px var(--red); }
+
+        /* EXEC SUMMARY */
+        .exec-summary { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 28px 32px; margin-bottom: 32px; border-left: 3px solid var(--accent); }
+        .exec-summary .label { font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+        .exec-summary p { font-size: 15px; color: var(--text); line-height: 1.7; }
+
+        /* HERO KPIs */
+        .hero-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+        .hero-kpis.cols-3 { grid-template-columns: repeat(3, 1fr); }
+        .kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 24px; position: relative; overflow: hidden; }
+        .kpi-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .kpi-card.good::after { background: var(--green); }
+        .kpi-card.warning::after { background: var(--orange); }
+        .kpi-card.bad::after { background: var(--red); }
+        .kpi-card .kpi-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .kpi-card .kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.15em; color: var(--text-muted); }
+        .kpi-card .kpi-icon { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .kpi-card.good .kpi-icon { background: var(--green-bg); }
+        .kpi-card.warning .kpi-icon { background: var(--orange-bg); }
+        .kpi-card.bad .kpi-icon { background: var(--red-bg); }
+        .kpi-card .kpi-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 4px; }
+        .kpi-card.good .kpi-value { color: var(--green); }
+        .kpi-card.warning .kpi-value { color: var(--orange); }
+        .kpi-card.bad .kpi-value { color: var(--red); }
+        .kpi-card .kpi-change { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+        .kpi-card .kpi-change.up { color: var(--green); }
+        .kpi-card .kpi-change.down { color: var(--red); }
+        .kpi-card .kpi-target { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+        /* ALERTS */
+        .alerts-panel { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
+        .alert-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 14px; font-size: 13px; font-weight: 600; }
+        .alert-item.critical { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+        .alert-item.warning { background: var(--orange-bg); border: 1px solid rgba(245,158,11,0.2); color: var(--orange); }
+        .alert-item.info { background: var(--blue-bg); border: 1px solid rgba(59,130,246,0.2); color: var(--blue); }
+        .alert-badge { font-size: 9px; font-weight: 800; letter-spacing: 0.15em; padding: 3px 8px; border-radius: 6px; text-transform: uppercase; flex-shrink: 0; }
+        .alert-item.critical .alert-badge { background: rgba(239,68,68,0.2); }
+        .alert-item.warning .alert-badge { background: rgba(245,158,11,0.2); }
+        .alert-item.info .alert-badge { background: rgba(59,130,246,0.2); }
+
+        /* SECTION HEADERS */
+        .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; margin-top: 40px; }
+        .section-header .icon-box { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .section-header h2 { font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+        .section-header .section-line { flex: 1; height: 1px; background: var(--border); }
+
+        /* DATA TABLE */
+        .data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 32px; }
+        .data-table thead th { padding: 14px 20px; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border); }
+        .data-table tbody td { padding: 14px 20px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+        .data-table .metric-name { color: var(--text-muted); font-weight: 500; }
+        .data-table .value { color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+        .data-table .change-up { color: var(--green); font-size: 12px; }
+        .data-table .change-down { color: var(--red); font-size: 12px; }
+        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .status-dot.good { background: var(--green); }
+        .status-dot.warning { background: var(--orange); }
+        .status-dot.bad { background: var(--red); }
+
+        /* TWO COLUMN PRODUCTS */
+        .two-col-products { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+        .product-column { border-radius: 20px; overflow: hidden; border: 1px solid var(--border); }
+        .product-col-header { padding: 16px 24px; font-size: 12px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+        .product-col-header.profit { background: var(--green-bg); color: var(--green); border-bottom: 1px solid rgba(16,185,129,0.15); }
+        .product-col-header.loss { background: var(--red-bg); color: var(--red); border-bottom: 1px solid rgba(239,68,68,0.15); }
+        .product-col-header .col-count { font-size: 10px; padding: 2px 8px; border-radius: 6px; font-weight: 800; }
+        .product-col-header.profit .col-count { background: rgba(16,185,129,0.2); }
+        .product-col-header.loss .col-count { background: rgba(239,68,68,0.2); }
+        .product-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid rgba(255,255,255,0.03); background: var(--bg-card); }
+        .product-row:last-child { border-bottom: none; }
+        .product-row:hover { background: rgba(255,255,255,0.02); }
+        .product-row .prod-info { flex: 1; min-width: 0; }
+        .product-row .prod-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        .product-row .prod-detail { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .product-row .prod-metrics { display: flex; gap: 16px; align-items: center; flex-shrink: 0; }
+        .product-row .pm { text-align: right; }
+        .product-row .pm-label { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+        .product-row .pm-val { font-size: 14px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+        .loss-streak-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px; background: rgba(239,68,68,0.15); color: var(--red); letter-spacing: 0.05em; margin-left: 8px; }
+
+        /* ADS CARD */
+        .ads-summary-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 28px; margin-bottom: 32px; }
+        .ads-summary-card .ads-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .ads-summary-card .ads-title { font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-muted); }
+        .ads-summary-card .ads-total { font-size: 28px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+        .ads-platforms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .ads-plat { padding: 16px; background: rgba(255,255,255,0.02); border-radius: 14px; text-align: center; border: 1px solid rgba(255,255,255,0.04); }
+        .ads-plat .plat-name { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+        .ads-plat .plat-spend { font-size: 18px; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: var(--text); margin-bottom: 2px; }
+        .ads-plat .plat-roas { font-size: 12px; font-weight: 700; }
+        .ads-pct-bar { margin-top: 16px; }
+        .ads-pct-label { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; display: flex; justify-content: space-between; }
+        .ads-pct-track { height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; }
+        .ads-pct-fill { height: 100%; border-radius: 4px; }
+
+        /* COUNTRY CARDS */
+        .country-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 32px; }
+        .country-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+        .country-card .country-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        .country-card .country-flag { font-size: 28px; }
+        .country-card .country-name { font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+        .country-card .country-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .country-card .cm-item { padding: 10px; background: rgba(255,255,255,0.02); border-radius: 10px; }
+        .country-card .cm-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+        .country-card .cm-value { font-size: 18px; font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+        .country-card .product-highlight { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .country-card .product-highlight.star { background: var(--green-bg); border: 1px solid rgba(16,185,129,0.2); color: var(--green); }
+        .country-card .product-highlight.risk { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+
+        /* RECOMMENDATION */
+        .recommendation { background: linear-gradient(135deg, var(--accent-glow) 0%, rgba(139,92,246,0.05) 100%); border: 1px solid rgba(215,92,51,0.2); border-radius: 20px; padding: 32px; margin-bottom: 32px; }
+        .recommendation .rec-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .recommendation .rec-header img { height: 24px; }
+        .recommendation .rec-header span { font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); }
+        .recommendation p { font-size: 14px; line-height: 1.8; }
+        .recommendation .action-items { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+        .recommendation .action-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 12px; font-size: 13px; font-weight: 500; }
+        .recommendation .action-number { width: 24px; height: 24px; border-radius: 8px; background: var(--accent); color: white; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .action-tag { display: inline-block; font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 6px; letter-spacing: 0.1em; text-transform: uppercase; margin-right: 6px; }
+        .action-tag.escalar { background: var(--green-bg); color: var(--green); }
+        .action-tag.pausar { background: var(--red-bg); color: var(--red); }
+        .action-tag.optimizar { background: var(--orange-bg); color: var(--orange); }
+        .action-tag.monitorear { background: var(--blue-bg); color: var(--blue); }
+
+        /* P&L */
+        .pnl-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; margin-bottom: 32px; }
+        .pnl-group-header { padding: 14px 24px; font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+        .pnl-group-header.ingresos { color: var(--green); background: var(--green-bg); }
+        .pnl-group-header.costos { color: var(--red); background: var(--red-bg); }
+        .pnl-group-header.fijos { color: var(--purple); background: var(--purple-bg); }
+        .pnl-group-header.resultado { color: var(--accent); background: var(--accent-glow); }
+        .pnl-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 13px; }
+        .pnl-row:last-child { border-bottom: none; }
+        .pnl-row .pnl-label { color: var(--text-muted); font-weight: 500; }
+        .pnl-row .pnl-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
+        .pnl-row .pnl-pct { font-size: 11px; color: var(--text-muted); margin-left: 8px; }
+        .pnl-row.total { background: rgba(255,255,255,0.02); font-weight: 700; }
+        .pnl-row.total .pnl-label { color: var(--text); font-weight: 800; }
+        .pnl-row.highlight { background: var(--accent-glow); }
+        .pnl-row.highlight .pnl-label { color: var(--accent); font-weight: 800; }
+        .pnl-row.highlight .pnl-value { color: var(--accent); font-size: 18px; }
+
+        /* TREND CHART */
+        .trend-chart { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 32px; height: 200px; display: flex; align-items: flex-end; gap: 8px; padding-bottom: 40px; position: relative; }
+        .trend-bar { flex: 1; border-radius: 6px 6px 0 0; position: relative; cursor: pointer; }
+        .trend-bar .bar-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); white-space: nowrap; margin-bottom: 4px; }
+        .trend-bar .bar-date { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 600; color: var(--text-muted); margin-top: 8px; white-space: nowrap; }
+
+        /* BAR CHART HORIZONTAL */
+        .bar-chart { margin-bottom: 32px; }
+        .bar-item { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+        .bar-label { width: 200px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .bar-track { flex: 1; height: 28px; background: rgba(255,255,255,0.03); border-radius: 8px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 8px; display: flex; align-items: center; padding-left: 12px; font-size: 11px; font-weight: 700; color: white; font-family: 'JetBrains Mono', monospace; }
+        .bar-roas { width: 80px; text-align: right; font-size: 13px; font-weight: 700; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+
+        /* ADS GRID */
+        .ads-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .ads-platform-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; text-align: center; }
+        .ads-platform-card .platform-name { font-size: 11px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; }
+        .ads-platform-card .platform-spend { font-size: 24px; font-weight: 800; font-family: 'JetBrains Mono', monospace; margin-bottom: 4px; }
+        .ads-platform-card .platform-roas { font-size: 13px; font-weight: 700; }
+
+        /* ROADMAP */
+        .roadmap { display: flex; flex-direction: column; gap: 16px; margin-bottom: 32px; }
+        .roadmap-item { display: flex; gap: 16px; padding: 20px 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; }
+        .roadmap-priority { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; letter-spacing: 0.1em; flex-shrink: 0; }
+        .roadmap-priority.p1 { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+        .roadmap-priority.p2 { background: var(--orange-bg); color: var(--orange); border: 1px solid rgba(245,158,11,0.2); }
+        .roadmap-priority.p3 { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(59,130,246,0.2); }
+        .roadmap-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .roadmap-content p { font-size: 13px; color: var(--text-muted); }
+
+        /* PROJECTION */
+        .projection-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 16px; }
+        .projection-card .proj-label { font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+        .projection-card .proj-value { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+        .projection-card .proj-detail { font-size: 12px; color: var(--text-muted); }
+
+        /* CTA */
+        .cta-section { text-align: center; padding: 48px; background: linear-gradient(135deg, var(--accent-glow), rgba(139,92,246,0.08)); border: 1px solid rgba(215,92,51,0.2); border-radius: 24px; margin-bottom: 32px; }
+        .cta-section h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+        .cta-section p { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+        .cta-button { display: inline-flex; align-items: center; gap: 8px; padding: 14px 32px; background: var(--accent); color: white; border: none; border-radius: 14px; font-size: 13px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; transition: all 0.2s; font-family: 'Space Grotesk', sans-serif; }
+        .cta-button:hover { background: #e06a43; transform: translateY(-1px); }
+
+        /* FOOTER */
+        .report-footer { text-align: center; padding: 40px; border-top: 1px solid var(--border); margin-top: 60px; }
+        .report-footer img { height: 32px; margin-bottom: 12px; }
+        .report-footer .footer-text { font-size: 11px; color: var(--text-muted); letter-spacing: 0.1em; }
+        .report-footer .powered { font-size: 10px; color: var(--text-muted); margin-top: 4px; opacity: 0.5; }
+    </style>
+</head>
+<body>
+
+<!-- NAV -->
+<div class="nav-tabs">
+    <div class="brand"><img src="/logos/vega-logo.png" alt="VEGA"></div>
+    <button class="nav-tab active" onclick="showReport('daily', this)">Diario</button>
+    <button class="nav-tab" onclick="showReport('weekly', this)">Semanal</button>
+    <button class="nav-tab" onclick="showReport('monthly', this)">Mensual</button>
+</div>
+
+<!-- ================================================================ -->
+<!-- ==================== REPORTE DIARIO ============================= -->
+<!-- ================================================================ -->
+<div id="daily" class="report-section active">
+
+    <div class="portada">
+        <div class="logo-area">
+            <img src="/logos/vega-logo.png" alt="VEGA">
+            <div class="divider-dot"></div>
+            <img src="/logos/grandline-logo.png" alt="Grand Line">
+        </div>
+        <div class="report-type">Reporte Diario</div>
+        <h1>El Latido del Negocio</h1>
+        <div class="subtitle">Resumen operativo y financiero del dia</div>
+        <div class="date-badge"><div class="dot"></div> Jueves, 27 de Febrero 2026</div>
+        <br>
+        <div class="health-score bueno">
+            <div class="score-dot"></div>
+            Estado del Dia: BUENO
+        </div>
+    </div>
+
+    <!-- EXEC SUMMARY -->
+    <div class="exec-summary">
+        <div class="label">Resumen Ejecutivo</div>
+        <p>Dia solido con <strong>142 ordenes</strong> y facturacion de <strong>$12.8M COP</strong>. La utilidad proyectada es de <strong>$2.4M</strong>, un 12% por encima del dia anterior. El ROAS real se mantuvo en zona saludable en <strong>2.8x</strong>. Atencion al gasto en TikTok que subio un 18% sin mejora proporcional en ordenes.</p>
+    </div>
+
+    <!-- HERO KPIs (sin tasa de entrega) -->
+    <div class="hero-kpis cols-3">
+        <div class="kpi-card good">
+            <div class="kpi-header">
+                <span class="kpi-label">Utilidad Proyectada</span>
+                <div class="kpi-icon">$</div>
+            </div>
+            <div class="kpi-value">$2.4M</div>
+            <div class="kpi-change up">+12.3% vs ayer</div>
+            <div class="kpi-target">Meta: > $1.5M/dia</div>
+        </div>
+        <div class="kpi-card good">
+            <div class="kpi-header">
+                <span class="kpi-label">ROAS Real</span>
+                <div class="kpi-icon">R</div>
+            </div>
+            <div class="kpi-value">2.8x</div>
+            <div class="kpi-change up">+0.3 vs ayer</div>
+            <div class="kpi-target">Meta: > 2.0x</div>
+        </div>
+        <div class="kpi-card warning">
+            <div class="kpi-header">
+                <span class="kpi-label">CPA</span>
+                <div class="kpi-icon">C</div>
+            </div>
+            <div class="kpi-value">$24.5K</div>
+            <div class="kpi-change down">+8.1% vs ayer</div>
+            <div class="kpi-target">Meta: &lt; $25K</div>
+        </div>
+    </div>
+
+    <!-- GASTO PUBLICITARIO CARD -->
+    <div class="ads-summary-card">
+        <div class="ads-header">
+            <div>
+                <div class="ads-title">Gasto Publicitario del Dia</div>
+                <div class="ads-total" style="color: var(--text); margin-top: 4px;">$3.1M <span style="font-size: 14px; color: var(--text-muted); font-weight: 500;">COP</span></div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 11px; color: var(--text-muted); font-weight: 700;">% Ads vs Revenue</div>
+                <div style="font-size: 22px; font-weight: 800; color: var(--orange); font-family: 'JetBrains Mono', monospace;">24.2%</div>
+            </div>
+        </div>
+        <div class="ads-platforms">
+            <div class="ads-plat" style="border-top: 3px solid #1877F2;">
+                <div class="plat-name">Facebook</div>
+                <div class="plat-spend">$1.8M</div>
+                <div class="plat-roas" style="color: var(--green);">ROAS 3.1x</div>
+            </div>
+            <div class="ads-plat" style="border-top: 3px solid #00f2ea;">
+                <div class="plat-name">TikTok</div>
+                <div class="plat-spend">$1.1M</div>
+                <div class="plat-roas" style="color: var(--orange);">ROAS 2.0x</div>
+            </div>
+            <div class="ads-plat" style="border-top: 3px solid #4285F4;">
+                <div class="plat-name">Google</div>
+                <div class="plat-spend">$200K</div>
+                <div class="plat-roas" style="color: var(--green);">ROAS 3.4x</div>
+            </div>
+        </div>
+        <div class="ads-pct-bar">
+            <div class="ads-pct-label">
+                <span>Distribucion del gasto</span>
+                <span>FB 58% | TK 35% | GG 7%</span>
+            </div>
+            <div class="ads-pct-track" style="display: flex; gap: 2px;">
+                <div class="ads-pct-fill" style="width: 58%; background: #1877F2; border-radius: 4px 0 0 4px;"></div>
+                <div class="ads-pct-fill" style="width: 35%; background: #00f2ea;"></div>
+                <div class="ads-pct-fill" style="width: 7%; background: #4285F4; border-radius: 0 4px 4px 0;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ALERTS -->
+    <div class="alerts-panel">
+        <div class="alert-item warning">
+            <span class="alert-badge">Atencion</span>
+            CPA de TikTok subio a $28,400 — revisar segmentacion de campanas activas
+        </div>
+        <div class="alert-item critical">
+            <span class="alert-badge">Critica</span>
+            "Reloj Smart" lleva 3 dias consecutivos en perdida proyectada — evaluar pausar campanas
+        </div>
+        <div class="alert-item info">
+            <span class="alert-badge">Info</span>
+            85 ordenes en transito — la utilidad final depende de la tasa de entrega de este lote
+        </div>
+    </div>
+
+    <!-- RESUMEN DEL DIA -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--blue-bg);">📊</div>
+        <h2>Resumen del Dia</h2>
+        <div class="section-line"></div>
+    </div>
+    <table class="data-table">
+        <thead><tr><th>Metrica</th><th>Hoy</th><th>Ayer</th><th>Cambio</th><th>Estado</th></tr></thead>
+        <tbody>
+            <tr><td class="metric-name">Ordenes Totales</td><td class="value">142</td><td class="value" style="color:var(--text-muted)">128</td><td class="change-up">+10.9%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">Facturacion Neta</td><td class="value">$12.8M</td><td class="value" style="color:var(--text-muted)">$11.2M</td><td class="change-up">+14.3%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">Utilidad Proyectada</td><td class="value">$2.4M</td><td class="value" style="color:var(--text-muted)">$2.1M</td><td class="change-up">+14.3%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">ROAS Real</td><td class="value">2.81x</td><td class="value" style="color:var(--text-muted)">2.61x</td><td class="change-up">+0.20</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">CPA</td><td class="value">$24.5K</td><td class="value" style="color:var(--text-muted)">$22.7K</td><td class="change-down">+7.9%</td><td><span class="status-dot warning"></span>Atencion</td></tr>
+            <tr><td class="metric-name">Gasto Ads Total</td><td class="value">$3.1M</td><td class="value" style="color:var(--text-muted)">$2.8M</td><td class="change-down">+10.7%</td><td><span class="status-dot warning"></span>Atencion</td></tr>
+            <tr><td class="metric-name">% Ads vs Revenue</td><td class="value">24.2%</td><td class="value" style="color:var(--text-muted)">25.0%</td><td class="change-up">-0.8pp</td><td><span class="status-dot good"></span>Bueno</td></tr>
+        </tbody>
+    </table>
+
+    <!-- PRODUCTOS: DOS COLUMNAS -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--accent-glow);">📦</div>
+        <h2>Rentabilidad por Producto</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="two-col-products">
+        <!-- COLUMNA GANANCIA -->
+        <div class="product-column">
+            <div class="product-col-header profit">
+                ✅ Generando Ganancia <span class="col-count">4 productos</span>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">Kit Skincare Premium 5 en 1</div>
+                    <div class="prod-detail">48 ordenes &bull; Colombia</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$1.2M</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">3.4x</div></div>
+                </div>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">Faja Colombiana Reductora</div>
+                    <div class="prod-detail">38 ordenes &bull; Ecuador, Colombia</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$820K</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.8x</div></div>
+                </div>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">Auriculares Bluetooth Pro</div>
+                    <div class="prod-detail">28 ordenes &bull; Colombia</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$380K</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.6x</div></div>
+                </div>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">Serum Vitamina C x3</div>
+                    <div class="prod-detail">12 ordenes &bull; Panama</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$140K</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.3x</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- COLUMNA PERDIDA -->
+        <div class="product-column">
+            <div class="product-col-header loss">
+                ❌ Generando Perdida <span class="col-count">2 productos</span>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">
+                        Reloj Smart Deportivo
+                        <span class="loss-streak-badge">🔥 3 dias en perdida</span>
+                    </div>
+                    <div class="prod-detail">10 ordenes &bull; Colombia, Ecuador</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--red)">-$180K</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">1.1x</div></div>
+                </div>
+            </div>
+            <div class="product-row">
+                <div class="prod-info">
+                    <div class="prod-name">
+                        Masajeador Cervical
+                        <span class="loss-streak-badge">🔥 2 dias en perdida</span>
+                    </div>
+                    <div class="prod-detail">6 ordenes &bull; Guatemala</div>
+                </div>
+                <div class="prod-metrics">
+                    <div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--red)">-$95K</div></div>
+                    <div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">0.8x</div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DESGLOSE POR PAIS -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--blue-bg);">🌎</div>
+        <h2>Desglose por Pais</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="country-grid">
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇨🇴</span><span class="country-name">Colombia</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">86</div></div>
+                <div class="cm-item"><div class="cm-label">Facturacion</div><div class="cm-value" style="color:var(--text)">$7.8M</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--green)">$1.6M</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--green)">3.0x</div></div>
+            </div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇪🇨</span><span class="country-name">Ecuador</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">32</div></div>
+                <div class="cm-item"><div class="cm-label">Facturacion</div><div class="cm-value" style="color:var(--text)">$2.9M</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--orange)">$420K</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">2.1x</div></div>
+            </div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇵🇦</span><span class="country-name">Panama</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">16</div></div>
+                <div class="cm-item"><div class="cm-label">Facturacion</div><div class="cm-value" style="color:var(--text)">$1.4M</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--green)">$280K</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--green)">2.5x</div></div>
+            </div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇬🇹</span><span class="country-name">Guatemala</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">8</div></div>
+                <div class="cm-item"><div class="cm-label">Facturacion</div><div class="cm-value" style="color:var(--text)">$700K</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--red)">-$95K</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--red)">0.9x</div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RECOMENDACIONES -->
+    <div class="recommendation">
+        <div class="rec-header">
+            <img src="/logos/vega-isotipo.png" alt="VEGA">
+            <span>Recomendaciones del Primer Oficial</span>
+        </div>
+        <div class="action-items">
+            <div class="action-item">
+                <span class="action-number">1</span>
+                <span><span class="action-tag pausar">Pausar</span><strong>Reloj Smart Deportivo</strong> — Lleva 3 dias consecutivos con utilidad proyectada negativa. El ROAS de 1.1x no cubre costos. Redirigir el budget ($420K/dia) hacia Kit Skincare.</span>
+            </div>
+            <div class="action-item">
+                <span class="action-number">2</span>
+                <span><span class="action-tag escalar">Escalar</span><strong>Kit Skincare Premium</strong> — ROAS consistente de 3.4x, es el producto ancla. Aumentar budget un 20% en Facebook.</span>
+            </div>
+            <div class="action-item">
+                <span class="action-number">3</span>
+                <span><span class="action-tag optimizar">Optimizar</span><strong>Campanas TikTok</strong> — CPA subio 18% sin mejora en conversiones. Revisar segmentacion y pausar las 2 campanas con peor rendimiento.</span>
+            </div>
+            <div class="action-item">
+                <span class="action-number">4</span>
+                <span><span class="action-tag monitorear">Monitorear</span><strong>Masajeador Cervical</strong> — 2do dia en perdida. Si manana sigue negativo, pausar campanas en Guatemala.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="report-footer">
+        <img src="/logos/grandline-logo.png" alt="Grand Line">
+        <div class="footer-text">GRAND LINE — COMMAND CENTER</div>
+        <div class="powered">Generado por VEGA IA &bull; Vigilancia Estrategica y Gestion Analitica</div>
+    </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- ==================== REPORTE SEMANAL ============================ -->
+<!-- ================================================================ -->
+<div id="weekly" class="report-section">
+
+    <div class="portada">
+        <div class="logo-area">
+            <img src="/logos/vega-logo.png" alt="VEGA">
+            <div class="divider-dot"></div>
+            <img src="/logos/grandline-logo.png" alt="Grand Line">
+        </div>
+        <div class="report-type">Reporte Semanal</div>
+        <h1>La Brujula Tactica</h1>
+        <div class="subtitle">Analisis tactico y rendimiento de la semana</div>
+        <div class="date-badge"><div class="dot"></div> Semana del 17 al 23 de Febrero 2026</div>
+        <br>
+        <div class="health-score excelente">
+            <div class="score-dot"></div>
+            Estado de la Semana: MUY BUENO
+        </div>
+    </div>
+
+    <div class="exec-summary">
+        <div class="label">Resumen Ejecutivo</div>
+        <p>Semana positiva con crecimiento del <strong>8.5%</strong> en ordenes. Utilidad real: <strong>$14.2M COP</strong> con margen neto del <strong>18.3%</strong>. Utilidad proyectada (incluyendo transito): <strong>$17.8M</strong>. Colombia lidera con 65% del volumen. ROAS real consolidado en <strong>2.6x</strong>. Alerta en Ecuador donde la tasa de entrega cayo al <strong>52%</strong>.</p>
+    </div>
+
+    <div class="hero-kpis">
+        <div class="kpi-card good">
+            <div class="kpi-header"><span class="kpi-label">Utilidad Real</span><div class="kpi-icon">$</div></div>
+            <div class="kpi-value">$14.2M</div>
+            <div class="kpi-change up">+8.5% vs sem. anterior</div>
+        </div>
+        <div class="kpi-card good">
+            <div class="kpi-header"><span class="kpi-label">Utilidad Proyectada</span><div class="kpi-icon">📊</div></div>
+            <div class="kpi-value">$17.8M</div>
+            <div class="kpi-change up">+11.2% vs sem. anterior</div>
+        </div>
+        <div class="kpi-card good">
+            <div class="kpi-header"><span class="kpi-label">ROAS Real</span><div class="kpi-icon">R</div></div>
+            <div class="kpi-value">2.6x</div>
+            <div class="kpi-change up">+0.2 vs sem. anterior</div>
+        </div>
+        <div class="kpi-card good">
+            <div class="kpi-header"><span class="kpi-label">Tasa Entrega</span><div class="kpi-icon">%</div></div>
+            <div class="kpi-value">64%</div>
+            <div class="kpi-change down">-1.8% vs sem. anterior</div>
+        </div>
+    </div>
+
+    <!-- TREND CHART -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--green-bg);">📈</div>
+        <h2>Tendencia Diaria — Utilidad Proyectada</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="trend-chart">
+        <div class="trend-bar" style="height: 55%; background: var(--accent);"><div class="bar-tooltip">$2.0M</div><div class="bar-date">Lun</div></div>
+        <div class="trend-bar" style="height: 70%; background: var(--accent);"><div class="bar-tooltip">$2.5M</div><div class="bar-date">Mar</div></div>
+        <div class="trend-bar" style="height: 45%; background: var(--accent); opacity: 0.6;"><div class="bar-tooltip">$1.6M</div><div class="bar-date">Mie</div></div>
+        <div class="trend-bar" style="height: 80%; background: var(--green);"><div class="bar-tooltip">$2.9M</div><div class="bar-date">Jue</div></div>
+        <div class="trend-bar" style="height: 90%; background: var(--green);"><div class="bar-tooltip">$3.2M</div><div class="bar-date">Vie</div></div>
+        <div class="trend-bar" style="height: 65%; background: var(--accent);"><div class="bar-tooltip">$2.4M</div><div class="bar-date">Sab</div></div>
+        <div class="trend-bar" style="height: 85%; background: var(--green);"><div class="bar-tooltip">$3.2M</div><div class="bar-date">Dom</div></div>
+    </div>
+
+    <!-- PRODUCTOS: DOS COLUMNAS -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--accent-glow);">📦</div>
+        <h2>Rentabilidad por Producto</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="two-col-products">
+        <div class="product-column">
+            <div class="product-col-header profit">✅ Generando Ganancia <span class="col-count">5 productos</span></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Kit Skincare Premium 5 en 1</div><div class="prod-detail">312 ordenes &bull; 3 paises</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$6.8M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">3.4x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Faja Colombiana Reductora</div><div class="prod-detail">185 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$3.9M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.8x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Auriculares Bluetooth Pro</div><div class="prod-detail">142 ordenes &bull; CO</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$2.1M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.6x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Serum Vitamina C x3</div><div class="prod-detail">98 ordenes &bull; PA, CO</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$980K</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.3x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Plancha Alisadora Profesional</div><div class="prod-detail">62 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--green)">$540K</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.1x</div></div></div></div>
+        </div>
+        <div class="product-column">
+            <div class="product-col-header loss">❌ Generando Perdida <span class="col-count">2 productos</span></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Reloj Smart Deportivo <span class="loss-streak-badge">🔥 7 dias</span></div><div class="prod-detail">52 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--red)">-$890K</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">1.3x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Masajeador Cervical <span class="loss-streak-badge">🔥 5 dias</span></div><div class="prod-detail">38 ordenes &bull; GT</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Proy.</div><div class="pm-val" style="color:var(--red)">-$420K</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">0.9x</div></div></div></div>
+        </div>
+    </div>
+
+    <!-- PAIS -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--blue-bg);">🌎</div>
+        <h2>Rendimiento por Pais</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="country-grid">
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇨🇴</span><span class="country-name">Colombia</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">648</div></div>
+                <div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--green)">71%</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--green)">2.9x</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--green)">$12.1M</div></div>
+            </div>
+            <div class="product-highlight star">⭐ Estrella: Kit Skincare (ROAS 3.4x)</div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇪🇨</span><span class="country-name">Ecuador</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">245</div></div>
+                <div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--red)">52%</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">2.1x</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--orange)">$3.8M</div></div>
+            </div>
+            <div class="product-highlight risk">⚠ Entrega critica — revisar transportadora</div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇵🇦</span><span class="country-name">Panama</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">78</div></div>
+                <div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--green)">66%</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">1.9x</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--orange)">$1.2M</div></div>
+            </div>
+        </div>
+        <div class="country-card">
+            <div class="country-header"><span class="country-flag">🇬🇹</span><span class="country-name">Guatemala</span></div>
+            <div class="country-metrics">
+                <div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">26</div></div>
+                <div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--orange)">58%</div></div>
+                <div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--red)">0.9x</div></div>
+                <div class="cm-item"><div class="cm-label">Util. Proy.</div><div class="cm-value" style="color:var(--red)">-$320K</div></div>
+            </div>
+            <div class="product-highlight risk">⚠ Operacion no rentable esta semana</div>
+        </div>
+    </div>
+
+    <!-- ADS -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--purple-bg);">📣</div>
+        <h2>Rendimiento Publicitario</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="ads-grid">
+        <div class="ads-platform-card" style="border-top: 3px solid #1877F2;"><div class="platform-name">Facebook / Meta</div><div class="platform-spend" style="color:var(--text)">$14.2M</div><div class="platform-roas" style="color:var(--green)">ROAS: 2.8x</div></div>
+        <div class="ads-platform-card" style="border-top: 3px solid #00f2ea;"><div class="platform-name">TikTok Ads</div><div class="platform-spend" style="color:var(--text)">$6.8M</div><div class="platform-roas" style="color:var(--orange)">ROAS: 2.1x</div></div>
+        <div class="ads-platform-card" style="border-top: 3px solid #4285F4;"><div class="platform-name">Google Ads</div><div class="platform-spend" style="color:var(--text)">$1.5M</div><div class="platform-roas" style="color:var(--green)">ROAS: 3.2x</div></div>
+    </div>
+    <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 16px;">Top 5 Campanas por ROAS</div>
+    <div class="bar-chart">
+        <div class="bar-item"><div class="bar-label">Skincare_CO_Feb_V3</div><div class="bar-track"><div class="bar-fill" style="width:95%;background:linear-gradient(90deg,var(--green),#34d399)">$4.2M</div></div><div class="bar-roas" style="color:var(--green)">3.8x</div></div>
+        <div class="bar-item"><div class="bar-label">Faja_EC_Broad</div><div class="bar-track"><div class="bar-fill" style="width:78%;background:linear-gradient(90deg,var(--green),#34d399)">$3.1M</div></div><div class="bar-roas" style="color:var(--green)">3.1x</div></div>
+        <div class="bar-item"><div class="bar-label">BT_Auri_CO_LAL</div><div class="bar-track"><div class="bar-fill" style="width:65%;background:linear-gradient(90deg,var(--accent),#ff8c5a)">$2.4M</div></div><div class="bar-roas" style="color:var(--accent)">2.6x</div></div>
+        <div class="bar-item"><div class="bar-label">Skincare_PA_Test</div><div class="bar-track"><div class="bar-fill" style="width:45%;background:linear-gradient(90deg,var(--accent),#ff8c5a)">$980K</div></div><div class="bar-roas" style="color:var(--accent)">2.3x</div></div>
+        <div class="bar-item"><div class="bar-label">Reloj_CO_TikTok</div><div class="bar-track"><div class="bar-fill" style="width:25%;background:linear-gradient(90deg,var(--red),#f87171)">$1.8M</div></div><div class="bar-roas" style="color:var(--red)">1.3x</div></div>
+    </div>
+
+    <!-- P&L -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--accent-glow);">💰</div>
+        <h2>P&L Semanal</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="pnl-section">
+        <div class="pnl-group-header ingresos">Ingresos</div>
+        <div class="pnl-row"><span class="pnl-label">Facturacion Neta</span><span class="pnl-value" style="color:var(--text)">$89.4M</span></div>
+        <div class="pnl-row total"><span class="pnl-label">Ingreso Real (Entregados)</span><span class="pnl-value" style="color:var(--green)">$57.2M</span></div>
+        <div class="pnl-group-header costos">Costos Variables</div>
+        <div class="pnl-row"><span class="pnl-label">Costo de Producto</span><span><span class="pnl-value" style="color:var(--red)">-$15.8M</span><span class="pnl-pct">(27.6%)</span></span></div>
+        <div class="pnl-row"><span class="pnl-label">Fletes Entrega</span><span class="pnl-value" style="color:var(--red)">-$4.2M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Fletes Devolucion</span><span class="pnl-value" style="color:var(--red)">-$1.8M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Gasto Publicitario</span><span><span class="pnl-value" style="color:var(--red)">-$22.5M</span><span class="pnl-pct">(39.3%)</span></span></div>
+        <div class="pnl-group-header resultado">Resultado</div>
+        <div class="pnl-row"><span class="pnl-label">Utilidad Real (Entregados)</span><span class="pnl-value" style="color:var(--green)">$14.2M</span></div>
+        <div class="pnl-row highlight"><span class="pnl-label">Utilidad Proyectada (inc. Transito)</span><span class="pnl-value" style="color:var(--accent);font-size:18px">$17.8M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Margen Neto</span><span class="pnl-value" style="color:var(--green)">18.3%</span></div>
+    </div>
+
+    <!-- PLAN TACTICO -->
+    <div class="section-header">
+        <div class="icon-box" style="background: var(--accent-glow);">🎯</div>
+        <h2>Plan Tactico — Proxima Semana</h2>
+        <div class="section-line"></div>
+    </div>
+    <div class="roadmap">
+        <div class="roadmap-item"><div class="roadmap-priority p1">P1</div><div class="roadmap-content"><h4>Pausar Reloj Smart — 7 dias en perdida</h4><p>ROAS de 1.3x durante toda la semana. Redirigir $1.8M/semana hacia Kit Skincare y Faja.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p1">P1</div><div class="roadmap-content"><h4>Resolver entrega en Ecuador</h4><p>Tasa de entrega al 52% destruye rentabilidad. Contactar transportadora alternativa para Guayaquil y Quito.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p2">P2</div><div class="roadmap-content"><h4>Escalar Kit Skincare +25%</h4><p>Con ROAS de 3.4x consistente, aumentar presupuesto y replicar campana V3 de Colombia en Ecuador y Panama.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p3">P3</div><div class="roadmap-content"><h4>Evaluar Guatemala</h4><p>Operacion no rentable esta semana (-$320K). Si no mejora, pausar campanas y concentrar en los 3 paises rentables.</p></div></div>
+    </div>
+
+    <div class="recommendation">
+        <div class="rec-header"><img src="/logos/vega-isotipo.png" alt="VEGA"><span>Nota del Primer Oficial</span></div>
+        <p>La operacion navega con viento a favor. Si ejecutamos las 3 acciones prioritarias (pausar Reloj Smart, resolver Ecuador, escalar Skincare), la utilidad proyectada podria alcanzar <strong>$20M+ la proxima semana</strong>. El Kit Skincare es nuestro producto ancla — protegerlo y escalarlo es la mision.</p>
+    </div>
+
+    <div class="report-footer">
+        <img src="/logos/grandline-logo.png" alt="Grand Line">
+        <div class="footer-text">GRAND LINE — COMMAND CENTER</div>
+        <div class="powered">Generado por VEGA IA &bull; Vigilancia Estrategica y Gestion Analitica</div>
+    </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- ==================== REPORTE MENSUAL ============================ -->
+<!-- ================================================================ -->
+<div id="monthly" class="report-section">
+
+    <div class="portada">
+        <div class="logo-area">
+            <img src="/logos/vega-logo.png" alt="VEGA">
+            <div class="divider-dot"></div>
+            <img src="/logos/grandline-logo.png" alt="Grand Line">
+        </div>
+        <div class="report-type">Reporte Mensual</div>
+        <h1>La Vision del Almirante</h1>
+        <div class="subtitle">Panorama completo, P&L y proyecciones estrategicas</div>
+        <div class="date-badge"><div class="dot"></div> Febrero 2026</div>
+        <br>
+        <div class="health-score excelente">
+            <div class="score-dot"></div>
+            Estado del Mes: EXCELENTE
+        </div>
+    </div>
+
+    <div class="exec-summary">
+        <div class="label">Resumen Ejecutivo</div>
+        <p>Febrero cierra con <strong>$52.8M COP de utilidad real</strong> y <strong>$58.4M de utilidad proyectada</strong> (incluyendo transito), un incremento del <strong>15.2%</strong> vs enero. La operacion proceso <strong>3,842 ordenes</strong> en 4 paises con ROAS real de <strong>2.5x</strong>. Margen neto: <strong>16.8%</strong>.</p>
+    </div>
+
+    <div class="hero-kpis">
+        <div class="kpi-card good"><div class="kpi-header"><span class="kpi-label">Utilidad Real</span><div class="kpi-icon">$</div></div><div class="kpi-value">$52.8M</div><div class="kpi-change up">+15.2% vs enero</div></div>
+        <div class="kpi-card good"><div class="kpi-header"><span class="kpi-label">Util. Proyectada</span><div class="kpi-icon">📊</div></div><div class="kpi-value">$58.4M</div><div class="kpi-change up">+18.1% vs enero</div></div>
+        <div class="kpi-card good"><div class="kpi-header"><span class="kpi-label">ROAS Real</span><div class="kpi-icon">R</div></div><div class="kpi-value">2.5x</div><div class="kpi-change up">+0.1 vs enero</div></div>
+        <div class="kpi-card good"><div class="kpi-header"><span class="kpi-label">Margen Neto</span><div class="kpi-icon">%</div></div><div class="kpi-value">16.8%</div><div class="kpi-change up">+1.3pp vs enero</div></div>
+    </div>
+
+    <!-- DASHBOARD EJECUTIVO -->
+    <div class="section-header"><div class="icon-box" style="background:var(--blue-bg)">📊</div><h2>Dashboard Ejecutivo</h2><div class="section-line"></div></div>
+    <table class="data-table">
+        <thead><tr><th>Metrica</th><th>Febrero</th><th>Enero</th><th>Cambio</th><th>Estado</th></tr></thead>
+        <tbody>
+            <tr><td class="metric-name">Ordenes Totales</td><td class="value">3,842</td><td class="value" style="color:var(--text-muted)">3,510</td><td class="change-up">+9.5%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">Facturacion Neta</td><td class="value">$345.6M</td><td class="value" style="color:var(--text-muted)">$312.4M</td><td class="change-up">+10.6%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">Utilidad Real</td><td class="value">$52.8M</td><td class="value" style="color:var(--text-muted)">$45.8M</td><td class="change-up">+15.2%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">Utilidad Proyectada</td><td class="value">$58.4M</td><td class="value" style="color:var(--text-muted)">$49.4M</td><td class="change-up">+18.1%</td><td><span class="status-dot good"></span>Muy Bueno</td></tr>
+            <tr><td class="metric-name">Tasa Entrega</td><td class="value">65.7%</td><td class="value" style="color:var(--text-muted)">66.5%</td><td class="change-down">-0.8pp</td><td><span class="status-dot warning"></span>Atencion</td></tr>
+            <tr><td class="metric-name">ROAS Real</td><td class="value">2.52x</td><td class="value" style="color:var(--text-muted)">2.41x</td><td class="change-up">+0.11</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">CPA</td><td class="value">$23.4K</td><td class="value" style="color:var(--text-muted)">$24.1K</td><td class="change-up">-2.9%</td><td><span class="status-dot good"></span>Bueno</td></tr>
+            <tr><td class="metric-name">% Ads vs Revenue</td><td class="value">26.0%</td><td class="value" style="color:var(--text-muted)">27.1%</td><td class="change-up">-1.1pp</td><td><span class="status-dot good"></span>Bueno</td></tr>
+        </tbody>
+    </table>
+
+    <!-- PRODUCTOS DOS COLUMNAS -->
+    <div class="section-header"><div class="icon-box" style="background:var(--accent-glow)">📦</div><h2>Rentabilidad por Producto</h2><div class="section-line"></div></div>
+    <div class="two-col-products">
+        <div class="product-column">
+            <div class="product-col-header profit">✅ Generando Ganancia <span class="col-count">5 productos</span></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Kit Skincare Premium 5 en 1</div><div class="prod-detail">1,280 ordenes &bull; 4 paises</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Real</div><div class="pm-val" style="color:var(--green)">$24.6M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">3.4x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Faja Colombiana Reductora</div><div class="prod-detail">782 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Real</div><div class="pm-val" style="color:var(--green)">$14.2M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.8x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Auriculares Bluetooth Pro</div><div class="prod-detail">568 ordenes &bull; CO</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Real</div><div class="pm-val" style="color:var(--green)">$8.4M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.6x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Serum Vitamina C x3</div><div class="prod-detail">412 ordenes &bull; PA, CO</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Real</div><div class="pm-val" style="color:var(--green)">$4.1M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.3x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Plancha Alisadora Profesional</div><div class="prod-detail">284 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Util. Real</div><div class="pm-val" style="color:var(--green)">$2.2M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--green)">2.1x</div></div></div></div>
+        </div>
+        <div class="product-column">
+            <div class="product-col-header loss">❌ Generando Perdida <span class="col-count">2 productos</span></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Reloj Smart Deportivo <span class="loss-streak-badge">🔥 24 dias</span></div><div class="prod-detail">312 ordenes &bull; CO, EC</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Perdida</div><div class="pm-val" style="color:var(--red)">-$3.8M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">1.3x</div></div></div></div>
+            <div class="product-row"><div class="prod-info"><div class="prod-name">Masajeador Cervical <span class="loss-streak-badge">🔥 18 dias</span></div><div class="prod-detail">204 ordenes &bull; GT, PA</div></div><div class="prod-metrics"><div class="pm"><div class="pm-label">Perdida</div><div class="pm-val" style="color:var(--red)">-$1.9M</div></div><div class="pm"><div class="pm-label">ROAS</div><div class="pm-val" style="color:var(--red)">0.9x</div></div></div></div>
+        </div>
+    </div>
+
+    <!-- P&L COMPLETO -->
+    <div class="section-header"><div class="icon-box" style="background:var(--accent-glow)">💰</div><h2>Estado de Resultados (P&L)</h2><div class="section-line"></div></div>
+    <div class="pnl-section">
+        <div class="pnl-group-header ingresos">Ingresos</div>
+        <div class="pnl-row"><span class="pnl-label">Ingreso Real (Entregados)</span><span class="pnl-value" style="color:var(--green)">$227.1M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Facturacion en Transito</span><span><span class="pnl-value" style="color:var(--text-muted)">$34.6M</span><span class="pnl-pct">(pendiente)</span></span></div>
+        <div class="pnl-group-header costos">Costos Variables</div>
+        <div class="pnl-row"><span class="pnl-label">Costo de Producto</span><span><span class="pnl-value" style="color:var(--red)">-$62.7M</span><span class="pnl-pct">(27.6%)</span></span></div>
+        <div class="pnl-row"><span class="pnl-label">Fletes Entrega</span><span class="pnl-value" style="color:var(--red)">-$16.8M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Fletes Devolucion</span><span class="pnl-value" style="color:var(--red)">-$7.2M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Fletes Transito</span><span class="pnl-value" style="color:var(--text-muted)">-$3.1M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Gasto Publicitario</span><span><span class="pnl-value" style="color:var(--red)">-$89.8M</span><span class="pnl-pct">(39.5%)</span></span></div>
+        <div class="pnl-group-header fijos">Costos Fijos (Berry)</div>
+        <div class="pnl-row"><span class="pnl-label">Nomina</span><span class="pnl-value" style="color:var(--red)">-$3.2M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Fulfillment</span><span class="pnl-value" style="color:var(--red)">-$1.8M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Aplicaciones / Software</span><span class="pnl-value" style="color:var(--red)">-$1.1M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Servicios / Otros</span><span class="pnl-value" style="color:var(--red)">-$2.1M</span></div>
+        <div class="pnl-row total"><span class="pnl-label">Total Gastos Operativos</span><span class="pnl-value" style="color:var(--red)">-$8.2M</span></div>
+        <div class="pnl-group-header resultado">Resultado</div>
+        <div class="pnl-row"><span class="pnl-label">Utilidad Real (Entregados)</span><span class="pnl-value" style="color:var(--green)">$52.8M</span></div>
+        <div class="pnl-row highlight"><span class="pnl-label">Utilidad Proyectada (inc. Transito)</span><span class="pnl-value" style="color:var(--accent);font-size:20px">$58.4M</span></div>
+        <div class="pnl-row"><span class="pnl-label">Margen Neto</span><span class="pnl-value" style="color:var(--green)">16.8%</span></div>
+        <div class="pnl-row"><span class="pnl-label">Break-Even</span><span class="pnl-value" style="color:var(--green)">✓ Superado</span></div>
+    </div>
+
+    <!-- PAIS -->
+    <div class="section-header"><div class="icon-box" style="background:var(--blue-bg)">🌎</div><h2>Analisis por Pais</h2><div class="section-line"></div></div>
+    <div class="country-grid">
+        <div class="country-card" style="border-top:3px solid var(--green)"><div class="country-header"><span class="country-flag">🇨🇴</span><span class="country-name">Colombia</span></div><div class="country-metrics"><div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">2,498</div></div><div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--green)">70.2%</div></div><div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--green)">2.8x</div></div><div class="cm-item"><div class="cm-label">Util. Real</div><div class="cm-value" style="color:var(--green)">$36.4M</div></div></div><div class="product-highlight star">⭐ 65% del volumen — mercado ancla</div></div>
+        <div class="country-card" style="border-top:3px solid var(--orange)"><div class="country-header"><span class="country-flag">🇪🇨</span><span class="country-name">Ecuador</span></div><div class="country-metrics"><div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">892</div></div><div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--orange)">56.3%</div></div><div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">2.1x</div></div><div class="cm-item"><div class="cm-label">Util. Real</div><div class="cm-value" style="color:var(--orange)">$11.2M</div></div></div><div class="product-highlight risk">⚠ Entrega debajo del target — accion requerida</div></div>
+        <div class="country-card"><div class="country-header"><span class="country-flag">🇵🇦</span><span class="country-name">Panama</span></div><div class="country-metrics"><div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">312</div></div><div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--green)">64.1%</div></div><div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">1.9x</div></div><div class="cm-item"><div class="cm-label">Util. Real</div><div class="cm-value" style="color:var(--orange)">$3.8M</div></div></div></div>
+        <div class="country-card"><div class="country-header"><span class="country-flag">🇬🇹</span><span class="country-name">Guatemala</span></div><div class="country-metrics"><div class="cm-item"><div class="cm-label">Ordenes</div><div class="cm-value" style="color:var(--text)">140</div></div><div class="cm-item"><div class="cm-label">Entrega</div><div class="cm-value" style="color:var(--orange)">59.3%</div></div><div class="cm-item"><div class="cm-label">ROAS</div><div class="cm-value" style="color:var(--orange)">1.8x</div></div><div class="cm-item"><div class="cm-label">Util. Real</div><div class="cm-value" style="color:var(--text)">$1.4M</div></div></div></div>
+    </div>
+
+    <!-- ADS -->
+    <div class="section-header"><div class="icon-box" style="background:var(--purple-bg)">📣</div><h2>Analisis Publicitario</h2><div class="section-line"></div></div>
+    <div class="ads-grid">
+        <div class="ads-platform-card" style="border-top:3px solid #1877F2"><div class="platform-name">Facebook / Meta</div><div class="platform-spend" style="color:var(--text)">$58.4M</div><div class="platform-roas" style="color:var(--green)">ROAS: 2.7x</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">65% del gasto</div></div>
+        <div class="ads-platform-card" style="border-top:3px solid #00f2ea"><div class="platform-name">TikTok Ads</div><div class="platform-spend" style="color:var(--text)">$25.2M</div><div class="platform-roas" style="color:var(--orange)">ROAS: 2.0x</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">28% del gasto</div></div>
+        <div class="ads-platform-card" style="border-top:3px solid #4285F4"><div class="platform-name">Google Ads</div><div class="platform-spend" style="color:var(--text)">$6.2M</div><div class="platform-roas" style="color:var(--green)">ROAS: 3.1x</div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">7% del gasto</div></div>
+    </div>
+    <div style="font-size:11px;font-weight:800;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-muted);margin-bottom:16px">Top 5 Campanas por Eficiencia</div>
+    <table class="data-table">
+        <thead><tr><th>#</th><th>Campana</th><th>Plataforma</th><th>Gasto</th><th>ROAS</th><th>Accion</th></tr></thead>
+        <tbody>
+            <tr><td class="value">1</td><td style="font-weight:600">Skincare_CO_Feb_V3</td><td class="metric-name">Facebook</td><td class="value">$12.4M</td><td class="value" style="color:var(--green)">3.8x</td><td><span class="action-tag escalar" style="margin:0">Escalar</span></td></tr>
+            <tr><td class="value">2</td><td style="font-weight:600">Faja_EC_Broad_Feb</td><td class="metric-name">Facebook</td><td class="value">$8.1M</td><td class="value" style="color:var(--green)">3.1x</td><td><span class="action-tag escalar" style="margin:0">Escalar</span></td></tr>
+            <tr><td class="value">3</td><td style="font-weight:600">BT_Audio_CO_LAL</td><td class="metric-name">TikTok</td><td class="value">$6.8M</td><td class="value" style="color:var(--accent)">2.6x</td><td><span class="action-tag monitorear" style="margin:0">Mantener</span></td></tr>
+            <tr><td class="value">4</td><td style="font-weight:600">Reloj_CO_TikTok</td><td class="metric-name">TikTok</td><td class="value">$7.8M</td><td class="value" style="color:var(--red)">1.3x</td><td><span class="action-tag pausar" style="margin:0">Pausar</span></td></tr>
+            <tr><td class="value">5</td><td style="font-weight:600">Masaj_GT_FB</td><td class="metric-name">Facebook</td><td class="value">$4.2M</td><td class="value" style="color:var(--red)">0.9x</td><td><span class="action-tag pausar" style="margin:0">Pausar</span></td></tr>
+        </tbody>
+    </table>
+
+    <!-- PROYECCIONES -->
+    <div class="section-header"><div class="icon-box" style="background:var(--green-bg)">🔮</div><h2>Proyecciones y Tendencias</h2><div class="section-line"></div></div>
+    <div class="hero-kpis cols-3">
+        <div class="projection-card" style="border-left:3px solid var(--green)"><div class="proj-label">Tendencia de Ordenes</div><div class="proj-value" style="color:var(--green)">📈 Creciente</div><div class="proj-detail">+9.5% MoM — 3er mes consecutivo</div></div>
+        <div class="projection-card" style="border-left:3px solid var(--green)"><div class="proj-label">Proyeccion Util. Marzo</div><div class="proj-value" style="color:var(--green)">~$58-62M</div><div class="proj-detail">Si la tendencia se mantiene</div></div>
+        <div class="projection-card" style="border-left:3px solid var(--orange)"><div class="proj-label">Productos con Momentum</div><div class="proj-value" style="color:var(--text)">3 ↑ / 2 ↓</div><div class="proj-detail">Skincare, Faja, BT subiendo &bull; Reloj, Masajeador cayendo</div></div>
+    </div>
+
+    <!-- ROADMAP -->
+    <div class="section-header"><div class="icon-box" style="background:var(--accent-glow)">🗺️</div><h2>Roadmap — Marzo 2026</h2><div class="section-line"></div></div>
+    <div class="roadmap">
+        <div class="roadmap-item"><div class="roadmap-priority p1">P1</div><div class="roadmap-content"><h4>Eliminar productos en perdida</h4><p>Reloj Smart ($3.8M perdida) y Masajeador ($1.9M perdida) deben ser pausados de inmediato. Libera $12M/mes de inversion publicitaria.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p1">P1</div><div class="roadmap-content"><h4>Optimizar logistica Ecuador</h4><p>Negociar con 2 transportadoras alternativas. Meta: llevar entrega de 56% a 63% en marzo.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p2">P2</div><div class="roadmap-content"><h4>Escalar Kit Skincare a $20M de inversion</h4><p>ROAS consistente de 3.4x. Crear 3 variantes de creative para evitar fatiga. Expandir a Guatemala.</p></div></div>
+        <div class="roadmap-item"><div class="roadmap-priority p3">P3</div><div class="roadmap-content"><h4>Explorar nuevo producto para Q2</h4><p>Testear 2-3 productos nuevos con budget limitado ($2M c/u) para diversificar y reemplazar Reloj y Masajeador.</p></div></div>
+    </div>
+
+    <div class="cta-section">
+        <img src="/logos/grandline-logo.png" alt="Grand Line" style="height:40px;margin-bottom:20px">
+        <h3>Monitorea tu operacion en tiempo real</h3>
+        <p>Este reporte fue generado automaticamente por VEGA IA.<br>Accede a tu Command Center para ver datos actualizados al minuto.</p>
+        <button class="cta-button">Ir al Command Center →</button>
+    </div>
+
+    <div class="report-footer">
+        <img src="/logos/grandline-logo.png" alt="Grand Line">
+        <div class="footer-text">GRAND LINE — COMMAND CENTER</div>
+        <div class="powered">Generado por VEGA IA &bull; Vigilancia Estrategica y Gestion Analitica &bull; Febrero 2026</div>
+    </div>
+</div>
+
+<script>
+function showReport(type, btn) {
+    document.querySelectorAll('.report-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(type).classList.add('active');
+    btn.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

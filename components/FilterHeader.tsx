@@ -38,6 +38,7 @@ interface FilterHeaderProps {
     availableProducts?: (string | ProductOption)[];
     title?: string;
     icon?: React.ElementType;
+    logo?: string;
     children?: React.ReactNode;
 }
 
@@ -46,6 +47,7 @@ const FilterHeader = ({
     availableProducts = ['Todos'],
     title = 'Grand Line',
     icon: Icon = Globe,
+    logo,
     children
 }: FilterHeaderProps) => {
     const {
@@ -179,13 +181,19 @@ const FilterHeader = ({
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 {/* Brand / Page Title */}
                 <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-gradient-to-br from-[#d75c33] to-[#ff8c5a] shadow-lg shadow-[#d75c33]/20">
-                        <Icon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                        <h1 className="text-lg font-black tracking-tight text-white uppercase">{title}</h1>
-                        <p className="text-xs text-gray-500 font-bold tracking-widest uppercase">Command Center</p>
-                    </div>
+                    {logo ? (
+                        <img src={logo} alt={title} className="h-12 w-auto object-contain" />
+                    ) : (
+                        <>
+                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-[#d75c33] to-[#ff8c5a] shadow-lg shadow-[#d75c33]/20">
+                                <Icon className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-lg font-black tracking-tight text-white uppercase">{title}</h1>
+                                <p className="text-xs text-gray-500 font-bold tracking-widest uppercase">Command Center</p>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Filters Group */}
