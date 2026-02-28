@@ -2,7 +2,7 @@ export interface TutorialConfig {
     id: string;
     title: string;
     description: string;
-    loomUrl: string;
+    videoUrl: string;
     steps: string[];
 }
 
@@ -10,7 +10,7 @@ export const TUTORIAL_INTRO: TutorialConfig = {
     id: 'intro',
     title: 'Bienvenido a Grand Line',
     description: 'Tu centro de comando para e-commerce COD',
-    loomUrl: '', // Pega aqui el Loom embed URL cuando grabes el video
+    videoUrl: 'https://youtu.be/6qwghzpSBIE', // Pega aqui el Loom embed URL cuando grabes el video
     steps: [
         'Importa tus ordenes desde Dropi para ver tu operacion en tiempo real',
         'Conecta tus cuentas de Facebook y TikTok para trackear publicidad',
@@ -24,7 +24,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'dashboard',
         title: 'Wheel — Dashboard Principal',
         description: 'El centro de comando de tu operacion',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Filtra por pais, producto y rango de fechas para ver metricas especificas',
             'Revisa los KPIs clave: ROAS, CPA, tasa de entrega y margen',
@@ -36,7 +36,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'logpose',
         title: 'Log Pose — Territorios',
         description: 'Gestion detallada por pais',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Selecciona un pais para ver sus ordenes, entregas y devoluciones',
             'Revisa el estado de cada orden individual con filtros avanzados',
@@ -48,7 +48,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'publicidad',
         title: 'Publicidad — Centro de Ads',
         description: 'Control total de tu inversion publicitaria',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Conecta tu token de Facebook o sube CSVs de TikTok para importar datos',
             'Mapea cada campana a su producto/pais para tracking preciso',
@@ -60,7 +60,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'sunny',
         title: 'Sunny — Modulo de Ads',
         description: 'Lanza y gestiona campanas publicitarias',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Conecta tu cuenta de Facebook Ads desde configuracion',
             'Genera copies con IA para tus campanas',
@@ -71,7 +71,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'berry',
         title: 'Berry — Billetera',
         description: 'Gestion de pagos y facturacion',
-        loomUrl: '',
+        videoUrl: 'https://youtu.be/NxlXtSzTxtE',
         steps: [
             'Revisa tu balance y transacciones recientes',
             'Gestiona los pagos de tu suscripcion',
@@ -82,7 +82,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'vega',
         title: 'Vega AI — Inteligencia Artificial',
         description: 'Tu analista de datos con IA',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Chatea con Vega para obtener analisis de tu operacion en lenguaje natural',
             'Configura alertas automaticas para metricas criticas (ROAS, CPA, entregas)',
@@ -94,7 +94,7 @@ export const MODULE_TUTORIALS: Record<string, TutorialConfig> = {
         id: 'import',
         title: 'Importar Datos',
         description: 'Carga tus ordenes desde Dropi',
-        loomUrl: '',
+        videoUrl: '',
         steps: [
             'Descarga el reporte de ordenes desde tu cuenta de Dropi',
             'Arrastra el archivo Excel/CSV a la zona de importacion',

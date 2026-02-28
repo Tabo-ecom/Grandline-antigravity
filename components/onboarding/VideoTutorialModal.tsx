@@ -10,15 +10,22 @@ interface Props {
     onDismiss?: () => void; // mark as "don't show again"
 }
 
-export default function VideoTutorialModal({ tutorial, onClose, onDismiss }: Props) {
-    const hasVideo = !!tutorial.loomUrl;
+function toEmbedUrl(url: string): string {
+    if (!url) return '';
+    // YouTube: youtu.be/ID or youtube.com/watch?v=ID
+    const ytShort = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+    if (ytShort) return `https://www.youtube.com/embed/${ytShort[1]}`;
+    const ytLong = url.match(/youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/);
+    if (ytLong) return `https://www.youtube.com/embed/${ytLong[1]}`;
+    if (url.includes('youtube.com/embed/')) return url;
+    // Loom: /share/ → /embed/
+    if (url.includes('loom.com')) return url.replace('/share/', '/embed/');
+    return url;
+}
 
-    // Extract Loom video ID from URL
-    const loomEmbedUrl = tutorial.loomUrl
-        ? tutorial.loomUrl.includes('/embed/')
-            ? tutorial.loomUrl
-            : tutorial.loomUrl.replace('/share/', '/embed/')
-        : '';
+export default function VideoTutorialModal({ tutorial, onClose, onDismiss }: Props) {
+    const hasVideo = !!tutorial.videoUrl;
+    const embedUrl = toEmbedUrl(tutorial.videoUrl);
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -47,10 +54,10 @@ export default function VideoTutorialModal({ tutorial, onClose, onDismiss }: Pro
                 <div className="px-6 pb-4">
                     {hasVideo ? (
                         <iframe
-                            src={loomEmbedUrl}
+                            src={embedUrl}
                             allowFullScreen
                             className="w-full aspect-video rounded-xl border border-card-border"
-                            allow="autoplay; fullscreen"
+                            allow="autoplay; fullscreen; encrypted-media"
                         />
                     ) : (
                         <div className="w-full aspect-video rounded-xl border-2 border-dashed border-[#d75c33]/30 bg-[#d75c33]/5 flex items-center justify-center">
