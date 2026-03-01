@@ -1,16 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron/report-daily",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/report-weekly",
-      "schedule": "0 10 * * 1"
-    },
-    {
-      "path": "/api/cron/report-monthly",
-      "schedule": "0 8 1,7,15 * *"
+      "path": "/api/cron/dispatcher",
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/sync-ad-spend",

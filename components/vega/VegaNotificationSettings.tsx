@@ -69,11 +69,8 @@ export const VegaNotificationSettings: React.FC = () => {
     if (loading) return null;
 
     return (
-        <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
-            <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-5">Configuración de Notificaciones</h3>
-
-            <div className="space-y-5">
-                {/* Telegram */}
+        <div className="space-y-5">
+            {/* Telegram */}
                 <div className="p-4 bg-hover-bg rounded-xl border border-card-border">
                     <div className="flex items-center gap-2 mb-3">
                         <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Telegram</span>
@@ -118,6 +115,37 @@ export const VegaNotificationSettings: React.FC = () => {
                         placeholder="Webhook URL"
                         className="w-full px-3 py-2 bg-card border border-card-border rounded-xl text-xs text-foreground placeholder:text-muted outline-none focus:border-accent/30 transition-all"
                     />
+                </div>
+
+                {/* Slack Bot (Campaign Control) */}
+                <div className="p-4 bg-hover-bg rounded-xl border border-card-border">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Slack Bot (Control de Campañas)</span>
+                    </div>
+                    <p className="text-[10px] text-muted mb-3">Controla campañas desde Slack: sube/baja presupuestos, pausa o activa campañas.</p>
+                    <div className="space-y-2">
+                        <input
+                            type="text"
+                            value={config.slackBotToken || ''}
+                            onChange={(e) => setConfig(prev => ({ ...prev, slackBotToken: e.target.value }))}
+                            placeholder="Bot Token (xoxb-...)"
+                            className="w-full px-3 py-2 bg-card border border-card-border rounded-xl text-xs text-foreground placeholder:text-muted outline-none focus:border-accent/30 transition-all"
+                        />
+                        <input
+                            type="text"
+                            value={config.slackSigningSecret || ''}
+                            onChange={(e) => setConfig(prev => ({ ...prev, slackSigningSecret: e.target.value }))}
+                            placeholder="Signing Secret"
+                            className="w-full px-3 py-2 bg-card border border-card-border rounded-xl text-xs text-foreground placeholder:text-muted outline-none focus:border-accent/30 transition-all"
+                        />
+                        <input
+                            type="text"
+                            value={config.slackChannelId || ''}
+                            onChange={(e) => setConfig(prev => ({ ...prev, slackChannelId: e.target.value }))}
+                            placeholder="Channel ID (C0123456789)"
+                            className="w-full px-3 py-2 bg-card border border-card-border rounded-xl text-xs text-foreground placeholder:text-muted outline-none focus:border-accent/30 transition-all"
+                        />
+                    </div>
                 </div>
 
                 {/* Email */}
@@ -165,7 +193,6 @@ export const VegaNotificationSettings: React.FC = () => {
                         {testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Send className="w-3 h-3" /> Test</>}
                     </button>
                 </div>
-            </div>
         </div>
     );
 };

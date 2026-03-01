@@ -85,6 +85,25 @@ export interface VegaNotificationConfig {
     telegramChatId: string;
     slackWebhookUrl: string;
     emailEnabled?: boolean;
+    // Slack Bot (bidirectional control)
+    slackBotToken?: string;
+    slackSigningSecret?: string;
+    slackChannelId?: string;
+}
+
+export interface VegaScheduleConfig {
+    timezone: string;
+    dailyReport: { enabled: boolean; hour: number };
+    weeklyReport: { enabled: boolean; dayOfWeek: number; hour: number };
+    monthlyReport: { enabled: boolean; daysOfMonth: number[]; hour: number };
+    adPerformanceReport: {
+        enabled: boolean;
+        intervalHours: number;
+        startHour: number;
+        endHour: number;
+    };
+    alertHours: { enabled: boolean; startHour: number; endHour: number };
+    lastAdReportAt?: number;
 }
 
 // Available metrics for alert configuration

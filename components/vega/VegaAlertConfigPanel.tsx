@@ -69,12 +69,9 @@ export const VegaAlertConfigPanel: React.FC = () => {
     };
 
     return (
-        <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+        <div>
             <div className="flex items-center justify-between mb-5">
-                <div>
-                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">Configuración de Alertas</h3>
-                    <p className="text-xs text-muted mt-1">Define reglas personalizadas para monitoreo automático.</p>
-                </div>
+                <p className="text-xs text-muted">Define reglas personalizadas para monitoreo automático.</p>
                 <button
                     onClick={() => { setEditingRule(null); setModalOpen(true); }}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-accent/10 text-accent text-[10px] font-black uppercase tracking-widest hover:bg-accent/20 transition-all border border-accent/20"

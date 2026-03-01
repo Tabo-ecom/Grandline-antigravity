@@ -1,21 +1,58 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Activity, Bell, Settings } from 'lucide-react';
+import { Activity, Crosshair, Settings, ChevronDown, ChevronRight, Clock, Bell as BellIcon, Send, Eye } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-// Lazy-loaded tab components (only one visible at a time)
 const VegaCoreMonitoring = dynamic(() => import('@/components/vega/VegaCoreMonitoring').then(m => ({ default: m.VegaCoreMonitoring })));
-const VegaActiveAlerts = dynamic(() => import('@/components/vega/VegaActiveAlerts').then(m => ({ default: m.VegaActiveAlerts })));
-const VegaAlertConfigPanel = dynamic(() => import('@/components/vega/VegaAlertConfigPanel').then(m => ({ default: m.VegaAlertConfigPanel })));
+const VegaScheduleSettings = dynamic(() => import('@/components/vega/VegaScheduleSettings').then(m => ({ default: m.VegaScheduleSettings })));
 const VegaNotificationSettings = dynamic(() => import('@/components/vega/VegaNotificationSettings').then(m => ({ default: m.VegaNotificationSettings })));
+const VegaAlertConfigPanel = dynamic(() => import('@/components/vega/VegaAlertConfigPanel').then(m => ({ default: m.VegaAlertConfigPanel })));
+const VegaNotificationPreview = dynamic(() => import('@/components/vega/VegaNotificationPreview').then(m => ({ default: m.VegaNotificationPreview })));
 const KPICalibration = dynamic(() => import('@/components/settings/KPICalibration').then(m => ({ default: m.KPICalibration })));
 
 const TABS = [
     { key: 'monitoring', label: 'Monitoreo', icon: Activity },
-    { key: 'alerts', label: 'Alertas', icon: Bell },
+    { key: 'kpis', label: 'Brújula', icon: Crosshair },
     { key: 'config', label: 'Configuración', icon: Settings },
 ];
+
+function CollapsibleSection({
+    title,
+    icon: Icon,
+    defaultOpen = false,
+    children,
+}: {
+    title: string;
+    icon: React.ElementType;
+    defaultOpen?: boolean;
+    children: React.ReactNode;
+}) {
+    const [open, setOpen] = useState(defaultOpen);
+
+    return (
+        <div className="bg-card border border-card-border rounded-2xl shadow-sm overflow-hidden">
+            <button
+                onClick={() => setOpen(!open)}
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-hover-bg transition-colors"
+            >
+                <div className="flex items-center gap-2.5">
+                    <Icon className="w-4 h-4 text-muted" />
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">{title}</h3>
+                </div>
+                {open
+                    ? <ChevronDown className="w-4 h-4 text-muted" />
+                    : <ChevronRight className="w-4 h-4 text-muted" />
+                }
+            </button>
+            {open && (
+                <div className="px-5 pb-5 border-t border-card-border pt-4">
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function VegaAIPage() {
     const [activeTab, setActiveTab] = useState('monitoring');
@@ -54,19 +91,43 @@ export default function VegaAIPage() {
             {/* Tab Content */}
             {activeTab === 'monitoring' && <VegaCoreMonitoring />}
 
-            {activeTab === 'alerts' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <VegaActiveAlerts />
-                    <VegaAlertConfigPanel />
-                </div>
-            )}
+            {activeTab === 'kpis' && <KPICalibration />}
 
             {activeTab === 'config' && (
-                <div className="space-y-6">
-                    <KPICalibration />
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <VegaNotificationSettings />
-                        <VegaAlertConfigPanel />
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6">
+                    {/* Left: Collapsible config sections */}
+                    <div className="space-y-4">
+                        <CollapsibleSection title="Horarios de Reportes" icon={Clock} defaultOpen>
+                            <VegaScheduleSettings />
+                        </CollapsibleSection>
+
+                        <CollapsibleSection title="Canales de Notificación" icon={Send}>
+                            <VegaNotificationSettings />
+                        </CollapsibleSection>
+
+                        <CollapsibleSection title="Reglas de Alertas" icon={BellIcon}>
+                            <VegaAlertConfigPanel />
+                        </CollapsibleSection>
+                    </div>
+
+                    {/* Right: Preview (sticky) */}
+                    <div className="hidden lg:block">
+                        <div className="sticky top-6">
+                            <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+                                <div className="flex items-center gap-2.5 mb-4">
+                                    <Eye className="w-4 h-4 text-muted" />
+                                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">Preview</h3>
+                                </div>
+                                <VegaNotificationPreview />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Mobile preview (below sections) */}
+                    <div className="lg:hidden">
+                        <CollapsibleSection title="Preview de Notificaciones" icon={Eye}>
+                            <VegaNotificationPreview />
+                        </CollapsibleSection>
                     </div>
                 </div>
             )}
