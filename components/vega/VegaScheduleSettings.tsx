@@ -79,15 +79,22 @@ export const VegaScheduleSettings: React.FC = () => {
         setSaving(true);
         setSaved(false);
         try {
-            await authFetch('/api/vega/schedule', {
+            const res = await authFetch('/api/vega/schedule', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config),
             });
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
+            if (res.ok) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                console.error('Error saving schedule:', data.error || res.status);
+                alert(`Error al guardar: ${data.error || 'Error desconocido'}`);
+            }
         } catch (err) {
             console.error('Error saving schedule:', err);
+            alert('Error de conexión al guardar');
         } finally {
             setSaving(false);
         }

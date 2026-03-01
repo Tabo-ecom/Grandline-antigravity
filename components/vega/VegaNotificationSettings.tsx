@@ -15,6 +15,7 @@ export const VegaNotificationSettings: React.FC = () => {
     });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [testing, setTesting] = useState(false);
     const [testResults, setTestResults] = useState<Record<string, boolean> | null>(null);
 
@@ -35,14 +36,24 @@ export const VegaNotificationSettings: React.FC = () => {
 
     const handleSave = async () => {
         setSaving(true);
+        setSaved(false);
         try {
-            await authFetch('/api/vega/notifications', {
+            const res = await authFetch('/api/vega/notifications', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ config }),
             });
+            if (res.ok) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                console.error('Error saving config:', data.error || res.status);
+                alert(`Error al guardar: ${data.error || 'Error desconocido'}`);
+            }
         } catch (err) {
             console.error('Error saving config:', err);
+            alert('Error de conexión al guardar');
         } finally {
             setSaving(false);
         }
@@ -183,7 +194,7 @@ export const VegaNotificationSettings: React.FC = () => {
                         disabled={saving}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black text-white uppercase tracking-widest bg-accent hover:bg-accent/90 transition-all disabled:opacity-40"
                     >
-                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Guardar'}
+                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : saved ? <><Check className="w-3 h-3" /> Guardado</> : 'Guardar'}
                     </button>
                     <button
                         onClick={handleTest}
