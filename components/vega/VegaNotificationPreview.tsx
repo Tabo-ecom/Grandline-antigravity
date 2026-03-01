@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Mail, Loader2 } from 'lucide-react';
+import { MessageSquare, Mail, Loader2, Send, Check } from 'lucide-react';
 import { authFetch } from '@/lib/api/client';
 
 type Channel = 'slack' | 'telegram' | 'email';
@@ -30,6 +30,9 @@ export const VegaNotificationPreview: React.FC = () => {
     const [previewType, setPreviewType] = useState<PreviewType>('daily');
     const [previews, setPreviews] = useState<Previews | null>(null);
     const [loading, setLoading] = useState(true);
+    const [sending, setSending] = useState(false);
+    const [sent, setSent] = useState(false);
+    const [sendError, setSendError] = useState('');
 
     useEffect(() => {
         async function load() {
@@ -51,6 +54,32 @@ export const VegaNotificationPreview: React.FC = () => {
             ? `📧 ${previews.email.subject}\n\n${previews.email.preview}`
             : (previews[channel]?.[previewType] || 'Vista previa no disponible')
         : '';
+
+    const handleSendTest = async () => {
+        setSending(true);
+        setSent(false);
+        setSendError('');
+        try {
+            const res = await authFetch('/api/vega/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channel, previewType }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setSent(true);
+                setTimeout(() => setSent(false), 3000);
+            } else {
+                setSendError(data.error || 'Error al enviar');
+                setTimeout(() => setSendError(''), 4000);
+            }
+        } catch {
+            setSendError('Error de conexión');
+            setTimeout(() => setSendError(''), 4000);
+        } finally {
+            setSending(false);
+        }
+    };
 
     // Format preview text with basic markdown-like rendering
     const renderPreviewLines = (text: string) => {
@@ -163,6 +192,20 @@ export const VegaNotificationPreview: React.FC = () => {
                         <div className="w-28 h-1 bg-white/20 rounded-full" />
                     </div>
                 </div>
+            </div>
+
+            {/* Send Test Button */}
+            <div className="mt-4 flex flex-col items-center gap-2">
+                <button
+                    onClick={handleSendTest}
+                    disabled={sending || loading || !previews}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-40 bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20"
+                >
+                    {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : sent ? <><Check className="w-3 h-3" /> Enviado</> : <><Send className="w-3 h-3" /> Enviar Test</>}
+                </button>
+                {sendError && (
+                    <p className="text-[10px] text-red-400 font-semibold">{sendError}</p>
+                )}
             </div>
         </div>
     );

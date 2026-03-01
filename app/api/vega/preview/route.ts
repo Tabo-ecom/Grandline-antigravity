@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
 import { adminGetAppData } from '@/lib/firebase/admin-helpers';
+import { getNotificationConfig, sendTelegramMessage, sendSlackMessage } from '@/lib/services/vega/notifications';
+import { sendReportEmail } from '@/lib/services/vega/email';
 import type { VegaReport } from '@/lib/types/vega';
 
 function fmt(n: number): string {
@@ -74,6 +76,73 @@ export async function GET(req: NextRequest) {
     } catch (error: any) {
         return NextResponse.json(
             { error: error?.message || 'Error generating preview' },
+            { status: 500 },
+        );
+    }
+}
+
+/** Send the preview message as a test to the selected channel */
+export async function POST(req: NextRequest) {
+    try {
+        const auth = await verifyAuth(req);
+        if (!auth) return unauthorizedResponse();
+
+        const { channel, previewType } = await req.json();
+
+        // Get notification config
+        const notifConfig = await getNotificationConfig(auth.teamId);
+
+        // Build the preview message
+        const reports = await adminGetAppData<VegaReport[]>('vega_reports', auth.teamId) || [];
+        const latestDaily = reports.find(r => r.type === 'daily') || null;
+
+        const slackPreviews: Record<string, string> = {
+            daily: buildSampleSlackDaily(latestDaily),
+            ads: buildSampleSlackAds(),
+            alert: buildSampleSlackAlert(),
+        };
+        const telegramPreviews: Record<string, string> = {
+            daily: buildSampleTelegramDaily(latestDaily),
+            ads: buildSampleSlackAds(),
+            alert: buildSampleSlackAlert(),
+        };
+
+        let success = false;
+
+        if (channel === 'telegram') {
+            if (!notifConfig.telegramBotToken || !notifConfig.telegramChatId) {
+                return NextResponse.json({ error: 'Telegram no configurado. Agrega Bot Token y Chat ID.' }, { status: 400 });
+            }
+            const message = telegramPreviews[previewType] || telegramPreviews.daily;
+            success = await sendTelegramMessage(notifConfig.telegramBotToken, notifConfig.telegramChatId, message);
+        } else if (channel === 'slack') {
+            if (!notifConfig.slackWebhookUrl) {
+                return NextResponse.json({ error: 'Slack no configurado. Agrega el Webhook URL.' }, { status: 400 });
+            }
+            const message = slackPreviews[previewType] || slackPreviews.daily;
+            success = await sendSlackMessage(notifConfig.slackWebhookUrl, message);
+        } else if (channel === 'email') {
+            if (!notifConfig.emailEnabled || !auth.email) {
+                return NextResponse.json({ error: 'Email no habilitado.' }, { status: 400 });
+            }
+            success = await sendReportEmail(
+                auth.email,
+                buildSampleEmailSubject(latestDaily),
+                `<div style="font-family: Arial, sans-serif; padding: 24px; background: #0A0A0F; color: #ededed;">
+                    <h2 style="color: #d75c33;">VEGA — Preview Test</h2>
+                    <pre style="white-space: pre-wrap; font-size: 14px; line-height: 1.6;">${slackPreviews.daily}</pre>
+                </div>`,
+            );
+        }
+
+        if (success) {
+            return NextResponse.json({ success: true });
+        } else {
+            return NextResponse.json({ error: 'No se pudo enviar. Verifica la configuración del canal.' }, { status: 500 });
+        }
+    } catch (error: any) {
+        return NextResponse.json(
+            { error: error?.message || 'Error sending test' },
             { status: 500 },
         );
     }
