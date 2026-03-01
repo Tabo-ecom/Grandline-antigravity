@@ -68,6 +68,10 @@ export async function sendSlackMessage(webhookUrl: string, message: string): Pro
                 blocks: blocks.slice(0, 50),
             }),
         });
+        if (!res.ok) {
+            const errorBody = await res.text().catch(() => '');
+            console.error(`Slack webhook error (${res.status}): ${errorBody}`);
+        }
         return res.ok;
     } catch (err) {
         console.error('Error sending Slack message:', err);

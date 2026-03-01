@@ -111,16 +111,22 @@ export async function POST(req: NextRequest) {
 
         if (channel === 'telegram') {
             if (!notifConfig.telegramBotToken || !notifConfig.telegramChatId) {
-                return NextResponse.json({ error: 'Telegram no configurado. Agrega Bot Token y Chat ID.' }, { status: 400 });
+                return NextResponse.json({ error: 'Telegram no configurado. Guarda primero la configuración con Bot Token y Chat ID.' }, { status: 400 });
             }
             const message = telegramPreviews[previewType] || telegramPreviews.daily;
             success = await sendTelegramMessage(notifConfig.telegramBotToken, notifConfig.telegramChatId, message);
+            if (!success) {
+                return NextResponse.json({ error: 'Telegram falló. Verifica Bot Token y Chat ID.' }, { status: 400 });
+            }
         } else if (channel === 'slack') {
             if (!notifConfig.slackWebhookUrl) {
-                return NextResponse.json({ error: 'Slack no configurado. Agrega el Webhook URL.' }, { status: 400 });
+                return NextResponse.json({ error: 'Slack no configurado. Guarda primero la configuración con el Webhook URL.' }, { status: 400 });
             }
             const message = slackPreviews[previewType] || slackPreviews.daily;
             success = await sendSlackMessage(notifConfig.slackWebhookUrl, message);
+            if (!success) {
+                return NextResponse.json({ error: `Slack webhook falló. Verifica que el URL sea válido: ${notifConfig.slackWebhookUrl.substring(0, 40)}...` }, { status: 400 });
+            }
         } else if (channel === 'email') {
             if (!notifConfig.emailEnabled || !auth.email) {
                 return NextResponse.json({ error: 'Email no habilitado.' }, { status: 400 });
