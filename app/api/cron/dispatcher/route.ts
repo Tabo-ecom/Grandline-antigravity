@@ -1,5 +1,5 @@
 /**
- * Cron Dispatcher - runs every hour
+ * Cron Dispatcher - runs once daily at 12:00 UTC (~7AM Colombia)
  * Checks all users' schedule configs and triggers reports as needed.
  * Replaces the 3 individual cron routes (report-daily, report-weekly, report-monthly).
  */
