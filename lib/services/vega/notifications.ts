@@ -2,22 +2,22 @@
  * Vega AI - Notification Service (Telegram + Slack)
  */
 
-import { getAppData, setAppData } from '@/lib/firebase/firestore';
+import { adminGetAppData, adminSetAppData } from '@/lib/firebase/admin-helpers';
 import type { VegaNotificationConfig } from '@/lib/types/vega';
 
 const CONFIG_KEY = 'vega_notification_config';
 
 export async function getNotificationConfig(userId: string): Promise<VegaNotificationConfig> {
     if (!userId) return { telegramBotToken: '', telegramChatId: '', slackWebhookUrl: '' };
-    return (await getAppData<VegaNotificationConfig>(CONFIG_KEY, userId)) || {
+    return (await adminGetAppData<VegaNotificationConfig>(CONFIG_KEY, userId)) || {
         telegramBotToken: '',
         telegramChatId: '',
         slackWebhookUrl: '',
     };
 }
 
-export async function saveNotificationConfig(config: VegaNotificationConfig, userEmail: string): Promise<void> {
-    await setAppData(CONFIG_KEY, config, userEmail);
+export async function saveNotificationConfig(config: VegaNotificationConfig, userId: string): Promise<void> {
+    await adminSetAppData(CONFIG_KEY, config, userId);
 }
 
 export async function sendTelegramMessage(botToken: string, chatId: string, message: string): Promise<boolean> {
