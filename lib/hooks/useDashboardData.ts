@@ -508,8 +508,10 @@ export function useDashboardData(): DashboardDataHook {
             }
         });
 
-        // Fill Orders & Profit Data - deduplicate by order ID to avoid double-counting multi-item orders
-        const seenSalesIds: Record<string, Set<string>> = {};
+        // Fill Orders & Profit Data
+        // TOTAL DE LA ORDEN = subtotal per product line, so sum ALL lines (no dedup)
+        // Shipping (PRECIO FLETE) is per-order, so deduplicate by order ID
+        const seenOrderIds: Record<string, Set<string>> = {};
         const dailyOrders: Record<string, ExtendedDropiOrder[]> = {};
 
         filteredOrders.forEach(o => {
@@ -519,28 +521,30 @@ export function useDashboardData(): DashboardDataHook {
                 dailyOrders[k].push(o);
 
                 const orderId = o.ID?.toString() || '';
-                if (!seenSalesIds[k]) seenSalesIds[k] = new Set();
+                if (!seenOrderIds[k]) seenOrderIds[k] = new Set();
+                const isFirstLine = orderId && !seenOrderIds[k].has(orderId);
+                if (isFirstLine) seenOrderIds[k].add(orderId);
 
-                // Only count TOTAL DE LA ORDEN once per unique order ID
-                if (orderId && !seenSalesIds[k].has(orderId)) {
-                    seenSalesIds[k].add(orderId);
-                    if (!isCancelado(o.ESTATUS)) {
-                        dailyData[k].sales += (o["TOTAL DE LA ORDEN"] || 0);
-                        // Dispatched = Entregado + Devolucion + Transito
-                        if (isEntregado(o.ESTATUS) || isDevolucion(o.ESTATUS) || isTransit(o.ESTATUS)) {
-                            dailyData[k].sales_despachada += (o["TOTAL DE LA ORDEN"] || 0);
-                        }
-                        if (isEntregado(o.ESTATUS)) {
-                            dailyData[k].profit += (o["TOTAL DE LA ORDEN"] || 0) - (o["PRECIO FLETE"] || 0);
-                        } else {
+                if (!isCancelado(o.ESTATUS)) {
+                    // Sales: sum all lines (each line is a product subtotal)
+                    dailyData[k].sales += (o["TOTAL DE LA ORDEN"] || 0);
+                    if (isEntregado(o.ESTATUS) || isDevolucion(o.ESTATUS) || isTransit(o.ESTATUS)) {
+                        dailyData[k].sales_despachada += (o["TOTAL DE LA ORDEN"] || 0);
+                    }
+
+                    if (isEntregado(o.ESTATUS)) {
+                        // Revenue: all lines
+                        dailyData[k].profit += (o["TOTAL DE LA ORDEN"] || 0);
+                        // Product cost: all lines
+                        dailyData[k].profit -= (o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0);
+                        // Shipping: once per order
+                        if (isFirstLine) {
                             dailyData[k].profit -= (o["PRECIO FLETE"] || 0);
                         }
+                    } else if (isFirstLine) {
+                        // Non-delivered shipping cost: once per order
+                        dailyData[k].profit -= (o["PRECIO FLETE"] || 0);
                     }
-                }
-
-                // Product cost is per line item
-                if (orderId && seenSalesIds[k].has(orderId) && isEntregado(o.ESTATUS)) {
-                    dailyData[k].profit -= (o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0);
                 }
             }
         });

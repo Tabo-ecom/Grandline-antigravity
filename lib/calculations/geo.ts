@@ -52,14 +52,14 @@ export function aggregateByDepartment(
         const noCancelados = totalOrders - cancelados || 1;
         const dispatched = entregados + devoluciones || 1;
 
-        // Deduplicate financial sums by order ID (flete/ingreso are per-order, not per-line)
+        // Flete: deduplicate by order ID (shipping is per-order, not per-line)
         const seenFlete = new Set<string>();
         let totalFlete = 0;
         deptOrders.forEach(o => { if (o.ID && !seenFlete.has(o.ID)) { seenFlete.add(o.ID); totalFlete += o['PRECIO FLETE'] || 0; } });
 
-        const seenIng = new Set<string>();
+        // Revenue: sum ALL lines (TOTAL DE LA ORDEN is subtotal per product line)
         let ingresoTotal = 0;
-        deptOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenIng.has(o.ID)) { seenIng.add(o.ID); ingresoTotal += o['TOTAL DE LA ORDEN'] || 0; } });
+        deptOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { ingresoTotal += o['TOTAL DE LA ORDEN'] || 0; });
 
         results.push({
             code,

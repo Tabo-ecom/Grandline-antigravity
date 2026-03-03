@@ -326,10 +326,9 @@ export default function CountryOperationPage() {
             const nc = total - can || 1;
             const percEnt = (ent / nc) * 100;
 
-            // Dedup financial sums by order ID
-            const seenFact = new Set<string>();
+            // Revenue: sum ALL lines (TOTAL DE LA ORDEN is subtotal per product line)
             let facturado = 0;
-            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenFact.has(o.ID)) { seenFact.add(o.ID); facturado += o["TOTAL DE LA ORDEN"] || 0; } });
+            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { facturado += o["TOTAL DE LA ORDEN"] || 0; });
 
             const seenFl = new Set<string>();
             let fleteTotal = 0;
@@ -409,12 +408,10 @@ export default function CountryOperationPage() {
     }, [carriers, filteredOrders]);
 
     const totalFacturado = useMemo(() => {
-        const seen = new Set<string>();
-        let sum = 0;
-        filteredOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => {
-            if (o.ID && !seen.has(o.ID)) { seen.add(o.ID); sum += o["TOTAL DE LA ORDEN"] || 0; }
-        });
-        return sum;
+        // Sum ALL lines (TOTAL DE LA ORDEN is subtotal per product line)
+        return filteredOrders
+            .filter(o => isEntregado(o.ESTATUS))
+            .reduce((sum, o) => sum + (o["TOTAL DE LA ORDEN"] || 0), 0);
     }, [filteredOrders]);
 
     const avgFlete = useMemo(() => {

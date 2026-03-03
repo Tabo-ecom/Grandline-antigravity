@@ -375,18 +375,20 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         dailyData[k] = { sales: 0, orders: 0, ads: 0, profit: 0 };
         curr.setDate(curr.getDate() + 1);
     }
-    const seenSalesIds: Record<string, Set<string>> = {};
+    const seenOrderIds: Record<string, Set<string>> = {};
     filteredOrders.forEach(o => {
         const k = getLocalDateKey(o.FECHA);
         if (dailyData[k]) {
             const orderId = o.ID?.toString() || '';
-            if (!seenSalesIds[k]) seenSalesIds[k] = new Set();
-            if (orderId && !seenSalesIds[k].has(orderId)) {
-                seenSalesIds[k].add(orderId);
+            if (!seenOrderIds[k]) seenOrderIds[k] = new Set();
+            // Order count: deduplicate by ID
+            if (orderId && !seenOrderIds[k].has(orderId)) {
+                seenOrderIds[k].add(orderId);
                 dailyData[k].orders++;
-                if (!isCancelado(o.ESTATUS)) {
-                    dailyData[k].sales += (o["TOTAL DE LA ORDEN"] || 0);
-                }
+            }
+            // Sales: sum all lines (TOTAL DE LA ORDEN is subtotal per product line)
+            if (!isCancelado(o.ESTATUS)) {
+                dailyData[k].sales += (o["TOTAL DE LA ORDEN"] || 0);
             }
         }
     });

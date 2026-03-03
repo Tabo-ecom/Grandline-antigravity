@@ -250,12 +250,16 @@ function buildTier3ProductDetail(data: VegaDataContext): string {
                 productStats[pid] = { orders: 0, delivered: 0, canceled: 0, revenue: 0, product: pid };
                 seenIds[pid] = new Set();
             }
+            // Revenue: sum all lines (TOTAL DE LA ORDEN is subtotal per product line)
+            if (!isCancelado(o.ESTATUS)) {
+                productStats[pid].revenue += (o["TOTAL DE LA ORDEN"] || 0);
+            }
+            // Counts: deduplicate by order ID
             if (o.ID && !seenIds[pid].has(o.ID)) {
                 seenIds[pid].add(o.ID);
                 productStats[pid].orders++;
                 if (isEntregado(o.ESTATUS)) productStats[pid].delivered++;
                 if (isCancelado(o.ESTATUS)) productStats[pid].canceled++;
-                if (!isCancelado(o.ESTATUS)) productStats[pid].revenue += (o["TOTAL DE LA ORDEN"] || 0);
             }
         });
 
@@ -298,13 +302,17 @@ function buildTier3ProductDetail(data: VegaDataContext): string {
                 if (!dayProductStats[k][pid]) {
                     dayProductStats[k][pid] = { name: pName, orders: 0, delivered: 0, canceled: 0, sales: 0, ads: 0 };
                 }
+                // Sales: sum all lines (TOTAL DE LA ORDEN is subtotal per product line)
+                if (!isCancelado(o.ESTATUS)) {
+                    dayProductStats[k][pid].sales += (o["TOTAL DE LA ORDEN"] || 0);
+                }
+                // Counts: deduplicate by order ID
                 const orderId = o.ID?.toString() || '';
                 if (orderId && !seenIds[k].has(orderId)) {
                     seenIds[k].add(orderId);
                     dayProductStats[k][pid].orders++;
                     if (isEntregado(o.ESTATUS)) dayProductStats[k][pid].delivered++;
                     if (isCancelado(o.ESTATUS)) dayProductStats[k][pid].canceled++;
-                    if (!isCancelado(o.ESTATUS)) dayProductStats[k][pid].sales += (o["TOTAL DE LA ORDEN"] || 0);
                 }
             });
 
