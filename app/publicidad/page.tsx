@@ -970,11 +970,28 @@ export default function AdvertisingPage() {
     }, [history, startDate, endDate, selectedCountry, selectedProduct, mappings, productGroups]);
 
     const availableProducts = useMemo(() => {
+        // Build name→realId map to consolidate orders with missing PRODUCTO_ID
+        const nameToRealId = new Map<string, string>();
+        orders.forEach(o => {
+            const name = (o.PRODUCTO || '').toLowerCase().trim();
+            const id = o.PRODUCTO_ID?.toString() || '';
+            const key = `${o.PAIS}|${name}`;
+            if (name && id && id.toLowerCase().trim() !== name) {
+                nameToRealId.set(key, id);
+            }
+        });
+
         const productMap = new Map<string, { id: string, label: string, country?: string }>(); // id -> data
 
         orders.forEach(o => {
             if (o.PRODUCTO) {
-                const pid = o.PRODUCTO_ID?.toString() || o.PRODUCTO;
+                let pid = o.PRODUCTO_ID?.toString() || o.PRODUCTO;
+                // Consolidate: if pid is a name fallback, use the real numeric ID
+                const name = (o.PRODUCTO || '').toLowerCase().trim();
+                if (pid.toLowerCase().trim() === name) {
+                    const realId = nameToRealId.get(`${o.PAIS}|${name}`);
+                    if (realId) pid = realId;
+                }
                 if (!productMap.has(pid)) {
                     productMap.set(pid, { id: pid, label: o.PRODUCTO, country: o.PAIS });
                 }

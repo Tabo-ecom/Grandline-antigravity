@@ -141,6 +141,30 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         });
     }
 
+    // Consolidate product IDs: some Dropi rows have empty PRODUCTO_ID,
+    // causing fallback to the product NAME as ID. If another order with
+    // the same product name has a real numeric ID, use that instead.
+    const nameToRealId = new Map<string, string>();
+    allOrders.forEach(o => {
+        const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+        const id = o.PRODUCTO_ID?.toString() || '';
+        const key = `${o.country}|${name}`;
+        if (name && id && id.toLowerCase().trim() !== name) {
+            nameToRealId.set(key, id);
+        }
+    });
+    allOrders.forEach(o => {
+        const id = o.PRODUCTO_ID?.toString() || '';
+        const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+        const key = `${o.country}|${name}`;
+        if (name && id && id.toLowerCase().trim() === name) {
+            const realId = nameToRealId.get(key);
+            if (realId) {
+                o.PRODUCTO_ID = realId;
+            }
+        }
+    });
+
     // Apply price corrections (matching dashboard useDashboardData.ts line 183)
     applyPriceCorrections(allOrders, priceCorrections);
 
