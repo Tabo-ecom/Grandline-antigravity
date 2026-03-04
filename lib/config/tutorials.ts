@@ -16,13 +16,14 @@ export const TUTORIAL_INTRO: TutorialConfig = {
     title: 'Bienvenido a Grand Line',
     description: 'Tu centro de comando para e-commerce COD',
     videos: [
-        { title: 'Introduccion a Grand Line', url: 'https://youtu.be/6qwghzpSBIE' },
+        { title: 'Introduccion a Grand Line', url: 'https://youtu.be/K_6ROx7IZYw' },
     ],
     steps: [
-        'Importa tus ordenes desde Dropi para ver tu operacion en tiempo real',
-        'Conecta tus cuentas de Facebook y TikTok para trackear publicidad',
-        'Usa el Dashboard (Wheel) para monitorear KPIs y salud del negocio',
-        'Consulta a Vega AI para analisis inteligentes y reportes automaticos',
+        'Descarga el reporte de ordenes desde tu cuenta de Dropi',
+        'Subelo en el modulo de Importar Datos',
+        'Conecta la API de Facebook desde el modulo de Publicidad',
+        'Mapea tus campañas a los productos correspondientes',
+        'Listo! Genera reportes y analiza tus numeros en tiempo real',
     ],
 };
 
@@ -134,23 +135,32 @@ export const SURVEY_QUESTIONS = {
     },
     countries: {
         question: 'En que paises operas?',
-        options: ['Colombia', 'Ecuador', 'Panama', 'Guatemala', 'Otro'],
+        options: ['Colombia', 'Ecuador', 'Panama', 'Guatemala', 'Mexico', 'Peru', 'Chile', 'Paraguay', 'Argentina', 'España', 'Costa Rica'],
         multiSelect: true,
     },
-    goals: {
-        question: 'Que esperas lograr con Grand Line?',
+    experience: {
+        question: 'Cuanto tiempo llevas en dropshipping?',
+        options: ['Menos de 3 meses', '3 - 12 meses', '1 - 3 años', 'Mas de 3 años'],
+    },
+    biggestPain: {
+        question: 'Cual es tu mayor dolor de cabeza hoy?',
         options: [
-            'Mejorar mi ROAS y reducir CPA',
-            'Tener control de entregas y devoluciones',
-            'Automatizar reportes y analisis',
-            'Escalar a mas paises',
+            'No se cuanto gano realmente',
+            'Muchas devoluciones/cancelaciones',
+            'No se que campañas son rentables',
+            'Pierdo tiempo haciendo reportes a mano',
         ],
-        multiSelect: true,
+    },
+    adSpend: {
+        question: 'Cuanto inviertes en publicidad al mes (USD)?',
+        options: ['Menos de $500', '$500 - $2,000', '$2,000 - $5,000', 'Mas de $5,000'],
     },
 } as const;
 
 export interface SurveyAnswers {
     monthlyOrders: string;
     countries: string[];
-    goals: string[];
+    experience: string;
+    biggestPain: string;
+    adSpend: string;
 }

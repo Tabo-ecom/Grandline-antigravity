@@ -32,6 +32,13 @@ export default function CountryLayout({
         if (lower.includes('ecuador')) return '🇪🇨';
         if (lower.includes('panam')) return '🇵🇦';
         if (lower.includes('guatemala')) return '🇬🇹';
+        if (lower.includes('mexic')) return '🇲🇽';
+        if (lower.includes('peru') || lower.includes('perú')) return '🇵🇪';
+        if (lower.includes('chile')) return '🇨🇱';
+        if (lower.includes('paragua')) return '🇵🇾';
+        if (lower.includes('argentin')) return '🇦🇷';
+        if (lower.includes('espa') || lower.includes('spain')) return '🇪🇸';
+        if (lower.includes('costa rica')) return '🇨🇷';
         return '🏳️';
     };
 

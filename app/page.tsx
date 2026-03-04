@@ -19,7 +19,7 @@ const faqs = [
     },
     {
         q: '¿Funciona para mi país?',
-        a: 'Grand Line está diseñado para toda Latinoamérica. Actualmente procesamos reportes de Colombia, Ecuador, Guatemala, Panamá, México, Perú, Chile y más. Cada semana agregamos soporte para nuevos países y transportadoras.'
+        a: 'Grand Line soporta los 11 países donde opera Dropi: Colombia, México, Ecuador, Perú, Chile, Argentina, Paraguay, Guatemala, Panamá, España y Costa Rica. Con detección automática de país, moneda local y mapas interactivos por territorio.'
     },
     {
         q: '¿Cómo funciona Vega IA?',
@@ -295,6 +295,19 @@ export default function LandingPage() {
                         </a>
                     </div>
 
+                    {/* VSL Video */}
+                    <div className="mt-12 max-w-3xl mx-auto">
+                        <div className="relative w-full rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-[#d75c33]/10" style={{ paddingBottom: '56.25%' }}>
+                            <iframe
+                                className="absolute inset-0 w-full h-full"
+                                src="https://www.youtube.com/embed/K_6ROx7IZYw?rel=0"
+                                title="Grand Line - Video de Presentación"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            />
+                        </div>
+                    </div>
+
                     {/* Trust badges */}
                     <div className="flex flex-wrap items-center justify-center gap-6 mt-14 text-sm text-gray-500">
                         <div className="flex items-center gap-2">
@@ -498,20 +511,21 @@ export default function LandingPage() {
             <section className="py-20 px-6">
                 <div className="max-w-6xl mx-auto text-center">
                     <h2 className="text-3xl md:text-4xl font-bold mb-4">Diseñado para toda Latinoamérica</h2>
-                    <p className="text-gray-400 text-lg mb-12">Detección automática de país. Moneda local y USD en paralelo. Nuevos países cada semana.</p>
+                    <p className="text-gray-400 text-lg mb-12">Los 11 países de Dropi. Detección automática de país. Moneda local y USD en paralelo.</p>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                         {[
                             { flag: '🇨🇴', name: 'Colombia', currency: 'COP' },
-                            { flag: '🇪🇨', name: 'Ecuador', currency: 'USD' },
-                            { flag: '🇬🇹', name: 'Guatemala', currency: 'GTQ' },
-                            { flag: '🇵🇦', name: 'Panamá', currency: 'USD' },
                             { flag: '🇲🇽', name: 'México', currency: 'MXN' },
+                            { flag: '🇪🇨', name: 'Ecuador', currency: 'USD' },
                             { flag: '🇵🇪', name: 'Perú', currency: 'PEN' },
                             { flag: '🇨🇱', name: 'Chile', currency: 'CLP' },
-                            { flag: '🇧🇴', name: 'Bolivia', currency: 'BOB' },
+                            { flag: '🇦🇷', name: 'Argentina', currency: 'ARS' },
+                            { flag: '🇵🇾', name: 'Paraguay', currency: 'PYG' },
+                            { flag: '🇬🇹', name: 'Guatemala', currency: 'GTQ' },
+                            { flag: '🇵🇦', name: 'Panamá', currency: 'USD' },
+                            { flag: '🇪🇸', name: 'España', currency: 'EUR' },
                             { flag: '🇨🇷', name: 'Costa Rica', currency: 'CRC' },
-                            { flag: '🇩🇴', name: 'Rep. Dominicana', currency: 'DOP' },
                         ].map(({ flag, name, currency }) => (
                             <div key={name} className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:border-white/15 transition-colors">
                                 <div className="text-2xl mb-2">{flag}</div>

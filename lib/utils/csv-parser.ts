@@ -109,6 +109,13 @@ export function detectCountryFromCampaign(campaignName: string): string | null {
     if (upper.includes('ECUADOR') || upper.includes('EC-')) return 'Ecuador';
     if (upper.includes('GUATEMALA') || upper.includes('GT-')) return 'Guatemala';
     if (upper.includes('PANAMA') || upper.includes('PA-')) return 'Panama';
+    if (upper.includes('MEXICO') || upper.includes('MÉXICO') || upper.includes('MX-')) return 'Mexico';
+    if (upper.includes('PERU') || upper.includes('PERÚ') || upper.includes('PE-')) return 'Peru';
+    if (upper.includes('CHILE') || upper.includes('CL-')) return 'Chile';
+    if (upper.includes('PARAGUAY') || upper.includes('PY-')) return 'Paraguay';
+    if (upper.includes('ARGENTINA') || upper.includes('AR-')) return 'Argentina';
+    if (upper.includes('ESPAÑA') || upper.includes('ESPANA') || upper.includes('SPAIN') || upper.includes('ES-')) return 'Espana';
+    if (upper.includes('COSTA RICA') || upper.includes('CR-')) return 'Costa Rica';
     return null;
 }
 

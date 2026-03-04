@@ -18,6 +18,13 @@ export const detectCountry = (orders: DropiOrder[], fileName: string = ''): stri
     if (fn.includes('ecuador') || fn.includes('_ec') || fn.includes('ec_') || fn.includes('ec.')) return 'EC';
     if (fn.includes('panama') || fn.includes('_pa') || fn.includes('pa_') || fn.includes('pa.')) return 'PA';
     if (fn.includes('colombia') || fn.includes('_co') || fn.includes('co_') || fn.includes('co.')) return 'CO';
+    if (fn.includes('mexico') || fn.includes('méxico') || fn.includes('_mx') || fn.includes('mx_') || fn.includes('mx.')) return 'MX';
+    if (fn.includes('peru') || fn.includes('perú') || fn.includes('_pe') || fn.includes('pe_') || fn.includes('pe.')) return 'PE';
+    if (fn.includes('chile') || fn.includes('_cl') || fn.includes('cl_') || fn.includes('cl.')) return 'CL';
+    if (fn.includes('paraguay') || fn.includes('_py') || fn.includes('py_') || fn.includes('py.')) return 'PY';
+    if (fn.includes('argentina') || fn.includes('_ar') || fn.includes('ar_') || fn.includes('ar.')) return 'AR';
+    if (fn.includes('españa') || fn.includes('espana') || fn.includes('spain') || fn.includes('_es') || fn.includes('es_') || fn.includes('es.')) return 'ES';
+    if (fn.includes('costa rica') || fn.includes('costarica') || fn.includes('_cr') || fn.includes('cr_') || fn.includes('cr.')) return 'CR';
 
     // 1. Check for an explicit "PAIS" property if it was captured
     const countries = orders.map(o => String(o.PAIS || '').toLowerCase().trim());
@@ -25,12 +32,19 @@ export const detectCountry = (orders: DropiOrder[], fileName: string = ''): stri
     if (countries.some(c => c === 'ecuador' || c === 'ec' || c.includes('ecuad'))) return 'EC';
     if (countries.some(c => c === 'panama' || c === 'pa' || c.includes('panam'))) return 'PA';
     if (countries.some(c => c === 'colombia' || c === 'co' || c.includes('colomb'))) return 'CO';
+    if (countries.some(c => c === 'mexico' || c === 'mx' || c.includes('mexic') || c.includes('méxic'))) return 'MX';
+    if (countries.some(c => c === 'peru' || c === 'pe' || c.includes('peru') || c.includes('perú'))) return 'PE';
+    if (countries.some(c => c === 'chile' || c === 'cl')) return 'CL';
+    if (countries.some(c => c === 'paraguay' || c === 'py' || c.includes('paragua'))) return 'PY';
+    if (countries.some(c => c === 'argentina' || c === 'ar' || c.includes('argentin'))) return 'AR';
+    if (countries.some(c => c === 'españa' || c === 'espana' || c === 'spain' || c === 'es' || c.includes('espa'))) return 'ES';
+    if (countries.some(c => c === 'costa rica' || c === 'cr' || c.includes('costa ric'))) return 'CR';
 
     // 2. Fallback to city detection
     const cities = orders.slice(0, 100).map(o => o.CIUDAD?.toLowerCase() || '');
 
     // High confidence markers for each country
-    const markers = {
+    const markers: Record<string, string[]> = {
         GT: [
             'guatemala', 'quetzaltenango', 'mixco', 'villa nueva', 'amatitlan',
             'escuintla', 'chinautla', 'petapa', 'chimaltenango', 'villanueva',
@@ -56,10 +70,49 @@ export const detectCountry = (orders: DropiOrder[], fileName: string = ''): stri
             'cartagena', 'santa marta', 'villavicencio', 'pasto', 'manizales',
             'monteria', 'neiva', 'arminia', 'valledupar', 'popayan'
         ],
+        MX: [
+            'ciudad de mexico', 'guadalajara', 'monterrey', 'puebla', 'tijuana',
+            'leon', 'cancun', 'merida', 'queretaro', 'chihuahua', 'zapopan',
+            'aguascalientes', 'morelia', 'saltillo', 'oaxaca', 'toluca',
+            'veracruz', 'villahermosa', 'tuxtla', 'hermosillo', 'culiacan',
+            'acapulco', 'mazatlan', 'tampico', 'cdmx'
+        ],
+        PE: [
+            'lima', 'arequipa', 'trujillo', 'chiclayo', 'piura', 'cusco',
+            'huancayo', 'iquitos', 'tacna', 'cajamarca', 'puno', 'callao',
+            'sullana', 'chimbote', 'ayacucho', 'juliaca', 'huanuco'
+        ],
+        CL: [
+            'santiago', 'valparaiso', 'concepcion', 'antofagasta', 'vina del mar',
+            'temuco', 'rancagua', 'talca', 'arica', 'iquique', 'puerto montt',
+            'la serena', 'osorno', 'chillan', 'copiapo', 'calama'
+        ],
+        PY: [
+            'asuncion', 'ciudad del este', 'san lorenzo', 'luque', 'capiata',
+            'lambare', 'fernando de la mora', 'limpio', 'encarnacion',
+            'caaguazu', 'pedro juan caballero', 'coronel oviedo'
+        ],
+        AR: [
+            'buenos aires', 'cordoba', 'rosario', 'mendoza', 'tucuman',
+            'la plata', 'mar del plata', 'salta', 'santa fe', 'san juan',
+            'resistencia', 'corrientes', 'posadas', 'neuquen', 'formosa',
+            'san luis', 'santiago del estero', 'san miguel de tucuman'
+        ],
+        ES: [
+            'madrid', 'barcelona', 'valencia', 'sevilla', 'zaragoza',
+            'malaga', 'murcia', 'palma', 'bilbao', 'alicante',
+            'valladolid', 'vigo', 'gijon', 'hospitalet', 'vitoria',
+            'la coruna', 'granada', 'elche', 'oviedo', 'santander'
+        ],
+        CR: [
+            'san jose', 'alajuela', 'cartago', 'heredia', 'liberia',
+            'limon', 'puntarenas', 'san carlos', 'perez zeledon',
+            'san ramon', 'grecia', 'nicoya', 'paraiso', 'desamparados'
+        ],
     };
 
     // Use a scoring system instead of first-match to be more robust
-    const scores: Record<string, number> = { GT: 0, EC: 0, PA: 0, CO: 0 };
+    const scores: Record<string, number> = { GT: 0, EC: 0, PA: 0, CO: 0, MX: 0, PE: 0, CL: 0, PY: 0, AR: 0, ES: 0, CR: 0 };
     for (const city of cities) {
         if (!city) continue;
         for (const [code, cityList] of Object.entries(markers)) {

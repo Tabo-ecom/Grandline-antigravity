@@ -42,6 +42,7 @@ function getFlagCode(countryName: string) {
     const map: Record<string, string> = {
         'Colombia': 'co', 'México': 'mx', 'Perú': 'pe', 'Ecuador': 'ec',
         'Panamá': 'pa', 'Chile': 'cl', 'España': 'es', 'Guatemala': 'gt',
+        'Paraguay': 'py', 'Argentina': 'ar', 'Costa Rica': 'cr',
     };
     return map[countryName] || 'un';
 }

@@ -34,6 +34,10 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  icons: {
+    icon: '/logos/grandline-isotipo.png',
+    apple: '/logos/grandline-isotipo.png',
+  },
 };
 
 export default function RootLayout({

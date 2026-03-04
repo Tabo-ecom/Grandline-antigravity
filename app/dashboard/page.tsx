@@ -153,6 +153,7 @@ export default function GlobalDashboard() {
         const FLAG_MAP: Record<string, string> = {
             'Colombia': 'co', 'México': 'mx', 'Perú': 'pe', 'Ecuador': 'ec',
             'Panamá': 'pa', 'Chile': 'cl', 'España': 'es', 'Guatemala': 'gt',
+            'Paraguay': 'py', 'Argentina': 'ar', 'Costa Rica': 'cr',
         };
         const all: { name: string; country: string; flag: string; orders: number; cancelRate: number; netSales: number; ads: number; projectedProfit: number; cpaDesp: number; utilPerOrder: number; roiPct: number }[] = [];
         metricsByCountry.forEach((ctry: any) => {

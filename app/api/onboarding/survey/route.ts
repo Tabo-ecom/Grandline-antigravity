@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
+import { sendSlackBotMessage } from '@/lib/services/vega/slack-bot';
 
 export async function POST(req: NextRequest) {
     try {
@@ -9,6 +10,24 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'No answers provided' }, { status: 400 });
         }
 
+        // Send Slack notification (real-time)
+        const slackToken = process.env.SLACK_BOT_TOKEN;
+        const slackChannel = process.env.SLACK_LEADS_CHANNEL_ID;
+        if (slackToken && slackChannel) {
+            const lines = [
+                `:clipboard: *NUEVA ENCUESTA DE ONBOARDING*`,
+                `*Usuario:* ${userName || 'N/A'}`,
+                `*Ordenes/mes:* ${answers.monthlyOrders || 'N/A'}`,
+                `*Paises:* ${(answers.countries || []).join(', ') || 'N/A'}`,
+                `*Experiencia:* ${answers.experience || 'N/A'}`,
+                `*Mayor dolor:* ${answers.biggestPain || 'N/A'}`,
+                `*Inversion ads/mes:* ${answers.adSpend || 'N/A'}`,
+                `*Fecha:* ${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`,
+            ];
+            sendSlackBotMessage(slackToken, slackChannel, lines.join('\n')).catch(() => {});
+        }
+
+        // Send email notification
         const recipientEmail = process.env.SURVEY_EMAIL_TO;
         const smtpUser = process.env.SMTP_USER;
         const smtpPass = process.env.SMTP_PASS;
@@ -38,9 +57,17 @@ export async function POST(req: NextRequest) {
                         <p style="font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px;">Paises</p>
                         <p style="font-size: 15px; font-weight: 600; color: #1a1a1a; margin: 0;">${(answers.countries || []).join(', ')}</p>
                     </div>
+                    <div style="margin-bottom: 16px;">
+                        <p style="font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px;">Experiencia en dropshipping</p>
+                        <p style="font-size: 15px; font-weight: 600; color: #1a1a1a; margin: 0;">${answers.experience || 'N/A'}</p>
+                    </div>
+                    <div style="margin-bottom: 16px;">
+                        <p style="font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px;">Mayor dolor de cabeza</p>
+                        <p style="font-size: 15px; font-weight: 600; color: #1a1a1a; margin: 0;">${answers.biggestPain || 'N/A'}</p>
+                    </div>
                     <div>
-                        <p style="font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px;">Objetivos</p>
-                        <p style="font-size: 15px; font-weight: 600; color: #1a1a1a; margin: 0;">${(answers.goals || []).join(', ')}</p>
+                        <p style="font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 4px;">Inversion en publicidad (USD/mes)</p>
+                        <p style="font-size: 15px; font-weight: 600; color: #1a1a1a; margin: 0;">${answers.adSpend || 'N/A'}</p>
                     </div>
                 </div>
             </div>

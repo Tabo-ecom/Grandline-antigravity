@@ -14,7 +14,9 @@ export default function OnboardingSurvey({ onComplete, userName }: Props) {
     const [answers, setAnswers] = useState<SurveyAnswers>({
         monthlyOrders: '',
         countries: [],
-        goals: [],
+        experience: '',
+        biggestPain: '',
+        adSpend: '',
     });
     const [submitting, setSubmitting] = useState(false);
 
@@ -30,9 +32,19 @@ export default function OnboardingSurvey({ onComplete, userName }: Props) {
             multiSelect: true,
         },
         {
-            key: 'goals' as const,
-            ...SURVEY_QUESTIONS.goals,
-            multiSelect: true,
+            key: 'experience' as const,
+            ...SURVEY_QUESTIONS.experience,
+            multiSelect: false,
+        },
+        {
+            key: 'biggestPain' as const,
+            ...SURVEY_QUESTIONS.biggestPain,
+            multiSelect: false,
+        },
+        {
+            key: 'adSpend' as const,
+            ...SURVEY_QUESTIONS.adSpend,
+            multiSelect: false,
         },
     ];
 
@@ -40,15 +52,13 @@ export default function OnboardingSurvey({ onComplete, userName }: Props) {
     const isLast = step === questions.length - 1;
 
     const isSelected = (option: string) => {
-        if (current.key === 'monthlyOrders') return answers.monthlyOrders === option;
-        return (answers[current.key] as string[]).includes(option);
+        if (current.multiSelect) return (answers[current.key] as string[]).includes(option);
+        return answers[current.key] === option;
     };
 
     const toggleOption = (option: string) => {
-        if (current.key === 'monthlyOrders') {
-            setAnswers(prev => ({ ...prev, monthlyOrders: option }));
-        } else {
-            const key = current.key as 'countries' | 'goals';
+        if (current.multiSelect) {
+            const key = current.key as 'countries';
             setAnswers(prev => {
                 const arr = prev[key] as string[];
                 return {
@@ -56,12 +66,14 @@ export default function OnboardingSurvey({ onComplete, userName }: Props) {
                     [key]: arr.includes(option) ? arr.filter(o => o !== option) : [...arr, option],
                 };
             });
+        } else {
+            setAnswers(prev => ({ ...prev, [current.key]: option }));
         }
     };
 
-    const canProceed = current.key === 'monthlyOrders'
-        ? !!answers.monthlyOrders
-        : (answers[current.key] as string[]).length > 0;
+    const canProceed = current.multiSelect
+        ? (answers[current.key] as string[]).length > 0
+        : !!answers[current.key];
 
     const handleNext = async () => {
         if (!canProceed) return;

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { getAllOrderFiles, getAppData, setAppData } from '@/lib/firebase/firestore';
-import { fetchExchangeRates, ExchangeRates, toCOP, isMatchingCountry, getCurrencyForCountry, normalizeCountry, getOfficialCountryName } from '@/lib/utils/currency';
+import { fetchExchangeRates, ExchangeRates, DEFAULT_RATES, toCOP, isMatchingCountry, getCurrencyForCountry, normalizeCountry, getOfficialCountryName } from '@/lib/utils/currency';
 import { getAdSettings, AdSpend, listAllAdSpends, getCampaignMappings, CampaignMapping, deduplicateAdSpends } from '@/lib/services/marketing';
 import { DropiOrder, calculateKPIs, KPIResults, calculateProjection, ProjectionResult } from '@/lib/calculations/kpis';
 import { parseDropiDate, getLocalDateKey, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
@@ -103,7 +103,7 @@ export function useDashboardData(): DashboardDataHook {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [rawOrders, setRawOrders] = useState<ExtendedDropiOrder[]>([]);
-    const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({ COP_USD: 4200, COP_GTQ: 540, timestamp: 0 });
+    const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(DEFAULT_RATES);
     const [adSpends, setAdSpends] = useState<AdSpend[]>([]);
     const [campaignMappings, setCampaignMappings] = useState<CampaignMapping[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
