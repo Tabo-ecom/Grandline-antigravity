@@ -53,8 +53,8 @@ En el menú lateral, haz clic en **Planes** o ve directamente a **grandline.com.
 
 | Plan | Precio | Ideal para |
 |------|--------|------------|
-| **Rookie** | $27/mes | Empezar a controlar tu operación. 1 país, 3 cuentas publicitarias. Incluye 7 días gratis. |
-| **Supernova** | $49/mes | Escalar sin límites. Hasta 3 países, cuentas ilimitadas, Vega IA, Berry P&L, multi-usuarios. |
+| **Rookie** | $27/mes | Empezar a controlar tu operación. 1 país, 3 cuentas publicitarias, Log Pose. Incluye 7 días gratis. |
+| **Supernova** | $49/mes | Escalar sin límites. Hasta 3 países, cuentas ilimitadas, Berry P&L, Vega IA, multi-usuarios. |
 | **Yonko** | $97/mes | Imperios multi-país. Todo en Supernova + Sunny (lanzador de anuncios), Vega IA avanzado, alertas automáticas, soporte VIP. |
 
 ### Paso 2: Seleccionar y pagar
@@ -232,8 +232,8 @@ Registra gastos operativos (envío, empaque, personal, etc.) y visualiza tu P&L 
 ### VEGA IA — Inteligencia Operativa *(Supernova+)*
 Tu asistente de IA que analiza tu operación, genera reportes y te alerta sobre problemas. Accede desde **Vega IA** en el menú lateral.
 
-### LOG POSE — Importación Avanzada *(Supernova+)*
-Simulador financiero y calculadora de rentabilidad. Accede desde **Log Pose** en el menú lateral.
+### LOG POSE — Gestión de Territorios *(Rookie+)*
+Gestión detallada por país con análisis territorial completo. Accede desde **Log Pose** en el menú lateral.
 
 ### SUNNY — Lanzador de Anuncios *(Yonko)*
 Crea y lanza campañas de Meta Ads directamente desde Grand Line. Accede desde **Sunny** en el menú lateral.

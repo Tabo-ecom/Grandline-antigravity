@@ -20,14 +20,34 @@ export const MODULE_REQUIRED_PLAN: Record<string, string> = {
     dashboard: 'rookie',
     import: 'rookie',
     publicidad: 'rookie',
+    'log-pose': 'rookie',
 
     // Supernova (tier 2)
-    'log-pose': 'supernova',
     berry: 'supernova',
     'vega-ai': 'supernova',
 
-    // Yonko (tier 3)
-    sunny: 'yonko',
+    // Supernova (tier 2) — with campaign limit
+    sunny: 'supernova',
+};
+
+/**
+ * Maximum number of active countries (territories) per plan.
+ */
+export const PLAN_COUNTRY_LIMIT: Record<string, number> = {
+    free: 0,
+    rookie: 1,
+    supernova: 3,
+    yonko: Infinity,
+};
+
+/**
+ * Maximum number of Sunny campaigns per plan (per month).
+ */
+export const PLAN_CAMPAIGN_LIMIT: Record<string, number> = {
+    free: 0,
+    rookie: 0,
+    supernova: 40,
+    yonko: Infinity,
 };
 
 /**
@@ -36,8 +56,8 @@ export const MODULE_REQUIRED_PLAN: Record<string, string> = {
  */
 export const PLAN_MODULES: Record<string, string[]> = {
     free: [],
-    rookie: ['dashboard', 'import', 'publicidad'],
-    supernova: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai'],
+    rookie: ['dashboard', 'import', 'publicidad', 'log-pose'],
+    supernova: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny'],
     yonko: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny'],
 };
 

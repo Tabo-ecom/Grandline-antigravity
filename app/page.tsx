@@ -35,7 +35,7 @@ const faqs = [
     },
     {
         q: '¿Puedo cancelar en cualquier momento?',
-        a: 'Sí. Todos los planes son mensuales sin compromiso. Puedes cancelar, cambiar de plan o pausar tu suscripción cuando quieras. El plan Rookie incluye 7 días gratis para que pruebes sin riesgo.'
+        a: 'Sí. Todos los planes son mensuales sin compromiso. Puedes cancelar, cambiar de plan o pausar tu suscripción cuando quieras. El plan Rookie incluye 7 días gratis sin necesidad de tarjeta de crédito.'
     },
 ];
 
@@ -133,22 +133,24 @@ const plans = [
         name: 'Rookie',
         price: 27,
         period: '/mes',
-        trial: '7 días gratis',
+        trial: '7 días gratis — sin tarjeta',
         description: 'Empieza a controlar tu operación.',
         features: [
             '1 país activo',
             '3 cuentas publicitarias',
             'WHEEL — Dashboard de Operación',
             'SHIP — Control Logístico',
+            'LOG POSE — Gestión de Territorios',
             'Proyección general',
             'Importación de reportes Dropi',
         ],
-        excluded: ['Log Pose (importación avanzada)', 'Berry P&L', 'Vega IA'],
-        cta: 'Probar 7 Días Gratis',
+        excluded: ['Berry P&L', 'Sunny', 'Vega IA'],
+        cta: 'Probar Gratis — Sin Tarjeta',
         popular: false,
         gradient: 'from-gray-600 to-gray-500',
         accentColor: 'text-gray-400',
         checkColor: 'text-green-500',
+        comingSoon: false,
     },
     {
         name: 'Supernova',
@@ -161,11 +163,12 @@ const plans = [
             'Cuentas publicitarias ilimitadas',
             'WHEEL — Dashboard de Operación',
             'SHIP — Control Logístico',
+            'LOG POSE — Gestión de Territorios',
             'BERRY — Control Financiero completo',
+            'SUNNY — Hasta 40 campañas/mes',
             'VEGA IA — Tu oficial al mando',
+            'Reportes automáticos (diario/semanal)',
             'Proyecciones avanzadas',
-            'Calculadora financiera',
-            'Log Pose — Importación inteligente',
             'Multi-usuarios (equipo)',
         ],
         excluded: [],
@@ -174,6 +177,7 @@ const plans = [
         gradient: 'from-[#d75c33] to-orange-500',
         accentColor: 'text-[#d75c33]',
         checkColor: 'text-[#d75c33]',
+        comingSoon: false,
     },
     {
         name: 'Yonko',
@@ -184,21 +188,21 @@ const plans = [
         features: [
             'Territorios ilimitados',
             'Todo en Supernova, más:',
-            'SUNNY — Lanza y escala anuncios',
+            'SUNNY — Campañas ilimitadas',
             'VEGA IA avanzado + predictivo',
             'Alertas diarias automáticas',
-            'Reportes automáticos (diario/semanal)',
             'Multi-usuario ilimitado',
             'Exportación de reportes',
             'Onboarding personalizado',
             'Soporte VIP prioritario',
         ],
         excluded: [],
-        cta: 'Contactar Ventas',
+        cta: 'Próximamente',
         popular: false,
         gradient: 'from-violet-600 to-purple-500',
         accentColor: 'text-violet-400',
         checkColor: 'text-violet-400',
+        comingSoon: true,
     },
 ];
 
@@ -284,7 +288,7 @@ export default function LandingPage() {
                             href={`${APP_URL}/login`}
                             className="group flex items-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold px-8 py-3.5 rounded-xl text-base hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25"
                         >
-                            Probar 7 Días Gratis
+                            Probar Gratis — Sin Tarjeta
                             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                         </a>
                         <a
@@ -596,11 +600,11 @@ export default function LandingPage() {
                         <h2 className="text-3xl md:text-5xl font-bold mb-4">
                             Planes para cada etapa
                         </h2>
-                        <p className="text-gray-400 text-lg">Empieza con 7 días gratis. Escala cuando estés listo.</p>
+                        <p className="text-gray-400 text-lg">Empieza con 7 días gratis, sin tarjeta. Escala cuando estés listo.</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-                        {plans.map(({ name, price, period, trial, description, features, excluded, cta, popular, gradient, accentColor, checkColor }) => (
+                        {plans.map(({ name, price, period, trial, description, features, excluded, cta, popular, gradient, checkColor, comingSoon }) => (
                             <div
                                 key={name}
                                 className={`relative rounded-2xl p-[1px] ${popular ? `bg-gradient-to-b ${gradient}` : ''}`}
@@ -626,24 +630,48 @@ export default function LandingPage() {
                                     )}
                                     {!trial && <div className="mb-6" />}
 
-                                    <a
-                                        href={`${APP_URL}/login`}
-                                        className={`block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all ${
-                                            popular
-                                                ? 'bg-gradient-to-r from-[#d75c33] to-orange-500 text-white hover:opacity-90 shadow-lg shadow-[#d75c33]/20'
-                                                : 'border border-white/10 text-white hover:bg-white/5'
-                                        }`}
-                                    >
-                                        {cta}
-                                    </a>
+                                    {comingSoon ? (
+                                        <span className="block w-full text-center py-3 rounded-xl text-sm font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 cursor-not-allowed">
+                                            Próximamente
+                                        </span>
+                                    ) : (
+                                        <a
+                                            href={`${APP_URL}/login`}
+                                            className={`block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all ${
+                                                popular
+                                                    ? 'bg-gradient-to-r from-[#d75c33] to-orange-500 text-white hover:opacity-90 shadow-lg shadow-[#d75c33]/20'
+                                                    : 'border border-white/10 text-white hover:bg-white/5'
+                                            }`}
+                                        >
+                                            {cta}
+                                        </a>
+                                    )}
 
                                     <ul className="mt-8 space-y-3 flex-1">
-                                        {features.map(f => (
-                                            <li key={f} className="flex items-start gap-2.5 text-sm text-gray-400">
-                                                <Check className={`w-4 h-4 mt-0.5 shrink-0 ${checkColor}`} />
-                                                <span>{f}</span>
-                                            </li>
-                                        ))}
+                                        {features.map(f => {
+                                            const isVega = f.includes('VEGA');
+                                            const isSunny = f.includes('SUNNY');
+                                            return (
+                                                <li key={f} className={`flex items-start gap-2.5 text-sm ${
+                                                    isVega ? 'bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 -mx-1'
+                                                    : isSunny ? 'bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5 -mx-1'
+                                                    : 'text-gray-400'
+                                                }`}>
+                                                    {isVega ? (
+                                                        <Bot className="w-4 h-4 mt-0.5 shrink-0 text-indigo-400" />
+                                                    ) : isSunny ? (
+                                                        <Rocket className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" />
+                                                    ) : (
+                                                        <Check className={`w-4 h-4 mt-0.5 shrink-0 ${checkColor}`} />
+                                                    )}
+                                                    <span className={
+                                                        isVega ? 'font-semibold text-indigo-300'
+                                                        : isSunny ? 'font-semibold text-emerald-300'
+                                                        : ''
+                                                    }>{f}</span>
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
 
                                     {excluded.length > 0 && (
@@ -687,7 +715,7 @@ export default function LandingPage() {
                             Cada día sin datos es dinero que pierdes
                         </h2>
                         <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
-                            Prueba Grand Line 7 días gratis. Si no ves resultados, no pagas. Así de simple.
+                            Prueba Grand Line 7 días gratis, sin tarjeta de crédito. Si no ves resultados, no pagas.
                         </p>
                         <a
                             href={`${APP_URL}/login`}

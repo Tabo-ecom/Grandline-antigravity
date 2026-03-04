@@ -5,10 +5,11 @@ import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, AlertTria
 import { parseDropiFile, ParseResult } from '@/lib/utils/parser';
 import { getOfficialCountryName } from '@/lib/utils/currency';
 import { parseDropiDate } from '@/lib/utils/date-parsers';
-import { saveOrderFile, getImportHistory, deleteImportLog, findOverlappingImports } from '@/lib/firebase/firestore';
+import { saveOrderFile, getImportHistory, deleteImportLog, findOverlappingImports, getAllOrderFiles } from '@/lib/firebase/firestore';
 import { clearAdCenterCache } from '@/lib/services/marketing';
 import { invalidateDashboardCache } from '@/lib/hooks/useDashboardData';
 import { useAuth } from '@/lib/context/AuthContext';
+import { PLAN_COUNTRY_LIMIT } from '@/lib/hooks/usePlanAccess';
 import dynamic from 'next/dynamic';
 
 const PriceCorrections = dynamic(() => import('@/components/import/PriceCorrections'), { ssr: false });
@@ -17,7 +18,7 @@ const CampaignDataConfig = dynamic(() => import('@/components/publicidad/Campaig
 type ActiveTab = 'import' | 'corrections' | 'mapeo' | 'grupos';
 
 export default function ImportPage() {
-    const { user, effectiveUid } = useAuth();
+    const { user, profile, effectiveUid } = useAuth();
     const [activeTab, setActiveTab] = useState<ActiveTab>('import');
     const [isDragging, setIsDragging] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -85,6 +86,26 @@ export default function ImportPage() {
         if (!user) return;
 
         try {
+            // Enforce country limit based on plan
+            const userPlan = profile?.plan || 'free';
+            const isAdmin = profile?.role === 'admin' && !profile?.plan;
+            const maxCountries = PLAN_COUNTRY_LIMIT[userPlan] ?? 0;
+
+            if (!isAdmin && maxCountries < Infinity) {
+                const existingFiles = await getAllOrderFiles(effectiveUid!);
+                const existingCountries = new Set(existingFiles.map(f => f.country).filter(Boolean));
+                const newCountry = parsedData.country;
+
+                if (!existingCountries.has(newCountry) && existingCountries.size >= maxCountries) {
+                    const planLabels: Record<string, string> = { free: 'Free', rookie: 'Rookie', supernova: 'Supernova', yonko: 'Yonko' };
+                    throw new Error(
+                        `Tu plan ${planLabels[userPlan]} permite máximo ${maxCountries} ${maxCountries === 1 ? 'país' : 'países'}. ` +
+                        `Ya tienes datos de: ${Array.from(existingCountries).map(c => getOfficialCountryName(c as string)).join(', ')}. ` +
+                        `Mejora tu plan para agregar más países.`
+                    );
+                }
+            }
+
             const orderIds = parsedData.orders.map(o => o.ID);
             const overlap = await findOverlappingImports(effectiveUid!, parsedData.country, orderIds);
 

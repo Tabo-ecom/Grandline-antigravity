@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { authFetch } from '@/lib/api/client';
-import { Check, Loader2, Star, X } from 'lucide-react';
+import { Check, Loader2, Star, X, Bot, Rocket } from 'lucide-react';
 
 const PLANS = [
     {
@@ -11,7 +11,7 @@ const PLANS = [
         name: 'Rookie',
         price: 27,
         period: '/mes',
-        trial: '7 días gratis',
+        trial: '7 días gratis — sin tarjeta',
         description: 'Empieza a controlar tu operación.',
         priceEnvKey: 'NEXT_PUBLIC_STRIPE_ROOKIE_PRICE_ID',
         features: [
@@ -19,13 +19,15 @@ const PLANS = [
             '3 cuentas publicitarias',
             'WHEEL — Dashboard de Operación',
             'SHIP — Control Logístico',
+            'LOG POSE — Gestión de Territorios',
             'Proyección general',
             'Importación de reportes Dropi',
         ],
-        excluded: ['Log Pose (importación avanzada)', 'Berry P&L', 'Vega IA'],
+        excluded: ['Berry P&L', 'Sunny', 'Vega IA'],
         gradient: 'border-card-border',
         checkColor: 'text-green-500',
         popular: false,
+        comingSoon: false,
     },
     {
         id: 'supernova',
@@ -40,17 +42,19 @@ const PLANS = [
             'Cuentas publicitarias ilimitadas',
             'WHEEL — Dashboard de Operación',
             'SHIP — Control Logístico',
+            'LOG POSE — Gestión de Territorios',
             'BERRY — Control Financiero completo',
+            'SUNNY — Hasta 40 campañas/mes',
             'VEGA IA — Tu oficial al mando',
+            'Reportes automáticos (diario/semanal)',
             'Proyecciones avanzadas',
-            'Calculadora financiera',
-            'Log Pose — Importación inteligente',
             'Multi-usuarios (equipo)',
         ],
         excluded: [],
         gradient: 'border-accent',
         checkColor: 'text-accent',
         popular: true,
+        comingSoon: false,
     },
     {
         id: 'yonko',
@@ -63,10 +67,9 @@ const PLANS = [
         features: [
             'Territorios ilimitados',
             'Todo en Supernova, más:',
-            'SUNNY — Lanza y escala anuncios',
+            'SUNNY — Campañas ilimitadas',
             'VEGA IA avanzado + predictivo',
             'Alertas diarias automáticas',
-            'Reportes automáticos (diario/semanal)',
             'Multi-usuario ilimitado',
             'Exportación de reportes',
             'Onboarding personalizado',
@@ -76,6 +79,7 @@ const PLANS = [
         gradient: 'border-violet-500',
         checkColor: 'text-violet-400',
         popular: false,
+        comingSoon: true,
     },
 ];
 
@@ -125,12 +129,16 @@ export const PricingCards: React.FC = () => {
     };
 
     const handleManageBilling = async () => {
+        if (!profile?.stripeCustomerId) {
+            setError('No tienes una suscripción activa de Stripe. Si acabas de registrarte, primero selecciona un plan.');
+            return;
+        }
         setLoading('portal');
         try {
             const res = await authFetch('/api/stripe/portal', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ stripeCustomerId: profile?.stripeCustomerId }),
+                body: JSON.stringify({ stripeCustomerId: profile.stripeCustomerId }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
@@ -189,7 +197,14 @@ export const PricingCards: React.FC = () => {
                                 )}
                                 {!plan.trial && <div className="mb-6" />}
 
-                                {isCurrentPlan ? (
+                                {plan.comingSoon ? (
+                                    <button
+                                        disabled
+                                        className="w-full py-3 rounded-xl text-sm font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 cursor-not-allowed"
+                                    >
+                                        Próximamente
+                                    </button>
+                                ) : isCurrentPlan ? (
                                     <button
                                         onClick={handleManageBilling}
                                         disabled={loading === 'portal'}
@@ -216,18 +231,36 @@ export const PricingCards: React.FC = () => {
                                         ) : isUpgrade ? (
                                             `Cambiar a ${plan.name}`
                                         ) : (
-                                            plan.id === 'rookie' ? 'Probar 7 Días Gratis' : `Suscribirse a ${plan.name}`
+                                            plan.id === 'rookie' ? 'Probar Gratis — Sin Tarjeta' : `Suscribirse a ${plan.name}`
                                         )}
                                     </button>
                                 )}
 
                                 <ul className="mt-8 space-y-3 flex-1">
-                                    {plan.features.map((f) => (
-                                        <li key={f} className="flex items-start gap-2.5 text-sm text-muted">
-                                            <Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.checkColor}`} />
-                                            <span>{f}</span>
-                                        </li>
-                                    ))}
+                                    {plan.features.map((f) => {
+                                        const isVega = f.includes('VEGA');
+                                        const isSunny = f.includes('SUNNY');
+                                        return (
+                                            <li key={f} className={`flex items-start gap-2.5 text-sm ${
+                                                isVega ? 'bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 -mx-1'
+                                                : isSunny ? 'bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2.5 -mx-1'
+                                                : 'text-muted'
+                                            }`}>
+                                                {isVega ? (
+                                                    <Bot className="w-4 h-4 mt-0.5 shrink-0 text-indigo-400" />
+                                                ) : isSunny ? (
+                                                    <Rocket className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" />
+                                                ) : (
+                                                    <Check className={`w-4 h-4 mt-0.5 shrink-0 ${plan.checkColor}`} />
+                                                )}
+                                                <span className={
+                                                    isVega ? 'font-semibold text-indigo-300'
+                                                    : isSunny ? 'font-semibold text-emerald-300'
+                                                    : ''
+                                                }>{f}</span>
+                                            </li>
+                                        );
+                                    })}
                                 </ul>
 
                                 {plan.excluded.length > 0 && (

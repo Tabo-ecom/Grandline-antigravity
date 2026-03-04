@@ -52,6 +52,8 @@ import {
     MetaTokenExpiredError
 } from '@/lib/services/meta';
 import { useAuth } from '@/lib/context/AuthContext';
+import { PLAN_CAMPAIGN_LIMIT } from '@/lib/hooks/usePlanAccess';
+import { countSunnyCampaignsThisMonth, saveSunnyCampaign } from '@/lib/firebase/firestore';
 
 interface UploadedFile {
     id: string;
@@ -93,7 +95,7 @@ const CollapsibleSection = ({ title, icon: Icon, children, className = '', defau
 
 export const Lanzador: React.FC = () => {
     const { storeProfiles, selectedStoreId, setSelectedStoreId, activeStore, exclusionLists, namingTemplate, setNamingTemplate } = useSunny();
-    const { effectiveUid } = useAuth();
+    const { effectiveUid, profile } = useAuth();
     const [adAccounts, setAdAccounts] = useState<any[]>([]);
     const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -105,6 +107,11 @@ export const Lanzador: React.FC = () => {
     const [launchResults, setLaunchResults] = useState<(MetaLaunchResult & { accountName: string })[]>([]);
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
     const [metaToken, setMetaToken] = useState<string | null>(null);
+    const [campaignsUsed, setCampaignsUsed] = useState(0);
+
+    const userPlan = profile?.plan || 'free';
+    const campaignLimit = PLAN_CAMPAIGN_LIMIT[userPlan] ?? 0;
+    const isAdmin = profile?.role === 'admin' && !profile?.plan;
     const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     // Default schedule: 5:00 AM next day (local time)
@@ -168,6 +175,12 @@ export const Lanzador: React.FC = () => {
     const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
     const [isLoadingAdSets, setIsLoadingAdSets] = useState(false);
     const [campaignSearch, setCampaignSearch] = useState('');
+
+    useEffect(() => {
+        if (effectiveUid) {
+            countSunnyCampaignsThisMonth(effectiveUid).then(setCampaignsUsed).catch(console.error);
+        }
+    }, [effectiveUid]);
 
     useEffect(() => {
         if (activeStore) {
@@ -317,6 +330,16 @@ export const Lanzador: React.FC = () => {
 
     const handleLaunch = async () => {
         setLaunchError(null);
+
+        // Campaign limit check
+        if (!isAdmin && campaignLimit < Infinity) {
+            const currentCount = await countSunnyCampaignsThisMonth(effectiveUid || '');
+            setCampaignsUsed(currentCount);
+            if (currentCount >= campaignLimit) {
+                setLaunchError(`Has alcanzado el límite de ${campaignLimit} campañas este mes. Actualiza a Yonko para campañas ilimitadas.`);
+                return;
+            }
+        }
 
         if (!metaToken) {
             setLaunchError('No hay token de Meta configurado. Ve a Ajustes y conecta tu cuenta de Facebook.');
@@ -610,6 +633,19 @@ export const Lanzador: React.FC = () => {
             setLaunchResults(allLaunchResults);
             setLaunchProgress('');
             setIsLaunched(true);
+
+            // Log campaigns to Firestore for limit tracking
+            if (effectiveUid) {
+                for (const result of allLaunchResults) {
+                    await saveSunnyCampaign({
+                        campaignId: result.campaignId,
+                        campaignName: campaignName,
+                        accountId: result.accountName,
+                        createdAt: new Date().toISOString(),
+                    }, effectiveUid);
+                }
+                setCampaignsUsed(prev => prev + allLaunchResults.length);
+            }
         } catch (error: any) {
             console.error('Launch failed:', error);
             setLaunchError(error.message || 'Error desconocido al publicar la campaña.');
@@ -1399,10 +1435,37 @@ export const Lanzador: React.FC = () => {
                     </div>
                 )}
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between">
+                    {/* Campaign counter */}
+                    {!isAdmin && campaignLimit < Infinity ? (
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <Rocket className="w-4 h-4 text-accent" />
+                                <span className="text-xs font-black uppercase tracking-widest text-muted">Campañas</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`text-sm font-black tabular-nums ${campaignsUsed >= campaignLimit ? 'text-red-400' : 'text-accent'}`}>
+                                    {campaignsUsed}/{campaignLimit}
+                                </span>
+                                <div className="w-24 h-1.5 bg-card-border rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all ${campaignsUsed >= campaignLimit ? 'bg-red-500' : 'bg-accent'}`}
+                                        style={{ width: `${Math.min((campaignsUsed / campaignLimit) * 100, 100)}%` }}
+                                    />
+                                </div>
+                            </div>
+                            <span className="text-[10px] text-muted font-bold uppercase">este mes</span>
+                        </div>
+                    ) : !isAdmin ? (
+                        <div className="flex items-center gap-2">
+                            <Rocket className="w-4 h-4 text-accent" />
+                            <span className="text-xs font-black uppercase tracking-widest text-muted">Campañas ilimitadas</span>
+                        </div>
+                    ) : <div />}
+
                     <button
                         onClick={handleLaunch}
-                        disabled={isLaunching}
+                        disabled={isLaunching || (!isAdmin && campaignsUsed >= campaignLimit && campaignLimit < Infinity)}
                         className="px-12 py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black uppercase italic tracking-tighter text-lg rounded-2xl flex items-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isLaunching ? (

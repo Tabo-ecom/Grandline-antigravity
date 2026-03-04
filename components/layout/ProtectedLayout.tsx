@@ -4,8 +4,11 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { AuthProvider, useAuth } from '@/lib/context/AuthContext';
 import { ThemeProvider } from '@/lib/context/ThemeContext';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { MODULE_REQUIRED_PLAN } from '@/lib/hooks/usePlanAccess';
+import { MODULE_TUTORIALS } from '@/lib/config/tutorials';
+import { authFetch } from '@/lib/api/client';
+import { Lock, Play, Check, ArrowRight } from 'lucide-react';
 
 const AppProviders = dynamic(() => import('./AppProviders'), {
     ssr: false,
@@ -20,10 +23,13 @@ const AppProviders = dynamic(() => import('./AppProviders'), {
 });
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-    const { user, profile, loading } = useAuth();
+    const { user, profile, loading, refreshProfile } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
+    const searchParams = useSearchParams();
     const [isLandingDomain, setIsLandingDomain] = React.useState<boolean | null>(null);
+    const [verifyingSession, setVerifyingSession] = React.useState(false);
+    const verifiedRef = React.useRef(false);
 
     React.useEffect(() => {
         const hostname = window.location.hostname;
@@ -32,6 +38,30 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }, []);
 
     const isPublicPage = pathname === '/' || pathname === '/login' || pathname === '/diagnostico';
+
+    // Verify Stripe session after checkout redirect (race condition fix)
+    const sessionId = searchParams.get('session_id');
+    React.useEffect(() => {
+        if (!sessionId || !user || verifiedRef.current || verifyingSession) return;
+        // If profile already has an active subscription, no need to verify
+        if (profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing') return;
+
+        verifiedRef.current = true;
+        setVerifyingSession(true);
+
+        authFetch('/api/stripe/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+        })
+            .then(() => refreshProfile())
+            .catch((err) => console.error('Session verify error:', err))
+            .finally(() => {
+                setVerifyingSession(false);
+                // Clean URL
+                router.replace(pathname);
+            });
+    }, [sessionId, user, profile, verifyingSession, refreshProfile, router, pathname]);
 
     React.useEffect(() => {
         if (isLandingDomain === null || loading) return;
@@ -86,9 +116,20 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Plan-based access check
     const moduleId = pathname.replace('/', '').split('/')[0];
     const requiredPlan = MODULE_REQUIRED_PLAN[moduleId];
-    let planBanner: React.ReactNode = null;
 
     if (requiredPlan) {
+        // Verifying Stripe session — show loading instead of plan gate
+        if (verifyingSession) {
+            return (
+                <div className="flex h-screen items-center justify-center bg-background text-foreground transition-all duration-300">
+                    <div className="flex flex-col items-center gap-4">
+                        <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#d75c33] border-t-transparent"></div>
+                        <p className="font-medium animate-pulse">Activando tu suscripción...</p>
+                    </div>
+                </div>
+            );
+        }
+
         // No profile yet (new registration) → redirect to plan selection
         if (!profile) {
             return (
@@ -117,30 +158,96 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
         if (!hasAdminBypass && (!isActive || (PLAN_LEVEL[userPlan] ?? 0) < (PLAN_LEVEL[requiredPlan] ?? 0))) {
             const planLabels: Record<string, string> = { rookie: 'Rookie', supernova: 'Supernova', yonko: 'Yonko' };
-            planBanner = (
-                <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-none">
-                    <div className="pointer-events-auto mx-auto max-w-2xl mt-4 px-4">
-                        <div className="bg-gradient-to-r from-amber-500/95 to-orange-500/95 backdrop-blur-xl text-white rounded-2xl px-6 py-4 shadow-2xl shadow-amber-500/30 flex items-center gap-4">
-                            <div className="text-3xl shrink-0">🔒</div>
-                            <div className="flex-1 min-w-0">
-                                <h3 className="font-black text-sm uppercase tracking-tight">
-                                    Módulo requiere plan {planLabels[requiredPlan] || requiredPlan}
-                                </h3>
-                                <p className="text-white/80 text-xs mt-0.5">
+            const tutorial = MODULE_TUTORIALS[`/${moduleId}`];
+
+            const getEmbedUrl = (url: string) => {
+                const match = url.match(/(?:youtu\.be\/|youtube\.com\/watch\?v=)([^&]+)/);
+                return match ? `https://www.youtube.com/embed/${match[1]}` : url;
+            };
+
+            return (
+                <AppProviders>
+                    <div className="flex-1 flex items-center justify-center min-h-screen bg-background p-4 sm:p-8">
+                        <div className="w-full max-w-2xl space-y-6">
+                            {/* Header */}
+                            <div className="text-center space-y-2">
+                                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold uppercase tracking-wider">
+                                    <Lock className="w-3.5 h-3.5" />
+                                    Requiere plan {planLabels[requiredPlan] || requiredPlan}
+                                </div>
+                                <h2 className="text-2xl sm:text-3xl font-black text-foreground tracking-tight">
+                                    {tutorial?.title || `Módulo ${moduleId}`}
+                                </h2>
+                                {tutorial?.description && (
+                                    <p className="text-muted text-sm">{tutorial.description}</p>
+                                )}
+                            </div>
+
+                            {/* Video */}
+                            {tutorial?.videos?.[0] && (
+                                <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-card-border shadow-2xl shadow-black/20">
+                                    <iframe
+                                        src={getEmbedUrl(tutorial.videos[0].url)}
+                                        title={tutorial.videos[0].title}
+                                        className="absolute inset-0 w-full h-full"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                    />
+                                </div>
+                            )}
+
+                            {/* Additional videos */}
+                            {tutorial?.videos && tutorial.videos.length > 1 && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {tutorial.videos.slice(1).map((video) => (
+                                        <div key={video.url} className="relative aspect-video rounded-xl overflow-hidden border border-card-border">
+                                            <iframe
+                                                src={getEmbedUrl(video.url)}
+                                                title={video.title}
+                                                className="absolute inset-0 w-full h-full"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                                allowFullScreen
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Steps / Benefits */}
+                            {tutorial?.steps && tutorial.steps.length > 0 && (
+                                <div className="bg-card border border-card-border rounded-2xl p-6">
+                                    <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4">
+                                        Lo que puedes hacer con este módulo
+                                    </h3>
+                                    <ul className="space-y-3">
+                                        {tutorial.steps.map((step, i) => (
+                                            <li key={i} className="flex items-start gap-3 text-sm text-muted">
+                                                <Check className="w-4 h-4 mt-0.5 shrink-0 text-accent" />
+                                                <span>{step}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* CTA */}
+                            <div className="text-center space-y-3">
+                                <button
+                                    onClick={() => router.push('/planes')}
+                                    className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-accent to-orange-500 text-white font-black uppercase text-sm rounded-2xl hover:opacity-90 transition-all shadow-xl shadow-accent/25"
+                                >
+                                    Desbloquear con plan {planLabels[requiredPlan] || requiredPlan}
+                                    <ArrowRight className="w-4 h-4" />
+                                </button>
+                                <p className="text-xs text-muted">
                                     {!isActive && userPlan !== 'free'
-                                        ? 'Tu suscripción no está activa. Renueva para acceder.'
-                                        : 'Mejora tu plan para desbloquear este módulo.'}
+                                        ? 'Tu suscripción no está activa. Renueva para acceder a este módulo.'
+                                        : 'Mejora tu plan para acceder a todas las funcionalidades.'}
                                 </p>
                             </div>
-                            <button
-                                onClick={() => router.push('/planes')}
-                                className="shrink-0 px-5 py-2.5 bg-white text-amber-600 font-black uppercase text-[11px] rounded-xl hover:bg-white/90 transition-colors shadow-lg"
-                            >
-                                Cambiar Plan
-                            </button>
                         </div>
                     </div>
-                </div>
+                </AppProviders>
             );
         }
     }
@@ -148,7 +255,6 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Protected pages — load all providers dynamically
     return (
         <AppProviders>
-            {planBanner}
             {children}
         </AppProviders>
     );

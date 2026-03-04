@@ -982,7 +982,7 @@ export default function DiagnosticoPage() {
                                     <div className={`w-2 h-2 rounded-full ${slotsRemaining > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-orange-400'}`} />
                                     <span className="text-sm font-bold text-white/70">
                                         {slotsRemaining > 0
-                                            ? `Solo quedan ${slotsRemaining} de 5 lugares con 1 MES GRATIS`
+                                            ? `Solo quedan ${slotsRemaining} de 5 lugares con 15 DÍAS GRATIS`
                                             : 'Unete a la lista de espera \u2014 15 dias gratis'}
                                     </span>
                                 </div>
@@ -1020,7 +1020,7 @@ export default function DiagnosticoPage() {
                                 </h4>
                                 <p className="text-white/50 text-sm">
                                     {popupDone === 'access'
-                                        ? 'Te contactaremos por WhatsApp para activar tu cuenta con 1 mes gratis.'
+                                        ? 'Te contactaremos por WhatsApp para activar tu cuenta con 15 días gratis.'
                                         : 'Te enviaremos un email cuando tu acceso este listo. Tendras 15 dias gratis.'}
                                 </p>
                             </div>
@@ -1031,12 +1031,12 @@ export default function DiagnosticoPage() {
                                         {slotsRemaining > 0 ? <Gift className="w-7 h-7 text-[#d75c33]" /> : <Users className="w-7 h-7 text-[#d75c33]" />}
                                     </div>
                                     <h4 className="text-xl font-black text-white mb-1">
-                                        {slotsRemaining > 0 ? '1 MES GRATIS de Grand Line' : 'Lista de Espera'}
+                                        {slotsRemaining > 0 ? '15 DÍAS GRATIS de Grand Line' : 'Lista de Espera'}
                                     </h4>
                                     <p className="text-white/50 text-sm">
                                         {slotsRemaining > 0
                                             ? `Solo quedan ${slotsRemaining} lugares. Ingresa tu WhatsApp para contactarte.`
-                                            : 'Los 5 lugares fueron reclamados. Registrate y te daremos 15 dias gratis.'}
+                                            : 'Los 5 lugares fueron reclamados. Registrate y te daremos 15 días gratis.'}
                                     </p>
                                 </div>
 

@@ -9,39 +9,49 @@ const DEMO_DISPLAY_NAME = 'Demo Grand Line';
 
 // ─── FAKE PRODUCT CATALOG ──────────────────────────────────────────────────
 const PRODUCTS = [
+    // Colombia (COP)
     { id: 'prod_001', name: 'Proteína Whey Gold', country: 'Colombia', supplierPrice: 45000, salePrice: 149900, shippingCost: 12000 },
     { id: 'prod_002', name: 'Creatina Monohidrato', country: 'Colombia', supplierPrice: 28000, salePrice: 89900, shippingCost: 10000 },
     { id: 'prod_003', name: 'BCAA Ultra Recovery', country: 'Colombia', supplierPrice: 32000, salePrice: 119900, shippingCost: 11000 },
-    { id: 'prod_004', name: 'Colágeno Hidrolizado', country: 'Ecuador', supplierPrice: 15, salePrice: 45, shippingCost: 5 },
-    { id: 'prod_005', name: 'Vitamina D3 + K2', country: 'Ecuador', supplierPrice: 12, salePrice: 38, shippingCost: 4 },
-    { id: 'prod_006', name: 'Omega 3 Premium', country: 'Guatemala', supplierPrice: 95, salePrice: 299, shippingCost: 35 },
-    { id: 'prod_007', name: 'Pack Fitness Starter', country: 'Colombia', supplierPrice: 65000, salePrice: 199900, shippingCost: 15000 },
-    { id: 'prod_008', name: 'Glutamina L-Glutamine', country: 'Panamá', supplierPrice: 18, salePrice: 55, shippingCost: 6 },
     { id: 'prod_009', name: 'Pre-Workout Explosive', country: 'Colombia', supplierPrice: 38000, salePrice: 129900, shippingCost: 12000 },
-    { id: 'prod_010', name: 'Quemador Thermo Burn', country: 'Colombia', supplierPrice: 35000, salePrice: 109900, shippingCost: 11000 },
+    { id: 'prod_010', name: 'Colágeno Hidrolizado', country: 'Colombia', supplierPrice: 35000, salePrice: 109900, shippingCost: 11000 },
+    // México (MXN)
+    { id: 'prod_101', name: 'Sérum Facial Vitamina C', country: 'Mexico', supplierPrice: 180, salePrice: 599, shippingCost: 99 },
+    { id: 'prod_102', name: 'Kit Skincare 3 Pasos', country: 'Mexico', supplierPrice: 420, salePrice: 1499, shippingCost: 129 },
+    { id: 'prod_103', name: 'Masajeador Eléctrico Pro', country: 'Mexico', supplierPrice: 350, salePrice: 999, shippingCost: 119 },
+    { id: 'prod_104', name: 'Aceite de Argán Premium', country: 'Mexico', supplierPrice: 150, salePrice: 499, shippingCost: 89 },
+    // Ecuador (USD)
+    { id: 'prod_201', name: 'Vitamina D3 + K2', country: 'Ecuador', supplierPrice: 12, salePrice: 38, shippingCost: 4 },
+    { id: 'prod_202', name: 'Omega 3 Premium', country: 'Ecuador', supplierPrice: 15, salePrice: 45, shippingCost: 5 },
+    { id: 'prod_203', name: 'Pack Fitness Starter', country: 'Ecuador', supplierPrice: 18, salePrice: 55, shippingCost: 6 },
+    // Perú (PEN)
+    { id: 'prod_301', name: 'Faja Reductora Térmica', country: 'Peru', supplierPrice: 35, salePrice: 129, shippingCost: 15 },
+    { id: 'prod_302', name: 'Corrector de Postura Pro', country: 'Peru', supplierPrice: 28, salePrice: 99, shippingCost: 12 },
+    { id: 'prod_303', name: 'Almohada Ortopédica Gel', country: 'Peru', supplierPrice: 65, salePrice: 249, shippingCost: 20 },
 ];
 
-const COUNTRIES = ['Colombia', 'Ecuador', 'Guatemala', 'Panamá'];
+const COUNTRIES = ['Colombia', 'Mexico', 'Ecuador', 'Peru'];
 const CITIES: Record<string, string[]> = {
     'Colombia': ['Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales'],
-    'Ecuador': ['Quito', 'Guayaquil', 'Cuenca', 'Ambato', 'Manta'],
-    'Guatemala': ['Guatemala City', 'Mixco', 'Villa Nueva', 'Quetzaltenango'],
-    'Panamá': ['Panamá City', 'David', 'Colón', 'Santiago'],
+    'Mexico': ['Ciudad de México', 'Guadalajara', 'Monterrey', 'Puebla', 'Tijuana', 'León', 'Cancún', 'Mérida'],
+    'Ecuador': ['Quito', 'Guayaquil', 'Cuenca', 'Ambato', 'Manta', 'Santo Domingo'],
+    'Peru': ['Lima', 'Arequipa', 'Trujillo', 'Chiclayo', 'Piura', 'Cusco', 'Huancayo', 'Iquitos'],
 };
 const CARRIERS: Record<string, string[]> = {
     'Colombia': ['Servientrega', 'Coordinadora', 'Inter Rapidísimo', 'TCC'],
+    'Mexico': ['FedEx México', 'Estafeta', 'DHL México', 'Paquetexpress'],
     'Ecuador': ['Servientrega EC', 'Tramaco', 'Urbano Express'],
-    'Guatemala': ['Guatex', 'Cargo Expreso', 'DHL Guatemala'],
-    'Panamá': ['MBE Panamá', 'Uno Express', 'FedEx Panamá'],
+    'Peru': ['Olva Courier', 'Shalom', 'InDrive Envíos', 'Cruz del Sur Cargo'],
 };
 const STATUSES = ['ENTREGADO', 'CANCELADO', 'TRÁNSITO', 'DEVOLUCIÓN'];
-const STATUS_WEIGHTS = [0.55, 0.25, 0.15, 0.05]; // Probability for each status
+// Showcase quality: ~70% delivery, ~16% cancel, ~10% transit, ~4% returns
+const STATUS_WEIGHTS = [0.70, 0.16, 0.10, 0.04];
 
 const CAMPAIGN_TEMPLATES = [
-    { template: '[COUNTRY] - Conversiones - [PRODUCT] - Feb26', platform: 'facebook' as const },
+    { template: '[COUNTRY] - Conversiones - [PRODUCT] - Ene26', platform: 'facebook' as const },
     { template: '[COUNTRY] - Tráfico - [PRODUCT] - Broad', platform: 'facebook' as const },
-    { template: '[COUNTRY] - Retargeting - [PRODUCT]', platform: 'facebook' as const },
-    { template: '[COUNTRY] - CBO - [PRODUCT] - Lookalike', platform: 'tiktok' as const },
+    { template: '[COUNTRY] - Retargeting - [PRODUCT] - Feb26', platform: 'facebook' as const },
+    { template: '[COUNTRY] - CBO - [PRODUCT] - Lookalike', platform: 'facebook' as const },
     { template: '[COUNTRY] - Spark Ads - [PRODUCT]', platform: 'tiktok' as const },
 ];
 
@@ -85,50 +95,63 @@ function generateOrders(days: string[]): Record<string, any[]> {
     const ordersByCountry: Record<string, any[]> = {};
 
     for (const day of days) {
-        // More orders on weekdays, fewer on weekends
         const date = new Date(day + 'T12:00:00Z');
         const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-        const baseOrders = isWeekend ? randomInt(8, 20) : randomInt(15, 45);
 
-        for (let i = 0; i < baseOrders; i++) {
-            const product = randomChoice(PRODUCTS);
-            const country = product.country;
-            const status = weightedChoice(STATUSES, STATUS_WEIGHTS);
-            const qty = Math.random() < 0.8 ? 1 : randomInt(2, 3);
-            const totalOrder = product.salePrice * qty;
-            const supplierTotal = product.supplierPrice * qty;
-            const shipping = product.shippingCost;
-            const commission = Math.round(totalOrder * 0.05);
-            const ganancia = totalOrder - supplierTotal - shipping - commission;
-            const returnShipping = status === 'DEVOLUCIÓN' ? Math.round(shipping * 0.7) : 0;
+        // Each country gets its own orders for this day
+        for (const country of COUNTRIES) {
+            const countryProducts = PRODUCTS.filter(p => p.country === country);
+            if (countryProducts.length === 0) continue;
 
-            const city = randomChoice(CITIES[country] || ['Ciudad']);
-            const carrier = randomChoice(CARRIERS[country] || ['Transportadora']);
+            // Volume varies by country: Colombia gets more, others fewer
+            let baseOrders: number;
+            if (country === 'Colombia') {
+                baseOrders = isWeekend ? randomInt(20, 40) : randomInt(40, 70);
+            } else if (country === 'Mexico') {
+                baseOrders = isWeekend ? randomInt(15, 30) : randomInt(30, 55);
+            } else {
+                baseOrders = isWeekend ? randomInt(8, 18) : randomInt(15, 35);
+            }
 
-            const order = {
-                ID: `DEMO-${day.replace(/-/g, '')}-${String(i + 1).padStart(4, '0')}`,
-                ESTATUS: status,
-                'TOTAL DE LA ORDEN': totalOrder,
-                PRODUCTO: product.name,
-                PRODUCTO_ID: product.id,
-                SKU: `SKU-${product.id.replace('prod_', '')}`,
-                CANTIDAD: qty,
-                'PRECIO PROVEEDOR': product.supplierPrice,
-                'PRECIO PROVEEDOR X CANTIDAD': supplierTotal,
-                'PRECIO FLETE': shipping,
-                'COSTO DEVOLUCION FLETE': returnShipping,
-                GANANCIA: ganancia,
-                FECHA: day,
-                CIUDAD: city,
-                'CIUDAD DESTINO': city,
-                COMISION: commission,
-                PAIS: country,
-                TRANSPORTADORA: carrier,
-                RECAUDO: status === 'ENTREGADO' ? 'RECAUDADO' : 'PENDIENTE',
-            };
+            for (let i = 0; i < baseOrders; i++) {
+                const product = randomChoice(countryProducts);
+                const status = weightedChoice(STATUSES, STATUS_WEIGHTS);
+                const qty = Math.random() < 0.85 ? 1 : randomInt(2, 3);
+                const totalOrder = product.salePrice * qty;
+                const supplierTotal = product.supplierPrice * qty;
+                const shipping = product.shippingCost;
+                const commission = Math.round(totalOrder * 0.05);
+                const ganancia = totalOrder - supplierTotal - shipping - commission;
+                const returnShipping = status === 'DEVOLUCIÓN' ? Math.round(shipping * 0.7) : 0;
 
-            if (!ordersByCountry[country]) ordersByCountry[country] = [];
-            ordersByCountry[country].push(order);
+                const city = randomChoice(CITIES[country] || ['Ciudad']);
+                const carrier = randomChoice(CARRIERS[country] || ['Transportadora']);
+
+                const order = {
+                    ID: `DEMO-${country.substring(0, 2).toUpperCase()}-${day.replace(/-/g, '')}-${String(i + 1).padStart(4, '0')}`,
+                    ESTATUS: status,
+                    'TOTAL DE LA ORDEN': totalOrder,
+                    PRODUCTO: product.name,
+                    PRODUCTO_ID: product.id,
+                    SKU: `SKU-${product.id.replace('prod_', '')}`,
+                    CANTIDAD: qty,
+                    'PRECIO PROVEEDOR': product.supplierPrice,
+                    'PRECIO PROVEEDOR X CANTIDAD': supplierTotal,
+                    'PRECIO FLETE': shipping,
+                    'COSTO DEVOLUCION FLETE': returnShipping,
+                    GANANCIA: ganancia,
+                    FECHA: day,
+                    CIUDAD: city,
+                    'CIUDAD DESTINO': city,
+                    COMISION: commission,
+                    PAIS: country,
+                    TRANSPORTADORA: carrier,
+                    RECAUDO: status === 'ENTREGADO' ? 'RECAUDADO' : 'PENDIENTE',
+                };
+
+                if (!ordersByCountry[country]) ordersByCountry[country] = [];
+                ordersByCountry[country].push(order);
+            }
         }
     }
 
@@ -160,12 +183,18 @@ interface AdEntry {
     timestamp: FieldValue;
 }
 
+function getCurrencyForCountry(country: string): string {
+    const map: Record<string, string> = {
+        'Colombia': 'COP', 'Mexico': 'MXN', 'Ecuador': 'USD', 'Peru': 'PEN',
+    };
+    return map[country] || 'USD';
+}
+
 function generateAdSpend(days: string[], userId: string): { entries: AdEntry[], mappings: any[] } {
     const entries: AdEntry[] = [];
     const mappingsMap = new Map<string, any>();
 
     for (const product of PRODUCTS) {
-        // Each product gets 1-3 campaigns
         const numCampaigns = randomInt(1, 3);
         const templates = [...CAMPAIGN_TEMPLATES].sort(() => Math.random() - 0.5).slice(0, numCampaigns);
 
@@ -174,7 +203,6 @@ function generateAdSpend(days: string[], userId: string): { entries: AdEntry[], 
                 .replace('[COUNTRY]', product.country)
                 .replace('[PRODUCT]', product.name);
 
-            // Save mapping
             if (!mappingsMap.has(campaignName)) {
                 mappingsMap.set(campaignName, {
                     campaignName,
@@ -186,21 +214,22 @@ function generateAdSpend(days: string[], userId: string): { entries: AdEntry[], 
                 });
             }
 
-            // Generate daily spend for this campaign
             for (const day of days) {
-                // Some campaigns don't run every day
-                if (Math.random() < 0.15) continue;
+                if (Math.random() < 0.12) continue; // some days no spend
 
-                const isCOP = product.country === 'Colombia';
-                const baseSpend = isCOP ? randomInt(15000, 85000) : randomInt(5, 35);
-                const currency = isCOP ? 'COP' : 'USD';
+                const currency = getCurrencyForCountry(product.country);
+                let baseSpend: number;
+                if (currency === 'COP') baseSpend = randomInt(20000, 95000);
+                else if (currency === 'MXN') baseSpend = randomInt(150, 800);
+                else if (currency === 'PEN') baseSpend = randomInt(30, 180);
+                else baseSpend = randomInt(8, 40); // USD
 
-                const impressions = randomInt(500, 5000);
-                const clicks = randomInt(10, Math.floor(impressions * 0.08));
+                const impressions = randomInt(800, 6000);
+                const clicks = randomInt(15, Math.floor(impressions * 0.09));
                 const ctr = parseFloat(((clicks / impressions) * 100).toFixed(2));
                 const cpc = parseFloat((baseSpend / clicks).toFixed(2));
-                const leads = randomInt(1, Math.max(1, Math.floor(clicks * 0.15)));
-                const conversions = randomInt(0, Math.max(1, Math.floor(leads * 0.5)));
+                const leads = randomInt(2, Math.max(2, Math.floor(clicks * 0.18)));
+                const conversions = randomInt(1, Math.max(1, Math.floor(leads * 0.55)));
                 const reach = randomInt(impressions, impressions * 3);
 
                 const sanitizedCampaign = campaignName.replace(/\W/g, '');
@@ -249,27 +278,27 @@ function generateExpenses(): any[] {
     ];
 
     const expenses: any[] = [];
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
 
-    for (const cat of categories) {
-        for (const item of cat.items) {
-            const amount = randomInt(50000, 2500000);
-            expenses.push({
-                id: `exp_demo_${cat.category.replace(/\s/g, '')}_${item.replace(/\s/g, '')}_${month}`,
-                category: cat.category,
-                subcategory: item,
-                amount,
-                currency: 'COP',
-                date: `${year}-${String(month).padStart(2, '0')}-01`,
-                month,
-                year,
-                notes: 'Dato de ejemplo',
-                recurring: true,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-            });
+    // Generate for both January and February 2026
+    for (const monthData of [{ month: 1, year: 2026 }, { month: 2, year: 2026 }]) {
+        for (const cat of categories) {
+            for (const item of cat.items) {
+                const amount = randomInt(80000, 3200000);
+                expenses.push({
+                    id: `exp_demo_${cat.category.replace(/\s/g, '')}_${item.replace(/\s/g, '')}_${monthData.month}_${monthData.year}`,
+                    category: cat.category,
+                    subcategory: item,
+                    amount,
+                    currency: 'COP',
+                    date: `${monthData.year}-${String(monthData.month).padStart(2, '0')}-01`,
+                    month: monthData.month,
+                    year: monthData.year,
+                    notes: 'Dato de ejemplo',
+                    recurring: true,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                });
+            }
         }
     }
 
@@ -310,51 +339,62 @@ export async function POST(req: NextRequest) {
             demoUid = newUser.uid;
         }
 
-        // ─── Step 2: Create user profile ──────────────────────────────────
+        // ─── Step 2: Create user profile (Supernova plan, active) ───────
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 30);
+
         await adminDb.collection('user_profiles').doc(demoUid).set({
             user_id: demoUid,
             email: DEMO_EMAIL,
             role: 'admin',
             display_name: DEMO_DISPLAY_NAME,
             team_id: demoUid,
+            plan: 'supernova',
+            subscriptionStatus: 'active',
+            currentPeriodEnd: futureDate,
             created_at: new Date(),
             is_demo: true,
         });
 
-        // ─── Step 3: Generate date range (last 30 days) ──────────────────
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 30);
+        // ─── Step 3: Generate date range (January 1 – February 28, 2026) ─
+        const startDate = new Date('2026-01-01');
+        const endDate = new Date('2026-02-28');
         const days = getDaysInRange(startDate, endDate);
 
         // ─── Step 4: Generate & save orders ───────────────────────────────
         const ordersByCountry = generateOrders(days);
         let totalOrders = 0;
 
+        // Split orders by month to stay under Firestore 1MB doc limit
         for (const [country, orders] of Object.entries(ordersByCountry)) {
-            const docId = `demo_${country.toLowerCase().replace(/\s/g, '_')}_${demoUid}`;
+            const jan = orders.filter((o: any) => o.FECHA.startsWith('2026-01'));
+            const feb = orders.filter((o: any) => o.FECHA.startsWith('2026-02'));
 
-            // Delete existing demo data for this country
-            try { await adminDb.collection('order_files').doc(docId).delete(); } catch {}
-            try { await adminDb.collection('import_logs').doc(docId).delete(); } catch {}
+            for (const [month, monthOrders] of [['enero', jan], ['febrero', feb]] as [string, any[]][]) {
+                if (monthOrders.length === 0) continue;
+                const docId = `demo_${country.toLowerCase().replace(/\s/g, '_')}_${month}_${demoUid}`;
 
-            await adminDb.collection('order_files').doc(docId).set({
-                userId: demoUid,
-                fileName: `demo_${country.toLowerCase()}.csv`,
-                country,
-                orderCount: orders.length,
-                orders,
-                id: docId,
-                uploaded_at: new Date(),
-            });
+                try { await adminDb.collection('order_files').doc(docId).delete(); } catch {}
+                try { await adminDb.collection('import_logs').doc(docId).delete(); } catch {}
 
-            await adminDb.collection('import_logs').doc(docId).set({
-                userId: demoUid,
-                fileName: `demo_${country.toLowerCase()}.csv`,
-                country,
-                orderCount: orders.length,
-                uploaded_at: new Date(),
-            });
+                await adminDb.collection('order_files').doc(docId).set({
+                    userId: demoUid,
+                    fileName: `demo_${country.toLowerCase()}_${month}.csv`,
+                    country,
+                    orderCount: monthOrders.length,
+                    orders: monthOrders,
+                    id: docId,
+                    uploaded_at: new Date(),
+                });
+
+                await adminDb.collection('import_logs').doc(docId).set({
+                    userId: demoUid,
+                    fileName: `demo_${country.toLowerCase()}_${month}.csv`,
+                    country,
+                    orderCount: monthOrders.length,
+                    uploaded_at: new Date(),
+                });
+            }
 
             totalOrders += orders.length;
         }
@@ -378,33 +418,33 @@ export async function POST(req: NextRequest) {
         const productGroups = [
             {
                 id: 'grp_proteinas',
-                name: 'Proteínas',
-                productIds: ['prod_001', 'prod_007'],
+                name: 'Proteínas & Fitness',
+                productIds: ['prod_001', 'prod_002', 'prod_003', 'prod_009'],
                 country: 'Colombia',
                 color: '#8b5cf6',
                 updatedAt: Date.now(),
             },
             {
-                id: 'grp_suplementos',
-                name: 'Suplementos Deportivos',
-                productIds: ['prod_002', 'prod_003', 'prod_009'],
-                country: 'Colombia',
-                color: '#06b6d4',
+                id: 'grp_skincare',
+                name: 'Skincare & Belleza',
+                productIds: ['prod_101', 'prod_102', 'prod_104'],
+                country: 'Mexico',
+                color: '#ec4899',
                 updatedAt: Date.now(),
             },
             {
                 id: 'grp_salud',
                 name: 'Salud & Bienestar',
-                productIds: ['prod_004', 'prod_005', 'prod_006'],
+                productIds: ['prod_010', 'prod_201', 'prod_202', 'prod_203'],
                 color: '#10b981',
                 updatedAt: Date.now(),
             },
             {
-                id: 'grp_quemadores',
-                name: 'Quemadores',
-                productIds: ['prod_010'],
-                country: 'Colombia',
-                color: '#ef4444',
+                id: 'grp_bienestar_pe',
+                name: 'Bienestar Corporal',
+                productIds: ['prod_301', 'prod_302', 'prod_303'],
+                country: 'Peru',
+                color: '#f59e0b',
                 updatedAt: Date.now(),
             },
         ];
@@ -457,8 +497,8 @@ export async function POST(req: NextRequest) {
 
         // Projection settings
         await setAppData('projection_settings', {
-            deliveryRate: 60,
-            returnRate: 8,
+            deliveryRate: 68,
+            returnRate: 5,
             avgOrderValue: 130000,
             avgSupplierCost: 40000,
             avgShippingCost: 12000,
@@ -467,7 +507,7 @@ export async function POST(req: NextRequest) {
             updatedAt: Date.now(),
         });
 
-        // Berry expenses
+        // Berry expenses (January + February)
         const expenses = generateExpenses();
         await setAppData('berry_expenses', expenses);
 
@@ -521,15 +561,34 @@ export async function POST(req: NextRequest) {
         // Price corrections (empty)
         await setAppData('price_corrections', []);
 
+        // Onboarding completed (so demo doesn't show tutorial)
+        await setAppData('onboarding_state', {
+            surveyCompleted: true,
+            introSeen: true,
+            modulesSeen: {
+                dashboard: true,
+                import: true,
+                publicidad: true,
+                'log-pose': true,
+                berry: true,
+                'vega-ai': true,
+                sunny: true,
+            },
+        });
+
         return NextResponse.json({
             success: true,
             demo: {
                 email: DEMO_EMAIL,
                 password: DEMO_PASSWORD,
                 uid: demoUid,
+                dateRange: `${dateStr(startDate)} → ${dateStr(endDate)}`,
                 stats: {
                     orders: totalOrders,
                     countries: Object.keys(ordersByCountry),
+                    ordersByCountry: Object.fromEntries(
+                        Object.entries(ordersByCountry).map(([k, v]) => [k, v.length])
+                    ),
                     adEntries: adEntries.length,
                     campaigns: mappings.length,
                     productGroups: productGroups.length,

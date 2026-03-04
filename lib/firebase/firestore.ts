@@ -294,3 +294,31 @@ export async function saveProjection(projection: SavedProjection): Promise<strin
 export async function deleteProjection(projectionId: string): Promise<void> {
     await deleteDoc(doc(db, 'logpose_projections', projectionId));
 }
+
+// ─── Sunny Campaign Tracking ─────────────────────────────
+export interface SunnyCampaignLog {
+    campaignId: string;
+    campaignName: string;
+    accountId: string;
+    createdAt: string; // ISO date
+}
+
+const SUNNY_KEY = 'sunny_campaigns';
+
+export async function getSunnyCampaigns(userId: string): Promise<SunnyCampaignLog[]> {
+    const data = await getAppData<SunnyCampaignLog[]>(SUNNY_KEY, userId);
+    return Array.isArray(data) ? data : [];
+}
+
+export async function saveSunnyCampaign(entry: SunnyCampaignLog, userId: string): Promise<void> {
+    const current = await getSunnyCampaigns(userId);
+    current.push(entry);
+    await setAppData(SUNNY_KEY, current, userId);
+}
+
+export async function countSunnyCampaignsThisMonth(userId: string): Promise<number> {
+    const all = await getSunnyCampaigns(userId);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    return all.filter(c => c.createdAt >= monthStart).length;
+}

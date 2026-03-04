@@ -12,19 +12,34 @@ export interface ParseResult {
  * Detect country based on city column in Dropi export
  */
 export const detectCountry = (orders: DropiOrder[], fileName: string = ''): string => {
-    // 0. Check filename (Very reliable if using standard exports)
+    // 0. Check filename — full country names first (very reliable), then isolated 2-letter codes
     const fn = fileName.toLowerCase();
-    if (fn.includes('guatemala') || fn.includes('_gt') || fn.includes('gt_') || fn.includes('gt.')) return 'GT';
-    if (fn.includes('ecuador') || fn.includes('_ec') || fn.includes('ec_') || fn.includes('ec.')) return 'EC';
-    if (fn.includes('panama') || fn.includes('_pa') || fn.includes('pa_') || fn.includes('pa.')) return 'PA';
-    if (fn.includes('colombia') || fn.includes('_co') || fn.includes('co_') || fn.includes('co.')) return 'CO';
-    if (fn.includes('mexico') || fn.includes('méxico') || fn.includes('_mx') || fn.includes('mx_') || fn.includes('mx.')) return 'MX';
-    if (fn.includes('peru') || fn.includes('perú') || fn.includes('_pe') || fn.includes('pe_') || fn.includes('pe.')) return 'PE';
-    if (fn.includes('chile') || fn.includes('_cl') || fn.includes('cl_') || fn.includes('cl.')) return 'CL';
-    if (fn.includes('paraguay') || fn.includes('_py') || fn.includes('py_') || fn.includes('py.')) return 'PY';
-    if (fn.includes('argentina') || fn.includes('_ar') || fn.includes('ar_') || fn.includes('ar.')) return 'AR';
-    if (fn.includes('españa') || fn.includes('espana') || fn.includes('spain') || fn.includes('_es') || fn.includes('es_') || fn.includes('es.')) return 'ES';
-    if (fn.includes('costa rica') || fn.includes('costarica') || fn.includes('_cr') || fn.includes('cr_') || fn.includes('cr.')) return 'CR';
+    // Full names (safe, no false positives)
+    if (fn.includes('guatemala')) return 'GT';
+    if (fn.includes('ecuador')) return 'EC';
+    if (fn.includes('panama') || fn.includes('panamá')) return 'PA';
+    if (fn.includes('colombia')) return 'CO';
+    if (fn.includes('mexico') || fn.includes('méxico')) return 'MX';
+    if (fn.includes('peru') || fn.includes('perú')) return 'PE';
+    if (fn.includes('chile')) return 'CL';
+    if (fn.includes('paraguay')) return 'PY';
+    if (fn.includes('argentina')) return 'AR';
+    if (fn.includes('españa') || fn.includes('espana') || fn.includes('spain')) return 'ES';
+    if (fn.includes('costa rica') || fn.includes('costarica')) return 'CR';
+    // 2-letter codes — require word boundary (start/end, underscore, hyphen, space, or dot)
+    // so "ordenes.xlsx" does NOT match ES, but "es_ordenes.xlsx" or "ordenes_es.xlsx" does
+    const codeMatch = (code: string) => new RegExp(`(?:^|[_\\-\\s.])${code}(?:[_\\-\\s.]|$)`).test(fn);
+    if (codeMatch('gt')) return 'GT';
+    if (codeMatch('ec')) return 'EC';
+    if (codeMatch('pa')) return 'PA';
+    if (codeMatch('co')) return 'CO';
+    if (codeMatch('mx')) return 'MX';
+    if (codeMatch('pe')) return 'PE';
+    if (codeMatch('cl')) return 'CL';
+    if (codeMatch('py')) return 'PY';
+    if (codeMatch('ar')) return 'AR';
+    if (codeMatch('es')) return 'ES';
+    if (codeMatch('cr')) return 'CR';
 
     // 1. Check for an explicit "PAIS" property if it was captured
     const countries = orders.map(o => String(o.PAIS || '').toLowerCase().trim()).filter(c => c.length > 0);

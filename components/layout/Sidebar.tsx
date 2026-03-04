@@ -44,6 +44,13 @@ const ALL_COUNTRIES = [
     { name: 'Ecuador', code: 'EC', href: '/ecuador', flag: '🇪🇨' },
     { name: 'Panamá', code: 'PA', href: '/panama', flag: '🇵🇦' },
     { name: 'Guatemala', code: 'GT', href: '/guatemala', flag: '🇬🇹' },
+    { name: 'México', code: 'MX', href: '/mexico', flag: '🇲🇽' },
+    { name: 'Perú', code: 'PE', href: '/peru', flag: '🇵🇪' },
+    { name: 'Chile', code: 'CL', href: '/chile', flag: '🇨🇱' },
+    { name: 'Paraguay', code: 'PY', href: '/paraguay', flag: '🇵🇾' },
+    { name: 'Argentina', code: 'AR', href: '/argentina', flag: '🇦🇷' },
+    { name: 'España', code: 'ES', href: '/espana', flag: '🇪🇸' },
+    { name: 'Costa Rica', code: 'CR', href: '/costa-rica', flag: '🇨🇷' },
 ];
 
 export default function Sidebar() {
@@ -171,7 +178,7 @@ export default function Sidebar() {
                 <div>
                     {!collapsed && (
                         <label className="text-[10px] font-bold text-muted uppercase tracking-[0.2em] mb-3 block px-2">
-                            Territories
+                            Ships
                         </label>
                     )}
                     {!collapsed && <div className="border-t border-sidebar-border mb-3" />}

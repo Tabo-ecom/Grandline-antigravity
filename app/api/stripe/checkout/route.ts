@@ -33,11 +33,12 @@ export async function POST(req: NextRequest) {
             },
         };
 
-        // Rookie plan gets a 7-day free trial
+        // Rookie plan gets a 7-day free trial without requiring a credit card
         if (planId === 'rookie') {
             sessionParams.subscription_data = {
                 trial_period_days: 7,
             };
+            sessionParams.payment_method_collection = 'if_required';
         }
 
         const session = await stripe.checkout.sessions.create(sessionParams);

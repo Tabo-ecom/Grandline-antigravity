@@ -32,6 +32,8 @@ interface AuthContextType {
     /** team_id for shared data (team_id || user.uid). Use this for ALL data queries. */
     effectiveUid: string | null;
     signOut: () => Promise<void>;
+    /** Re-fetch profile from Firestore (e.g. after Stripe subscription sync). */
+    refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -40,6 +42,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     effectiveUid: null,
     signOut: async () => { },
+    refreshProfile: async () => { },
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -79,11 +82,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
+    const refreshProfile = async () => {
+        if (!user) return;
+        try {
+            const userProfile = await getUserProfile(user.uid);
+            setProfile(userProfile as UserProfile);
+        } catch (error) {
+            console.error('Error refreshing profile:', error);
+        }
+    };
+
     // effectiveUid: for admins = own uid, for viewers = admin's team_id
     const effectiveUid = profile?.team_id || user?.uid || null;
 
     return (
-        <AuthContext.Provider value={{ user, profile, loading, effectiveUid, signOut }}>
+        <AuthContext.Provider value={{ user, profile, loading, effectiveUid, signOut, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );

@@ -19,6 +19,22 @@ export async function GET() {
     }
 }
 
+export async function DELETE() {
+    try {
+        if (!adminDb) {
+            return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
+        }
+        const snapshot = await adminDb.collection(COLLECTION).get();
+        const batch = adminDb.batch();
+        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        return NextResponse.json({ success: true, deleted: snapshot.size });
+    } catch (error) {
+        console.error('[Slots API] Delete Error:', error);
+        return NextResponse.json({ error: 'Error' }, { status: 500 });
+    }
+}
+
 export async function POST(req: NextRequest) {
     try {
         if (!adminDb) {
@@ -55,7 +71,7 @@ export async function POST(req: NextRequest) {
                     `*Nombre:* ${name || 'N/A'}`,
                     `*Email:* ${email}`,
                     `*WhatsApp:* ${whatsapp || 'N/A'}`,
-                    `*Tipo:* Acceso 1 mes gratis`,
+                    `*Tipo:* Acceso 15 días gratis`,
                     `*Origen:* ${source === 'beta' ? 'Lista BETA (sin reporte)' : 'Diagnostico'}`,
                 ]
                 : [
