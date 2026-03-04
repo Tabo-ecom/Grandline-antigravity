@@ -27,18 +27,37 @@ export const detectCountry = (orders: DropiOrder[], fileName: string = ''): stri
     if (fn.includes('costa rica') || fn.includes('costarica') || fn.includes('_cr') || fn.includes('cr_') || fn.includes('cr.')) return 'CR';
 
     // 1. Check for an explicit "PAIS" property if it was captured
-    const countries = orders.map(o => String(o.PAIS || '').toLowerCase().trim());
-    if (countries.some(c => c === 'guatemala' || c === 'gt' || c.includes('guatemal'))) return 'GT';
-    if (countries.some(c => c === 'ecuador' || c === 'ec' || c.includes('ecuad'))) return 'EC';
-    if (countries.some(c => c === 'panama' || c === 'pa' || c.includes('panam'))) return 'PA';
-    if (countries.some(c => c === 'colombia' || c === 'co' || c.includes('colomb'))) return 'CO';
-    if (countries.some(c => c === 'mexico' || c === 'mx' || c.includes('mexic') || c.includes('méxic'))) return 'MX';
-    if (countries.some(c => c === 'peru' || c === 'pe' || c.includes('peru') || c.includes('perú'))) return 'PE';
-    if (countries.some(c => c === 'chile' || c === 'cl')) return 'CL';
-    if (countries.some(c => c === 'paraguay' || c === 'py' || c.includes('paragua'))) return 'PY';
-    if (countries.some(c => c === 'argentina' || c === 'ar' || c.includes('argentin'))) return 'AR';
-    if (countries.some(c => c === 'españa' || c === 'espana' || c === 'spain' || c === 'es' || c.includes('espa'))) return 'ES';
-    if (countries.some(c => c === 'costa rica' || c === 'cr' || c.includes('costa ric'))) return 'CR';
+    const countries = orders.map(o => String(o.PAIS || '').toLowerCase().trim()).filter(c => c.length > 0);
+
+    // Use scoring for PAIS field too (most common value wins)
+    if (countries.length > 0) {
+        const paisMap: Record<string, string> = {};
+        const paisPatterns: [RegExp, string][] = [
+            [/^(co|colombia|colomb)/i, 'CO'],
+            [/^(ec|ecuador|ecuad)/i, 'EC'],
+            [/^(gt|guatemala)/i, 'GT'],
+            [/^(pa|panama|panam)/i, 'PA'],
+            [/^(mx|mexico|mexic|méxic)/i, 'MX'],
+            [/^(pe|peru|perú)/i, 'PE'],
+            [/^(cl|chile)/i, 'CL'],
+            [/^(py|paraguay|paragua)/i, 'PY'],
+            [/^(ar|argentina|argentin)/i, 'AR'],
+            [/^(es|españa|espana|spain|espa)/i, 'ES'],
+            [/^(cr|costa\s?rica)/i, 'CR'],
+        ];
+
+        for (const c of countries) {
+            for (const [pattern, code] of paisPatterns) {
+                if (pattern.test(c)) {
+                    paisMap[code] = (paisMap[code] || '') + '1';
+                    break;
+                }
+            }
+        }
+
+        const bestPais = Object.entries(paisMap).sort((a, b) => b[1].length - a[1].length)[0];
+        if (bestPais) return bestPais[0];
+    }
 
     // 2. Fallback to city detection
     const cities = orders.slice(0, 100).map(o => o.CIUDAD?.toLowerCase() || '');
@@ -174,8 +193,9 @@ export const parseDropiFile = async (file: File): Promise<ParseResult> => {
                             "COSTO DEVOLUCION FLETE": Number(row['COSTO DEVOLUCION FLETE'] || row['COSTO DEVOLUCIÓN FLETE'] || row['Costo devolucion flete'] || row['Costo devolución flete'] || 0),
                             "PRECIO PROVEEDOR": Number(row['PRECIO PROVEEDOR'] || row['Precio proveedor'] || 0),
                             "PRECIO PROVEEDOR X CANTIDAD": Number(row['PRECIO PROVEEDOR X CANTIDAD'] || row['Costo producto'] || 0),
-                            PAIS: String(row.PAIS || row.Pais || row['PAÍS'] || row.Country || ''),
+                            PAIS: String(row.PAIS || row.Pais || row['PAÍS'] || row['País'] || row['pais'] || row.Country || row['COUNTRY'] || row['PAIS DE ENTREGA'] || row['País de destino'] || row['PAIS DESTINO'] || ''),
                             TRANSPORTADORA: String(row.TRANSPORTADORA || row.Transportadora || row['TRANSPORTADOR'] || row['Transportador'] || row['EMPRESA DE ENVIO'] || row['Empresa de envio'] || row['COURIER'] || ''),
+                            GANANCIA: Number(row.GANANCIA || row.Ganancia || row['GANANCIA TOTAL'] || 0),
                             RECAUDO: String(row.RECAUDO || row.Recaudo || row['TIPO DE RECAUDO'] || row['Tipo recaudo'] || row['TIPO RECAUDO'] || row['Tipo de recaudo'] || row['COD'] || ''),
                         };
                     });

@@ -3,6 +3,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Trash2, AlertTriangle, AlertOctagon, DollarSign, Target, Sparkles } from 'lucide-react';
 import { parseDropiFile, ParseResult } from '@/lib/utils/parser';
+import { getOfficialCountryName } from '@/lib/utils/currency';
+import { parseDropiDate } from '@/lib/utils/date-parsers';
 import { saveOrderFile, getImportHistory, deleteImportLog, findOverlappingImports } from '@/lib/firebase/firestore';
 import { clearAdCenterCache } from '@/lib/services/marketing';
 import { invalidateDashboardCache } from '@/lib/hooks/useDashboardData';
@@ -306,12 +308,36 @@ export default function ImportPage() {
                             {results.length > 0 && (
                                 <div className="bg-green-500/10 border border-green-500/20 p-6 rounded-2xl flex gap-4 animate-in fade-in slide-in-from-top-4">
                                     <CheckCircle2 className="w-6 h-6 text-green-400 shrink-0" />
-                                    <div className="text-sm">
-                                        <h4 className="font-bold text-green-400 uppercase tracking-wider text-xs mb-1">
+                                    <div className="text-sm w-full">
+                                        <h4 className="font-bold text-green-400 uppercase tracking-wider text-xs mb-3">
                                             {updates.length > 0 ? '¡LOG DE NAVEGACIÓN ACTUALIZADO!' : '¡Tierra a la vista!'}
                                         </h4>
                                         <div className="text-foreground/80 space-y-2">
-                                            <p>Se han procesado <b>{results.length} archivos</b> exitosamente.</p>
+                                            {results.map((r, i) => {
+                                                const countryName = getOfficialCountryName(r.country);
+                                                const dates = r.orders
+                                                    .map(o => parseDropiDate(o.FECHA))
+                                                    .filter((d): d is Date => d !== null)
+                                                    .sort((a, b) => a.getTime() - b.getTime());
+                                                const minDate = dates[0];
+                                                const maxDate = dates[dates.length - 1];
+                                                const fmt = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+
+                                                return (
+                                                    <div key={i} className="bg-green-500/15 px-4 py-3 rounded-xl border border-green-500/25">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="font-black text-green-400">{countryName}</span>
+                                                            <span className="text-green-400/60">·</span>
+                                                            <span className="font-bold">{r.orders.length.toLocaleString()} órdenes</span>
+                                                        </div>
+                                                        {minDate && maxDate && (
+                                                            <p className="text-[11px] text-muted">
+                                                                {fmt(minDate)} — {fmt(maxDate)}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
                                             {updates.length > 0 && (
                                                 <div className="bg-green-500/20 px-3 py-2 rounded-xl border border-green-500/30 text-xs">
                                                     <p className="font-bold text-green-400 mb-1">Reportes Reemplazados:</p>
