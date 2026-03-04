@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/sync-ad-spend",
-      "schedule": "0 5 * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }

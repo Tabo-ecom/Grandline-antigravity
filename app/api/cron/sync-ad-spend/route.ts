@@ -86,15 +86,15 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        // Determine date range based on current hour
+        // Always sync yesterday + today to capture final numbers from the previous day
+        // Cron runs at 6 AM UTC (1 AM Colombia) so yesterday's data is fully settled
         const now = new Date();
         const todayStr = now.toISOString().split('T')[0];
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-        const isMidnight = now.getUTCHours() === 0;
-        const syncStart = isMidnight ? yesterdayStr : todayStr;
+        const syncStart = yesterdayStr;
         const syncEnd = todayStr;
 
         // Get all users with Meta tokens configured
@@ -225,7 +225,6 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
             success: true,
             syncRange: `${syncStart} → ${syncEnd}`,
-            isMidnight: isMidnight,
             users: results.length,
             totalSaved,
             details: results,
