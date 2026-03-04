@@ -19,7 +19,8 @@ import {
     Sun,
     Moon,
     Crown,
-    Users
+    Users,
+    Lock
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useTheme } from '@/lib/context/ThemeContext';
@@ -126,35 +127,41 @@ export default function Sidebar() {
                     )}
                     <nav className="space-y-1">
                         {NAV_ITEMS.filter((item) => {
-                            const moduleId = item.href.replace('/', '');
-                            // Plan-based access
-                            if (!canAccess(moduleId)) return false;
-                            // Viewer module restrictions
+                            // Viewer module restrictions (admin sees all)
                             if ((profile as UserProfile)?.role === 'admin') return true;
                             const modules = (profile as UserProfile)?.allowed_modules;
                             if (!modules || modules.length === 0) return true;
-                            return modules.includes(moduleId);
+                            return modules.includes(item.href.replace('/', ''));
                         }).map((item) => {
+                            const moduleId = item.href.replace('/', '');
                             const isActive = pathname === item.href;
+                            const isLocked = !canAccess(moduleId);
                             return (
                                 <Link
                                     key={item.name}
                                     href={item.href}
-                                    title={collapsed ? item.name : undefined}
+                                    title={collapsed ? item.name + (isLocked ? ' (Bloqueado)' : '') : undefined}
                                     className={`flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-sm font-medium transition-all group ${isActive
                                         ? 'bg-[#d75c33]/10 text-[#d75c33] border border-[#d75c33]/20'
-                                        : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'
+                                        : isLocked
+                                            ? 'text-muted/50 hover:text-muted hover:bg-hover-bg/50 border border-transparent'
+                                            : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'
                                         } ${collapsed ? 'justify-center' : ''}`}
                                 >
                                     {item.isotipo ? (
                                         <>
-                                            <img src={item.isotipo} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity hidden dark:block ${isActive ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`} />
-                                            <img src={item.isotipo.replace('.png', '-dark.png')} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity block dark:hidden ${isActive ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`} />
+                                            <img src={item.isotipo} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity hidden dark:block ${isActive ? 'opacity-100' : isLocked ? 'opacity-20' : 'opacity-40 group-hover:opacity-70'}`} />
+                                            <img src={item.isotipo.replace('.png', '-dark.png')} alt={item.name} className={`w-5 h-5 shrink-0 transition-opacity block dark:hidden ${isActive ? 'opacity-100' : isLocked ? 'opacity-20' : 'opacity-40 group-hover:opacity-70'}`} />
                                         </>
                                     ) : (
-                                        <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#d75c33]' : 'text-muted group-hover:text-foreground/80'}`} />
+                                        <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#d75c33]' : isLocked ? 'text-muted/40' : 'text-muted group-hover:text-foreground/80'}`} />
                                     )}
-                                    {!collapsed && <span className="truncate">{item.name}</span>}
+                                    {!collapsed && (
+                                        <span className="truncate flex-1">{item.name}</span>
+                                    )}
+                                    {!collapsed && isLocked && (
+                                        <Lock className="w-3 h-3 text-muted/40 shrink-0" />
+                                    )}
                                 </Link>
                             );
                         })}
@@ -231,7 +238,7 @@ export default function Sidebar() {
                     {!collapsed && <span>Modo {theme === 'dark' ? 'Claro' : 'Oscuro'}</span>}
                 </button>
 
-                {canAccess('import') && ((profile as UserProfile)?.role === 'admin' || !(profile as UserProfile)?.allowed_modules?.length || (profile as UserProfile)?.allowed_modules?.includes('import')) && (
+                {((profile as UserProfile)?.role === 'admin' || !(profile as UserProfile)?.allowed_modules?.length || (profile as UserProfile)?.allowed_modules?.includes('import')) && (
                     <Link
                         href="/import"
                         title={collapsed ? 'Importar Datos' : undefined}

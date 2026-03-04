@@ -83,9 +83,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Public pages that should NEVER load AppProviders (even when logged in)
     if (pathname === '/diagnostico') return <>{children}</>;
 
-    // Plan-based access check: block modules the user's plan doesn't include
-    const moduleId = pathname.replace('/', '').split('/')[0]; // e.g. "sunny", "berry", "vega-ai"
+    // Plan-based access check
+    const moduleId = pathname.replace('/', '').split('/')[0];
     const requiredPlan = MODULE_REQUIRED_PLAN[moduleId];
+    let planBanner: React.ReactNode = null;
 
     if (requiredPlan) {
         // No profile yet (new registration) → redirect to plan selection
@@ -115,31 +116,42 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         const hasAdminBypass = profile.role === 'admin' && !profile.plan;
 
         if (!hasAdminBypass && (!isActive || (PLAN_LEVEL[userPlan] ?? 0) < (PLAN_LEVEL[requiredPlan] ?? 0))) {
-            return (
-                <AppProviders>
-                    <div className="flex h-screen items-center justify-center bg-background text-foreground">
-                        <div className="max-w-md text-center p-8 space-y-4">
-                            <div className="text-5xl">🔒</div>
-                            <h2 className="text-2xl font-black uppercase tracking-tighter">Módulo Bloqueado</h2>
-                            <p className="text-sm text-muted">
-                                Este módulo requiere el plan <span className="font-bold text-accent capitalize">{requiredPlan}</span> o superior.
-                                {!isActive && userPlan !== 'free' && ' Tu suscripción no está activa.'}
-                            </p>
+            const planLabels: Record<string, string> = { rookie: 'Rookie', supernova: 'Supernova', yonko: 'Yonko' };
+            planBanner = (
+                <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-none">
+                    <div className="pointer-events-auto mx-auto max-w-2xl mt-4 px-4">
+                        <div className="bg-gradient-to-r from-amber-500/95 to-orange-500/95 backdrop-blur-xl text-white rounded-2xl px-6 py-4 shadow-2xl shadow-amber-500/30 flex items-center gap-4">
+                            <div className="text-3xl shrink-0">🔒</div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="font-black text-sm uppercase tracking-tight">
+                                    Módulo requiere plan {planLabels[requiredPlan] || requiredPlan}
+                                </h3>
+                                <p className="text-white/80 text-xs mt-0.5">
+                                    {!isActive && userPlan !== 'free'
+                                        ? 'Tu suscripción no está activa. Renueva para acceder.'
+                                        : 'Mejora tu plan para desbloquear este módulo.'}
+                                </p>
+                            </div>
                             <button
                                 onClick={() => router.push('/planes')}
-                                className="px-6 py-3 bg-accent text-white font-black uppercase text-xs rounded-xl hover:bg-accent/90 transition-colors"
+                                className="shrink-0 px-5 py-2.5 bg-white text-amber-600 font-black uppercase text-[11px] rounded-xl hover:bg-white/90 transition-colors shadow-lg"
                             >
-                                Ver Planes
+                                Cambiar Plan
                             </button>
                         </div>
                     </div>
-                </AppProviders>
+                </div>
             );
         }
     }
 
     // Protected pages — load all providers dynamically
-    return <AppProviders>{children}</AppProviders>;
+    return (
+        <AppProviders>
+            {planBanner}
+            {children}
+        </AppProviders>
+    );
 }
 
 export default function ProtectedLayout({
