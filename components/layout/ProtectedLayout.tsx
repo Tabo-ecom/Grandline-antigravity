@@ -8,6 +8,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { MODULE_REQUIRED_PLAN } from '@/lib/hooks/usePlanAccess';
 import { MODULE_TUTORIALS } from '@/lib/config/tutorials';
 import { authFetch } from '@/lib/api/client';
+import { getUserProfile } from '@/lib/firebase/firestore';
 import { Lock, Play, Check, ArrowRight } from 'lucide-react';
 
 const AppProviders = dynamic(() => import('./AppProviders'), {
@@ -42,7 +43,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     // Verify Stripe session after checkout redirect (race condition fix)
     const sessionId = searchParams.get('session_id');
     React.useEffect(() => {
-        if (!sessionId || !user || verifiedRef.current || verifyingSession) return;
+        if (!sessionId || !user || verifiedRef.current) return;
 
         // If profile already has an active subscription, just clean URL
         if (profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing') {
@@ -54,18 +55,41 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         verifiedRef.current = true;
         setVerifyingSession(true);
 
-        authFetch('/api/stripe/verify-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId }),
-        })
-            .then(() => refreshProfile())
-            .catch((err) => console.error('Session verify error:', err))
-            .finally(() => {
-                setVerifyingSession(false);
-                router.replace(pathname);
-            });
-    }, [sessionId, user, profile, verifyingSession, refreshProfile, router, pathname]);
+        const syncSubscription = async () => {
+            // Step 1: Try instant sync via verify-session API
+            try {
+                await authFetch('/api/stripe/verify-session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId }),
+                });
+            } catch (err) {
+                console.error('Verify session API error:', err);
+            }
+
+            // Step 2: Poll Firestore until profile has active subscription (or timeout)
+            // This handles: verify-session success, webhook processing, or both
+            const MAX_ATTEMPTS = 12;
+            for (let i = 0; i < MAX_ATTEMPTS; i++) {
+                try {
+                    const freshProfile = await getUserProfile(user.uid);
+                    if (freshProfile?.subscriptionStatus === 'active' || freshProfile?.subscriptionStatus === 'trialing') {
+                        await refreshProfile(); // Sync React state
+                        return; // Success
+                    }
+                } catch {}
+                await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Fallback: final refresh attempt
+            await refreshProfile();
+        };
+
+        syncSubscription().finally(() => {
+            setVerifyingSession(false);
+            router.replace(pathname);
+        });
+    }, [sessionId, user]);
 
     React.useEffect(() => {
         if (isLandingDomain === null || loading) return;
