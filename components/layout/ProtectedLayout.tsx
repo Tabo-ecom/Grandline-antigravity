@@ -43,8 +43,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const sessionId = searchParams.get('session_id');
     React.useEffect(() => {
         if (!sessionId || !user || verifiedRef.current || verifyingSession) return;
-        // If profile already has an active subscription, no need to verify
-        if (profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing') return;
+
+        // If profile already has an active subscription, just clean URL
+        if (profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing') {
+            verifiedRef.current = true;
+            router.replace(pathname);
+            return;
+        }
 
         verifiedRef.current = true;
         setVerifyingSession(true);
@@ -58,7 +63,6 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
             .catch((err) => console.error('Session verify error:', err))
             .finally(() => {
                 setVerifyingSession(false);
-                // Clean URL
                 router.replace(pathname);
             });
     }, [sessionId, user, profile, verifyingSession, refreshProfile, router, pathname]);
@@ -118,8 +122,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const requiredPlan = MODULE_REQUIRED_PLAN[moduleId];
 
     if (requiredPlan) {
-        // Verifying Stripe session — show loading instead of plan gate
-        if (verifyingSession) {
+        // Verifying Stripe session or session_id present — show loading instead of plan gate
+        const pendingVerification = verifyingSession || (sessionId && !verifiedRef.current);
+        if (pendingVerification) {
             return (
                 <div className="flex h-screen items-center justify-center bg-background text-foreground transition-all duration-300">
                     <div className="flex flex-col items-center gap-4">
