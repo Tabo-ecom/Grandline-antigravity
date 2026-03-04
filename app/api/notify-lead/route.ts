@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { sendSlackBotMessage } from '@/lib/services/vega/slack-bot';
 
-async function sendSlackMessage(text: string) {
-    const webhookUrl = process.env.SLACK_LEADS_WEBHOOK_URL;
-    if (!webhookUrl) return;
+async function notifySlack(text: string) {
+    const token = process.env.SLACK_BOT_TOKEN;
+    const channel = process.env.SLACK_LEADS_CHANNEL_ID;
+    if (!token || !channel) return;
 
-    try {
-        await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
-        });
-    } catch (err) {
-        console.error('[Slack Lead Notify] Error:', err);
-    }
+    await sendSlackBotMessage(token, channel, text);
 }
 
 export async function POST(req: NextRequest) {
@@ -24,7 +18,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (type === 'registration') {
-            await sendSlackMessage(
+            await notifySlack(
                 `:new: *Nuevo registro en Grand Line*\n` +
                 `*Email:* ${email}\n` +
                 `*Nombre:* ${name || 'No proporcionado'}\n` +
