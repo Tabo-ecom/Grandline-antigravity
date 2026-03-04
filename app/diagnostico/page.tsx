@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import {
     FileSpreadsheet, ArrowRight, ArrowLeft, BarChart3,
     TrendingDown, DollarSign, Truck,
     AlertTriangle, CheckCircle2, XCircle, Loader2,
     Target, Globe, Clock, Megaphone, Trophy,
-    ShieldAlert, Zap,
+    ShieldAlert, Zap, X, Gift, Users,
     ShieldCheck, Timer,
 } from 'lucide-react';
 import { parseDropiFile, type ParseResult } from '@/lib/utils/parser';
@@ -85,8 +85,13 @@ function getDateRange(orders: DropiOrder[]): { from: string; to: string } {
     return { from: fmt(dates[0]), to: fmt(dates[dates.length - 1]) };
 }
 
-function generateInsights(kpis: KPIResults): { text: string; type: 'bad' | 'warning' | 'good'; icon: React.ReactNode }[] {
+function generateInsights(
+    kpis: KPIResults,
+    productData?: { name: string; kpis: KPIResults; orderCount: number }[],
+): { text: string; type: 'bad' | 'warning' | 'good'; icon: React.ReactNode }[] {
     const insights: { text: string; type: 'bad' | 'warning' | 'good'; icon: React.ReactNode }[] = [];
+
+    // ── Global KPI insights ──
 
     if (kpis.u_real < 0) {
         insights.push({
@@ -146,6 +151,86 @@ function generateInsights(kpis: KPIResults): { text: string; type: 'bad' | 'warn
             type: 'bad',
             icon: <XCircle className="w-5 h-5 shrink-0" />,
         });
+    }
+
+    // ── Product-level insights ──
+
+    if (productData && productData.length > 0) {
+        const totalOrders = kpis.n_ord;
+
+        // Product concentration risk
+        const sorted = [...productData].sort((a, b) => b.orderCount - a.orderCount);
+        const topProduct = sorted[0];
+        const topPct = totalOrders > 0 ? (topProduct.orderCount / totalOrders) * 100 : 0;
+        if (topPct > 50) {
+            insights.push({
+                text: `"${topProduct.name}" concentra el ${topPct.toFixed(0)}% de tus órdenes. Alta dependencia de un solo producto aumenta el riesgo.`,
+                type: 'warning',
+                icon: <Target className="w-5 h-5 shrink-0" />,
+            });
+        }
+
+        // Worst product alert
+        const losingProducts = productData.filter(p => p.kpis.u_real < 0 && p.orderCount >= 5);
+        if (losingProducts.length > 0) {
+            const worst = losingProducts.reduce((w, p) => p.kpis.u_real < w.kpis.u_real ? p : w, losingProducts[0]);
+            insights.push({
+                text: `"${worst.name}" acumula ${formatCurrency(Math.abs(worst.kpis.u_real))} en pérdidas con ${worst.orderCount} órdenes. Evalúa pausar su publicidad.`,
+                type: 'bad',
+                icon: <AlertTriangle className="w-5 h-5 shrink-0" />,
+            });
+        }
+
+        // Best product recognition
+        const best = [...productData].sort((a, b) => b.kpis.u_real - a.kpis.u_real)[0];
+        if (best && best.kpis.u_real > 0) {
+            insights.push({
+                text: `"${best.name}" es tu producto estrella: ${formatCurrency(best.kpis.u_real)} de utilidad con ${best.kpis.tasa_ent.toFixed(1)}% de entrega. Considera escalar su inversión.`,
+                type: 'good',
+                icon: <Trophy className="w-5 h-5 shrink-0" />,
+            });
+        }
+
+        // CPA vs average order value
+        if (kpis.g_ads > 0 && kpis.n_ord > 0) {
+            const avgOrderValue = kpis.fact_neto / kpis.n_ord;
+            if (kpis.cpa > avgOrderValue * 0.5) {
+                insights.push({
+                    text: `Tu CPA (${formatCurrency(kpis.cpa)}) representa más del 50% del ticket promedio (${formatCurrency(avgOrderValue)}). Optimiza segmentación o mejora el ticket.`,
+                    type: 'warning',
+                    icon: <DollarSign className="w-5 h-5 shrink-0" />,
+                });
+            }
+        }
+
+        // Net margin check
+        if (kpis.fact_neto > 0) {
+            const marginPct = (kpis.u_real / kpis.fact_neto) * 100;
+            if (marginPct > 0 && marginPct < 10) {
+                insights.push({
+                    text: `Tu margen neto es solo ${marginPct.toFixed(1)}%. Un margen saludable en e-commerce COD es superior al 15%.`,
+                    type: 'warning',
+                    icon: <DollarSign className="w-5 h-5 shrink-0" />,
+                });
+            } else if (marginPct >= 20) {
+                insights.push({
+                    text: `Tu margen neto de ${marginPct.toFixed(1)}% es excelente. Estás en condiciones de escalar con confianza.`,
+                    type: 'good',
+                    icon: <CheckCircle2 className="w-5 h-5 shrink-0" />,
+                });
+            }
+        }
+
+        // Products with high cancellation
+        const highCancProducts = productData.filter(p => p.kpis.tasa_can > 50 && p.orderCount >= 5);
+        if (highCancProducts.length > 0) {
+            const names = highCancProducts.slice(0, 2).map(p => `"${p.name}"`).join(' y ');
+            insights.push({
+                text: `${names} ${highCancProducts.length === 1 ? 'tiene' : 'tienen'} más del 50% de cancelación. Revisa la calidad del tráfico de esos productos.`,
+                type: 'bad',
+                icon: <XCircle className="w-5 h-5 shrink-0" />,
+            });
+        }
     }
 
     return insights;
@@ -210,6 +295,13 @@ export default function DiagnosticoPage() {
     const [showAllProfitable, setShowAllProfitable] = useState(false);
     const [showAllLosing, setShowAllLosing] = useState(false);
 
+    // Popup / slots state
+    const [showPopup, setShowPopup] = useState(false);
+    const [slotsInfo, setSlotsInfo] = useState({ slotsUsed: 0, totalSlots: 5 });
+    const [popupWhatsapp, setPopupWhatsapp] = useState('');
+    const [popupSubmitting, setPopupSubmitting] = useState(false);
+    const [popupDone, setPopupDone] = useState<'access' | 'waitlist' | null>(null);
+
     // ─── Derived Data ────────────────────────────────────────────────────────
 
     const products: ProductSummary[] = useMemo(() => {
@@ -247,8 +339,10 @@ export default function DiagnosticoPage() {
 
     const insights = useMemo(() => {
         if (!globalKPIs) return [];
-        return generateInsights(globalKPIs);
-    }, [globalKPIs]);
+        return generateInsights(globalKPIs, productKPIs);
+    }, [globalKPIs, productKPIs]);
+
+    const slotsRemaining = slotsInfo.totalSlots - slotsInfo.slotsUsed;
 
     // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -318,6 +412,40 @@ export default function DiagnosticoPage() {
 
     const allSurveyAnswered = SURVEY_QUESTIONS.every(q => surveyAnswers[q.id]);
 
+    // Check available slots when reaching results
+    useEffect(() => {
+        if (step === 'results') {
+            fetch('/api/diagnostico/slots')
+                .then(r => r.json())
+                .then(data => setSlotsInfo(data))
+                .catch(() => {});
+        }
+    }, [step]);
+
+    const handleClaimSlot = async () => {
+        setPopupSubmitting(true);
+        try {
+            const res = await fetch('/api/diagnostico/slots', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: contact.name,
+                    email: contact.email,
+                    whatsapp: popupWhatsapp,
+                }),
+            });
+            if (res.ok) {
+                const result = await res.json();
+                setPopupDone(result.type);
+                setSlotsInfo(prev => ({ ...prev, slotsUsed: prev.slotsUsed + 1 }));
+            }
+        } catch {
+            // Silent fail
+        } finally {
+            setPopupSubmitting(false);
+        }
+    };
+
     // ─── Render ──────────────────────────────────────────────────────────────
 
     return (
@@ -325,22 +453,16 @@ export default function DiagnosticoPage() {
             {/* Nav */}
             <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-[#0A0A0F]/80 border-b border-white/5">
                 <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                         <img src="/logos/grandline-isotipo.png" alt="Grand Line" className="w-7 h-7" />
                         <span className="font-black text-xl tracking-tighter font-['Space_Grotesk']">
                             GRAND <span className="text-[#d75c33]">LINE</span>
                         </span>
-                    </Link>
-                    <Link
-                        href="/login"
-                        className="px-5 py-2 bg-[#d75c33] text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-[#c04e2b] transition-colors"
-                    >
-                        Iniciar Sesión
-                    </Link>
+                    </div>
                 </div>
             </nav>
 
-            <div className="pt-28 pb-20 px-4 md:px-6 max-w-4xl mx-auto">
+            <div className={`pt-28 pb-20 px-4 md:px-6 mx-auto ${step === 'results' ? 'max-w-5xl' : 'max-w-4xl'}`}>
                 <StepIndicator current={step} />
 
                 {/* ═══ STEP 1: UPLOAD ═══ */}
@@ -627,18 +749,24 @@ export default function DiagnosticoPage() {
                                 <h3 className="text-xs font-bold text-white/50 uppercase tracking-widest flex items-center gap-2">
                                     <ShieldAlert className="w-4 h-4" /> Hallazgos Clave
                                 </h3>
-                                {insights.map((insight, i) => (
-                                    <div
-                                        key={i}
-                                        className={`p-4 rounded-2xl border flex items-start gap-3 ${insight.type === 'bad' ? 'bg-red-500/5 border-red-500/15 text-red-400'
-                                            : insight.type === 'warning' ? 'bg-orange-500/5 border-orange-500/15 text-orange-400'
-                                                : 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
-                                            }`}
-                                    >
-                                        {insight.icon}
-                                        <p className="text-sm leading-relaxed">{insight.text}</p>
-                                    </div>
-                                ))}
+                                {insights.map((insight, i) => {
+                                    const badge = { bad: { label: 'CRITICO', bg: 'bg-red-500/20' }, warning: { label: 'ATENCION', bg: 'bg-orange-500/20' }, good: { label: 'BIEN', bg: 'bg-emerald-500/20' } }[insight.type];
+                                    return (
+                                        <div
+                                            key={i}
+                                            className={`p-4 rounded-2xl border flex items-start gap-3 ${insight.type === 'bad' ? 'bg-red-500/5 border-red-500/15 text-red-400'
+                                                : insight.type === 'warning' ? 'bg-orange-500/5 border-orange-500/15 text-orange-400'
+                                                    : 'bg-emerald-500/5 border-emerald-500/15 text-emerald-400'
+                                                }`}
+                                        >
+                                            <span className={`text-[9px] font-black tracking-widest uppercase px-2 py-1 rounded-md shrink-0 ${badge.bg}`}>
+                                                {badge.label}
+                                            </span>
+                                            {insight.icon}
+                                            <p className="text-sm leading-relaxed">{insight.text}</p>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -699,111 +827,91 @@ export default function DiagnosticoPage() {
                             })}
                         </div>
 
-                        {/* ── Product Tables: Profitable & Losing ── */}
+                        {/* ── Product Tables: Stacked Full-Width ── */}
                         {(() => {
+                            const totalOrders = globalKPIs.n_ord;
+                            const totalAds = globalKPIs.g_ads;
                             const profitable = productKPIs.filter(p => p.kpis.u_real >= 0).sort((a, b) => b.kpis.u_real - a.kpis.u_real);
                             const losing = productKPIs.filter(p => p.kpis.u_real < 0).sort((a, b) => a.kpis.u_real - b.kpis.u_real);
-                            return (
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                    {/* Profitable Products */}
-                                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
-                                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5">
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                                    <Trophy className="w-3.5 h-3.5 text-emerald-400" />
-                                                </div>
-                                                <h3 className="text-[11px] font-black uppercase tracking-widest text-white/80">Productos Rentables</h3>
-                                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">{profitable.length}</span>
-                                            </div>
-                                            {profitable.length > 5 && (
-                                                <button onClick={() => setShowAllProfitable(!showAllProfitable)} className="text-[10px] font-bold text-white/40 hover:text-white/70 transition-colors">
-                                                    {showAllProfitable ? 'Ver menos' : `Ver todos (${profitable.length})`}
-                                                </button>
-                                            )}
-                                        </div>
-                                        <div className="overflow-x-auto flex-1">
-                                            <table className="w-full text-[11px]">
-                                                <thead>
-                                                    <tr className="text-white/30 font-black uppercase tracking-wider border-b border-white/5">
-                                                        <th className="px-4 py-2.5 text-left">Producto</th>
-                                                        <th className="px-4 py-2.5 text-right">Órdenes</th>
-                                                        <th className="px-4 py-2.5 text-right">Utilidad</th>
-                                                        <th className="px-4 py-2.5 text-right">$/Orden</th>
-                                                        <th className="px-4 py-2.5 text-center">% Entrega</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-white/5">
-                                                    {(showAllProfitable ? profitable : profitable.slice(0, 5)).map((p, i) => (
-                                                        <tr key={p.name} className="hover:bg-white/[0.02] transition-colors">
-                                                            <td className="px-4 py-2.5 font-medium text-white/80">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] font-black text-emerald-400 w-4">{i + 1}</span>
-                                                                    <span className="truncate max-w-[140px]">{p.name}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-white/60">{p.orderCount}</td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-emerald-400 font-bold">{formatCurrency(p.kpis.u_real)}</td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-blue-400">{formatCurrency(p.kpis.utilidad_por_entrega)}</td>
-                                                            <td className="px-4 py-2.5 text-center font-mono text-white/60">{p.kpis.tasa_ent.toFixed(1)}%</td>
-                                                        </tr>
-                                                    ))}
-                                                    {profitable.length === 0 && (
-                                                        <tr><td colSpan={5} className="px-4 py-6 text-center text-white/20 italic text-[10px]">Sin productos rentables en este periodo</td></tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
 
-                                    {/* Losing Products */}
-                                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
+                            const renderTable = (
+                                items: typeof productKPIs,
+                                type: 'profit' | 'loss',
+                                showAll: boolean,
+                                toggleShowAll: () => void,
+                            ) => {
+                                const isProfit = type === 'profit';
+                                const displayed = showAll ? items : items.slice(0, 5);
+                                return (
+                                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
                                         <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/5">
                                             <div className="flex items-center gap-2.5">
-                                                <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
-                                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                                <div className={`w-7 h-7 rounded-lg ${isProfit ? 'bg-emerald-500/10' : 'bg-red-500/10'} flex items-center justify-center`}>
+                                                    {isProfit ? <Trophy className="w-3.5 h-3.5 text-emerald-400" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400" />}
                                                 </div>
-                                                <h3 className="text-[11px] font-black uppercase tracking-widest text-white/80">Productos en Pérdida</h3>
-                                                <span className="text-[10px] font-mono text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">{losing.length}</span>
+                                                <h3 className="text-[11px] font-black uppercase tracking-widest text-white/80">
+                                                    {isProfit ? 'Productos Rentables' : 'Productos en Perdida'}
+                                                </h3>
+                                                <span className={`text-[10px] font-mono ${isProfit ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'} px-2 py-0.5 rounded-full`}>
+                                                    {items.length}
+                                                </span>
                                             </div>
-                                            {losing.length > 5 && (
-                                                <button onClick={() => setShowAllLosing(!showAllLosing)} className="text-[10px] font-bold text-white/40 hover:text-white/70 transition-colors">
-                                                    {showAllLosing ? 'Ver menos' : `Ver todos (${losing.length})`}
+                                            {items.length > 5 && (
+                                                <button onClick={toggleShowAll} className="text-[10px] font-bold text-white/40 hover:text-white/70 transition-colors">
+                                                    {showAll ? 'Ver menos' : `Ver todos (${items.length})`}
                                                 </button>
                                             )}
                                         </div>
-                                        <div className="overflow-x-auto flex-1">
+                                        <div className="overflow-x-auto">
                                             <table className="w-full text-[11px]">
                                                 <thead>
                                                     <tr className="text-white/30 font-black uppercase tracking-wider border-b border-white/5">
                                                         <th className="px-4 py-2.5 text-left">Producto</th>
-                                                        <th className="px-4 py-2.5 text-right">Órdenes</th>
-                                                        <th className="px-4 py-2.5 text-right">Pérdida</th>
-                                                        <th className="px-4 py-2.5 text-right">$/Orden</th>
-                                                        <th className="px-4 py-2.5 text-center">% Entrega</th>
+                                                        <th className="px-3 py-2.5 text-right whitespace-nowrap">Ordenes</th>
+                                                        <th className="px-3 py-2.5 text-right whitespace-nowrap">% Part.</th>
+                                                        <th className="px-3 py-2.5 text-right whitespace-nowrap">Gasto Ads</th>
+                                                        <th className="px-3 py-2.5 text-right whitespace-nowrap">% Ads</th>
+                                                        <th className="px-3 py-2.5 text-center whitespace-nowrap">% Canc.</th>
+                                                        <th className="px-3 py-2.5 text-center whitespace-nowrap">% Entrega</th>
+                                                        <th className="px-3 py-2.5 text-right whitespace-nowrap">{isProfit ? 'Utilidad' : 'Perdida'}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-white/5">
-                                                    {(showAllLosing ? losing : losing.slice(0, 5)).map((p, i) => (
-                                                        <tr key={p.name} className="hover:bg-white/[0.02] transition-colors">
-                                                            <td className="px-4 py-2.5 font-medium text-white/80">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] font-black text-red-400 w-4">{i + 1}</span>
-                                                                    <span className="truncate max-w-[140px]">{p.name}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-white/60">{p.orderCount}</td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-red-400 font-bold">{formatCurrency(p.kpis.u_real)}</td>
-                                                            <td className="px-4 py-2.5 text-right font-mono text-red-400">{formatCurrency(p.kpis.utilidad_por_entrega)}</td>
-                                                            <td className="px-4 py-2.5 text-center font-mono text-white/60">{p.kpis.tasa_ent.toFixed(1)}%</td>
-                                                        </tr>
-                                                    ))}
-                                                    {losing.length === 0 && (
-                                                        <tr><td colSpan={5} className="px-4 py-6 text-center text-white/20 italic text-[10px]">Todos tus productos son rentables</td></tr>
+                                                    {displayed.map((p, i) => {
+                                                        const pctPart = totalOrders > 0 ? (p.orderCount / totalOrders * 100) : 0;
+                                                        const pctAds = totalAds > 0 ? (p.kpis.g_ads / totalAds * 100) : 0;
+                                                        return (
+                                                            <tr key={p.name} className="hover:bg-white/[0.02] transition-colors">
+                                                                <td className="px-4 py-2.5 font-medium text-white/80">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className={`text-[10px] font-black ${isProfit ? 'text-emerald-400' : 'text-red-400'} w-4`}>{i + 1}</span>
+                                                                        <span className="truncate max-w-[160px]">{p.name}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-3 py-2.5 text-right font-mono text-white/60">{p.orderCount}</td>
+                                                                <td className="px-3 py-2.5 text-right font-mono text-blue-400">{pctPart.toFixed(1)}%</td>
+                                                                <td className="px-3 py-2.5 text-right font-mono text-white/50">{p.kpis.g_ads > 0 ? formatCurrency(p.kpis.g_ads) : '\u2014'}</td>
+                                                                <td className="px-3 py-2.5 text-right font-mono text-purple-400">{totalAds > 0 && p.kpis.g_ads > 0 ? `${pctAds.toFixed(1)}%` : '\u2014'}</td>
+                                                                <td className={`px-3 py-2.5 text-center font-mono ${p.kpis.tasa_can > 40 ? 'text-orange-400' : 'text-white/50'}`}>{p.kpis.tasa_can.toFixed(1)}%</td>
+                                                                <td className={`px-3 py-2.5 text-center font-mono ${p.kpis.tasa_ent < 50 ? 'text-red-400' : p.kpis.tasa_ent >= 65 ? 'text-emerald-400' : 'text-white/60'}`}>{p.kpis.tasa_ent.toFixed(1)}%</td>
+                                                                <td className={`px-3 py-2.5 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrency(p.kpis.u_real)}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                    {items.length === 0 && (
+                                                        <tr><td colSpan={8} className="px-4 py-6 text-center text-white/20 italic text-[10px]">{isProfit ? 'Sin productos rentables en este periodo' : 'Todos tus productos son rentables'}</td></tr>
                                                     )}
                                                 </tbody>
                                             </table>
                                         </div>
                                     </div>
+                                );
+                            };
+
+                            return (
+                                <div className="space-y-6">
+                                    {renderTable(profitable, 'profit', showAllProfitable, () => setShowAllProfitable(!showAllProfitable))}
+                                    {renderTable(losing, 'loss', showAllLosing, () => setShowAllLosing(!showAllLosing))}
                                 </div>
                             );
                         })()}
@@ -814,14 +922,14 @@ export default function DiagnosticoPage() {
                                 ¿Quieres monitorear esto<br /><span className="text-[#d75c33]">en tiempo real?</span>
                             </h3>
                             <p className="text-white/50 mt-3 text-sm max-w-lg mx-auto">
-                                Con Grand Line puedes importar tus datos automáticamente, ver tu rentabilidad día a día, y optimizar tu publicidad con inteligencia artificial.
+                                Con Grand Line puedes importar tus datos automaticamente, ver tu rentabilidad dia a dia, y optimizar tu publicidad con inteligencia artificial.
                             </p>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 mb-8">
                                 {[
-                                    { isotipo: '/logos/wheel-isotipo.png', title: 'Wheel Dashboard', desc: 'KPIs actualizados cada día con tu data real' },
+                                    { isotipo: '/logos/wheel-isotipo.png', title: 'Wheel Dashboard', desc: 'KPIs actualizados cada dia con tu data real' },
                                     { isotipo: '/logos/vega-isotipo.png', title: 'Vega IA', desc: 'Asistente de IA que analiza tu negocio y sugiere mejoras' },
-                                    { isotipo: '/logos/sunny-isotipo.png', title: 'Sunny Launcher', desc: 'Lanza campañas de Meta Ads directo desde Grand Line' },
+                                    { isotipo: '/logos/sunny-isotipo.png', title: 'Sunny Launcher', desc: 'Lanza campanas de Meta Ads directo desde Grand Line' },
                                 ].map(f => (
                                     <div key={f.title} className="p-4 bg-white/[0.03] border border-white/5 rounded-2xl text-left">
                                         <img src={f.isotipo} alt={f.title} className="w-8 h-8 mb-2" />
@@ -831,14 +939,106 @@ export default function DiagnosticoPage() {
                                 ))}
                             </div>
 
-                            <Link
-                                href="/login"
-                                className="inline-flex items-center gap-3 px-10 py-4 bg-white text-black font-black uppercase text-sm tracking-widest rounded-xl hover:bg-gray-100 transition-colors shadow-lg"
+                            {/* Slot availability indicator */}
+                            <div className="mb-6">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-full">
+                                    <div className={`w-2 h-2 rounded-full ${slotsRemaining > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-orange-400'}`} />
+                                    <span className="text-sm font-bold text-white/70">
+                                        {slotsRemaining > 0
+                                            ? `Solo quedan ${slotsRemaining} de 5 lugares con 1 MES GRATIS`
+                                            : 'Unete a la lista de espera \u2014 15 dias gratis'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setPopupWhatsapp(contact.whatsapp || '');
+                                    setPopupDone(null);
+                                    setShowPopup(true);
+                                }}
+                                className="inline-flex items-center gap-3 px-10 py-4 bg-[#d75c33] text-white font-black uppercase text-sm tracking-widest rounded-xl hover:bg-[#c04e2b] transition-all hover:scale-105"
                             >
-                                <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
-                                Regístrate con Google — Es Gratis
-                            </Link>
+                                {slotsRemaining > 0 ? <Gift className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                                {slotsRemaining > 0 ? 'Quiero mi acceso GRATIS' : 'Unirme a la lista de espera'}
+                            </button>
                         </div>
+
+                        {/* ── Popup Modal ── */}
+                        {showPopup && (
+                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => !popupSubmitting && setShowPopup(false)}>
+                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                                <div className="relative bg-[#0f0f17] border border-white/10 rounded-3xl p-8 w-full max-w-md animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => setShowPopup(false)} className="absolute top-4 right-4 text-white/30 hover:text-white/70 transition-colors">
+                                        <X className="w-5 h-5" />
+                                    </button>
+
+                                    {popupDone ? (
+                                        <div className="text-center py-8">
+                                            <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                                                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                                            </div>
+                                            <h4 className="text-xl font-black text-white mb-2">
+                                                {popupDone === 'access' ? '\u00a1Acceso reservado!' : '\u00a1Registrado!'}
+                                            </h4>
+                                            <p className="text-white/50 text-sm">
+                                                {popupDone === 'access'
+                                                    ? 'Te contactaremos por WhatsApp para activar tu cuenta con 1 mes gratis.'
+                                                    : 'Te enviaremos un email cuando tu acceso este listo. Tendras 15 dias gratis.'}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="text-center mb-6">
+                                                <div className="w-14 h-14 rounded-2xl bg-[#d75c33]/10 flex items-center justify-center mx-auto mb-3">
+                                                    {slotsRemaining > 0 ? <Gift className="w-7 h-7 text-[#d75c33]" /> : <Users className="w-7 h-7 text-[#d75c33]" />}
+                                                </div>
+                                                <h4 className="text-xl font-black text-white mb-1">
+                                                    {slotsRemaining > 0 ? '1 MES GRATIS de Grand Line' : 'Lista de Espera'}
+                                                </h4>
+                                                <p className="text-white/50 text-sm">
+                                                    {slotsRemaining > 0
+                                                        ? `Solo quedan ${slotsRemaining} lugares. Ingresa tu WhatsApp para contactarte.`
+                                                        : 'Los 5 lugares fueron reclamados. Registrate y te daremos 15 dias gratis.'}
+                                                </p>
+                                            </div>
+
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Nombre</label>
+                                                    <input type="text" value={contact.name} readOnly className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Email</label>
+                                                    <input type="email" value={contact.email} readOnly className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60" />
+                                                </div>
+                                                {slotsRemaining > 0 && (
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">WhatsApp *</label>
+                                                        <input
+                                                            type="tel"
+                                                            value={popupWhatsapp}
+                                                            onChange={(e) => setPopupWhatsapp(e.target.value)}
+                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
+                                                            placeholder="+57 300 123 4567"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <button
+                                                onClick={handleClaimSlot}
+                                                disabled={popupSubmitting || (slotsRemaining > 0 && !popupWhatsapp)}
+                                                className="w-full mt-6 px-6 py-4 bg-[#d75c33] text-white font-black uppercase text-xs tracking-widest rounded-xl hover:bg-[#c04e2b] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                            >
+                                                {popupSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                                                {slotsRemaining > 0 ? 'Reclamar mi acceso' : 'Unirme a la lista'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
