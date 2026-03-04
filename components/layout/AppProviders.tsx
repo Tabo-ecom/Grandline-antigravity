@@ -37,6 +37,9 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
 
+    const isActive = profile?.subscriptionStatus === 'active' || profile?.subscriptionStatus === 'trialing';
+    const hideSidebar = pathname === '/planes' && !isActive;
+
     React.useEffect(() => {
         if (!loading && user && profile) {
             if (ADMIN_ONLY_ROUTES.includes(pathname) && profile.role !== 'admin') {
@@ -54,9 +57,9 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-background text-foreground flex transition-all duration-300">
-            <Sidebar />
+            {!hideSidebar && <Sidebar />}
             <main
-                className={`flex-1 ${collapsed ? 'ml-16' : 'ml-64'} p-4 md:p-6 relative transition-all duration-300 ease-in-out min-w-0`}
+                className={`flex-1 ${hideSidebar ? 'ml-0' : collapsed ? 'ml-16' : 'ml-64'} p-4 md:p-6 relative transition-all duration-300 ease-in-out min-w-0`}
             >
                 <div className="fixed top-[-10%] right-[-5%] w-[50%] h-[50%] bg-blue-500/5 rounded-full blur-[120px] pointer-events-none"></div>
                 <div className="fixed bottom-[-10%] left-[20%] w-[30%] h-[30%] bg-[#d75c33]/5 rounded-full blur-[120px] pointer-events-none"></div>
