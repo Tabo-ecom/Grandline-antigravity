@@ -298,7 +298,11 @@ export default function DiagnosticoPage() {
     // Popup / slots state
     const [showPopup, setShowPopup] = useState(false);
     const [slotsInfo, setSlotsInfo] = useState({ slotsUsed: 0, totalSlots: 5 });
+    const [popupName, setPopupName] = useState('');
+    const [popupEmail, setPopupEmail] = useState('');
     const [popupWhatsapp, setPopupWhatsapp] = useState('');
+    const [popupEditable, setPopupEditable] = useState(false);
+    const [popupSource, setPopupSource] = useState<'diagnostico' | 'beta'>('diagnostico');
     const [popupSubmitting, setPopupSubmitting] = useState(false);
     const [popupDone, setPopupDone] = useState<'access' | 'waitlist' | null>(null);
 
@@ -422,6 +426,27 @@ export default function DiagnosticoPage() {
         }
     }, [step]);
 
+    const handleOpenPopup = async (editable: boolean, source: 'diagnostico' | 'beta') => {
+        setPopupEditable(editable);
+        setPopupSource(source);
+        setPopupDone(null);
+        if (editable) {
+            setPopupName('');
+            setPopupEmail('');
+            setPopupWhatsapp('');
+        } else {
+            setPopupName(contact.name);
+            setPopupEmail(contact.email);
+            setPopupWhatsapp(contact.whatsapp || '');
+        }
+        try {
+            const res = await fetch('/api/diagnostico/slots');
+            const data = await res.json();
+            setSlotsInfo(data);
+        } catch {}
+        setShowPopup(true);
+    };
+
     const handleClaimSlot = async () => {
         setPopupSubmitting(true);
         try {
@@ -429,9 +454,10 @@ export default function DiagnosticoPage() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    name: contact.name,
-                    email: contact.email,
+                    name: popupName,
+                    email: popupEmail,
                     whatsapp: popupWhatsapp,
+                    source: popupSource,
                 }),
             });
             if (res.ok) {
@@ -544,6 +570,17 @@ export default function DiagnosticoPage() {
                                 <AlertTriangle className="w-4 h-4 shrink-0" /> {parseError}
                             </div>
                         )}
+
+                        {/* Beta registration */}
+                        <div className="mt-10 text-center">
+                            <p className="text-white/30 text-sm mb-2">No tienes un reporte a la mano?</p>
+                            <button
+                                onClick={() => handleOpenPopup(true, 'beta')}
+                                className="text-[#d75c33] hover:text-[#e06a43] text-sm font-bold underline underline-offset-4 transition-colors"
+                            >
+                                Registrate a la lista BETA
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -952,11 +989,7 @@ export default function DiagnosticoPage() {
                             </div>
 
                             <button
-                                onClick={() => {
-                                    setPopupWhatsapp(contact.whatsapp || '');
-                                    setPopupDone(null);
-                                    setShowPopup(true);
-                                }}
+                                onClick={() => handleOpenPopup(false, 'diagnostico')}
                                 className="inline-flex items-center gap-3 px-10 py-4 bg-[#d75c33] text-white font-black uppercase text-sm tracking-widest rounded-xl hover:bg-[#c04e2b] transition-all hover:scale-105"
                             >
                                 {slotsRemaining > 0 ? <Gift className="w-5 h-5" /> : <Users className="w-5 h-5" />}
@@ -964,84 +997,97 @@ export default function DiagnosticoPage() {
                             </button>
                         </div>
 
-                        {/* ── Popup Modal ── */}
-                        {showPopup && (
-                            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => !popupSubmitting && setShowPopup(false)}>
-                                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-                                <div className="relative bg-[#0f0f17] border border-white/10 rounded-3xl p-8 w-full max-w-md animate-fade-in-up" onClick={e => e.stopPropagation()}>
-                                    <button onClick={() => setShowPopup(false)} className="absolute top-4 right-4 text-white/30 hover:text-white/70 transition-colors">
-                                        <X className="w-5 h-5" />
-                                    </button>
-
-                                    {popupDone ? (
-                                        <div className="text-center py-8">
-                                            <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
-                                                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-                                            </div>
-                                            <h4 className="text-xl font-black text-white mb-2">
-                                                {popupDone === 'access' ? '\u00a1Acceso reservado!' : '\u00a1Registrado!'}
-                                            </h4>
-                                            <p className="text-white/50 text-sm">
-                                                {popupDone === 'access'
-                                                    ? 'Te contactaremos por WhatsApp para activar tu cuenta con 1 mes gratis.'
-                                                    : 'Te enviaremos un email cuando tu acceso este listo. Tendras 15 dias gratis.'}
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="text-center mb-6">
-                                                <div className="w-14 h-14 rounded-2xl bg-[#d75c33]/10 flex items-center justify-center mx-auto mb-3">
-                                                    {slotsRemaining > 0 ? <Gift className="w-7 h-7 text-[#d75c33]" /> : <Users className="w-7 h-7 text-[#d75c33]" />}
-                                                </div>
-                                                <h4 className="text-xl font-black text-white mb-1">
-                                                    {slotsRemaining > 0 ? '1 MES GRATIS de Grand Line' : 'Lista de Espera'}
-                                                </h4>
-                                                <p className="text-white/50 text-sm">
-                                                    {slotsRemaining > 0
-                                                        ? `Solo quedan ${slotsRemaining} lugares. Ingresa tu WhatsApp para contactarte.`
-                                                        : 'Los 5 lugares fueron reclamados. Registrate y te daremos 15 dias gratis.'}
-                                                </p>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Nombre</label>
-                                                    <input type="text" value={contact.name} readOnly className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60" />
-                                                </div>
-                                                <div>
-                                                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Email</label>
-                                                    <input type="email" value={contact.email} readOnly className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white/60" />
-                                                </div>
-                                                {slotsRemaining > 0 && (
-                                                    <div>
-                                                        <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">WhatsApp *</label>
-                                                        <input
-                                                            type="tel"
-                                                            value={popupWhatsapp}
-                                                            onChange={(e) => setPopupWhatsapp(e.target.value)}
-                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
-                                                            placeholder="+57 300 123 4567"
-                                                        />
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <button
-                                                onClick={handleClaimSlot}
-                                                disabled={popupSubmitting || (slotsRemaining > 0 && !popupWhatsapp)}
-                                                className="w-full mt-6 px-6 py-4 bg-[#d75c33] text-white font-black uppercase text-xs tracking-widest rounded-xl hover:bg-[#c04e2b] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                            >
-                                                {popupSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                                                {slotsRemaining > 0 ? 'Reclamar mi acceso' : 'Unirme a la lista'}
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
             </div>
+
+            {/* ── Popup Modal (available from any step) ── */}
+            {showPopup && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={() => !popupSubmitting && setShowPopup(false)}>
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                    <div className="relative bg-[#0f0f17] border border-white/10 rounded-3xl p-8 w-full max-w-md animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => setShowPopup(false)} className="absolute top-4 right-4 text-white/30 hover:text-white/70 transition-colors">
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        {popupDone ? (
+                            <div className="text-center py-8">
+                                <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                                    <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                                </div>
+                                <h4 className="text-xl font-black text-white mb-2">
+                                    {popupDone === 'access' ? '\u00a1Acceso reservado!' : '\u00a1Registrado!'}
+                                </h4>
+                                <p className="text-white/50 text-sm">
+                                    {popupDone === 'access'
+                                        ? 'Te contactaremos por WhatsApp para activar tu cuenta con 1 mes gratis.'
+                                        : 'Te enviaremos un email cuando tu acceso este listo. Tendras 15 dias gratis.'}
+                                </p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="text-center mb-6">
+                                    <div className="w-14 h-14 rounded-2xl bg-[#d75c33]/10 flex items-center justify-center mx-auto mb-3">
+                                        {slotsRemaining > 0 ? <Gift className="w-7 h-7 text-[#d75c33]" /> : <Users className="w-7 h-7 text-[#d75c33]" />}
+                                    </div>
+                                    <h4 className="text-xl font-black text-white mb-1">
+                                        {slotsRemaining > 0 ? '1 MES GRATIS de Grand Line' : 'Lista de Espera'}
+                                    </h4>
+                                    <p className="text-white/50 text-sm">
+                                        {slotsRemaining > 0
+                                            ? `Solo quedan ${slotsRemaining} lugares. Ingresa tu WhatsApp para contactarte.`
+                                            : 'Los 5 lugares fueron reclamados. Registrate y te daremos 15 dias gratis.'}
+                                    </p>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Nombre *</label>
+                                        <input
+                                            type="text"
+                                            value={popupName}
+                                            onChange={(e) => setPopupName(e.target.value)}
+                                            readOnly={!popupEditable}
+                                            className={`w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm ${popupEditable ? 'focus:border-[#d75c33] outline-none transition-colors' : 'text-white/60'}`}
+                                            placeholder="Tu nombre"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">Email *</label>
+                                        <input
+                                            type="email"
+                                            value={popupEmail}
+                                            onChange={(e) => setPopupEmail(e.target.value)}
+                                            readOnly={!popupEditable}
+                                            className={`w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm ${popupEditable ? 'focus:border-[#d75c33] outline-none transition-colors' : 'text-white/60'}`}
+                                            placeholder="tu@email.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-1.5 block">WhatsApp *</label>
+                                        <input
+                                            type="tel"
+                                            value={popupWhatsapp}
+                                            onChange={(e) => setPopupWhatsapp(e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
+                                            placeholder="+57 300 123 4567"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleClaimSlot}
+                                    disabled={popupSubmitting || !popupName || !popupEmail || !popupWhatsapp}
+                                    className="w-full mt-6 px-6 py-4 bg-[#d75c33] text-white font-black uppercase text-xs tracking-widest rounded-xl hover:bg-[#c04e2b] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {popupSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                                    {slotsRemaining > 0 ? 'Reclamar mi acceso' : 'Unirme a la lista'}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

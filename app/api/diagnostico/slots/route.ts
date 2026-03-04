@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
         }
 
-        const { name, email, whatsapp } = await req.json();
+        const { name, email, whatsapp, source } = await req.json();
 
         if (!email) {
             return NextResponse.json({ error: 'Email requerido' }, { status: 400 });
@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
             whatsapp: whatsapp || '',
             type: isSlotAvailable ? 'access' : 'waitlist',
             slotNumber: isSlotAvailable ? slotsUsed + 1 : null,
+            source: source || 'diagnostico',
             createdAt: new Date().toISOString(),
         });
 
@@ -55,12 +56,14 @@ export async function POST(req: NextRequest) {
                     `*Email:* ${email}`,
                     `*WhatsApp:* ${whatsapp || 'N/A'}`,
                     `*Tipo:* Acceso 1 mes gratis`,
+                    `*Origen:* ${source === 'beta' ? 'Lista BETA (sin reporte)' : 'Diagnostico'}`,
                 ]
                 : [
                     `:clipboard: *Nueva inscripcion lista de espera*`,
                     `*Nombre:* ${name || 'N/A'}`,
                     `*Email:* ${email}`,
                     `*Tipo:* Lista de espera (15 dias gratis)`,
+                    `*Origen:* ${source === 'beta' ? 'Lista BETA (sin reporte)' : 'Diagnostico'}`,
                 ];
             lines.push(`*Fecha:* ${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`);
             sendSlackBotMessage(token, channel, lines.join('\n')).catch(() => {});
