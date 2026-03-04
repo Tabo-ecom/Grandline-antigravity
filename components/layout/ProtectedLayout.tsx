@@ -87,7 +87,28 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     const moduleId = pathname.replace('/', '').split('/')[0]; // e.g. "sunny", "berry", "vega-ai"
     const requiredPlan = MODULE_REQUIRED_PLAN[moduleId];
 
-    if (requiredPlan && profile) {
+    if (requiredPlan) {
+        // No profile yet (new registration) → redirect to plan selection
+        if (!profile) {
+            return (
+                <div className="flex h-screen items-center justify-center bg-background text-foreground">
+                    <div className="max-w-md text-center p-8 space-y-4">
+                        <div className="text-5xl">🚀</div>
+                        <h2 className="text-2xl font-black uppercase tracking-tighter">Elige tu Plan</h2>
+                        <p className="text-sm text-muted">
+                            Para acceder a Grand Line, primero selecciona el plan que mejor se adapte a tu operación.
+                        </p>
+                        <button
+                            onClick={() => router.push('/planes')}
+                            className="px-6 py-3 bg-accent text-white font-black uppercase text-xs rounded-xl hover:bg-accent/90 transition-colors"
+                        >
+                            Ver Planes
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         const PLAN_LEVEL: Record<string, number> = { free: 0, rookie: 1, supernova: 2, yonko: 3 };
         const userPlan = profile.plan || 'free';
         const isActive = profile.subscriptionStatus === 'active' || profile.subscriptionStatus === 'trialing';

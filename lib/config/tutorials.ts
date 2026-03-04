@@ -16,7 +16,7 @@ export const TUTORIAL_INTRO: TutorialConfig = {
     title: 'Bienvenido a Grand Line',
     description: 'Tu centro de comando para e-commerce COD',
     videos: [
-        { title: 'Introduccion a Grand Line', url: 'https://youtu.be/K_6ROx7IZYw' },
+        { title: 'Introduccion a Grand Line', url: 'https://youtu.be/6qwghzpSBIE' },
     ],
     steps: [
         'Descarga el reporte de ordenes desde tu cuenta de Dropi',

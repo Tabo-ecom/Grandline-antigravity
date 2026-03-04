@@ -62,7 +62,7 @@ export default function LoginPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'registration', email, name: result.user.displayName || email }),
             }).catch(() => {});
-            router.push('/dashboard');
+            router.push('/planes');
         } catch (err: any) {
             console.error('Register error:', err);
             if (err.code === 'auth/email-already-in-use') {
@@ -91,8 +91,10 @@ export default function LoginPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ type: 'registration', email: result.user.email, name: result.user.displayName || result.user.email }),
                 }).catch(() => {});
+                router.push('/planes');
+            } else {
+                router.push('/dashboard');
             }
-            router.push('/dashboard');
         } catch (err: any) {
             console.error('Google login error:', err);
             setError('Error al iniciar sesión con Google.');

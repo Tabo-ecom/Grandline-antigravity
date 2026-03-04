@@ -56,7 +56,8 @@ export default function OnboardingFlow() {
         setShowIntro(false);
     };
 
-    if (loading) return null;
+    // Don't show onboarding on the plans page — let users pick a plan first
+    if (loading || pathname === '/planes') return null;
 
     return (
         <>
