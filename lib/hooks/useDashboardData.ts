@@ -13,9 +13,10 @@ import { useGlobalFilters } from '@/lib/context/FilterContext';
 import { useAuth } from '@/lib/context/AuthContext';
 import { resolveProductName } from '@/lib/services/productResolution';
 
-// Extend DropiOrder to include country, which is lost after flattening the firestore response
+// Extend DropiOrder to include country and original product ID (before group resolution)
 export interface ExtendedDropiOrder extends DropiOrder {
     country: string;
+    ORIGINAL_PRODUCTO_ID?: string;
 }
 
 // ─── Session-level data cache (survives navigation, cleared on reload) ───
@@ -170,6 +171,8 @@ export function useDashboardData(): DashboardDataHook {
                                 if (order["COSTO DEVOLUCION FLETE"]) normalized["COSTO DEVOLUCION FLETE"] = toCOP(order["COSTO DEVOLUCION FLETE"], currency, rates);
                                 if (order.GANANCIA) normalized.GANANCIA = toCOP(order.GANANCIA, currency, rates);
                                 // Resolve product group (matching Log Pose)
+                                // Keep original ID for ad mapping (before group resolution overwrites it)
+                                normalized.ORIGINAL_PRODUCTO_ID = order.PRODUCTO_ID?.toString() || '';
                                 const groupByName = getProductGroup(order.PRODUCTO || '', groups);
                                 const groupById = order.PRODUCTO_ID ? getProductGroup(order.PRODUCTO_ID.toString(), groups) : null;
                                 normalized.PRODUCTO_ID = groupByName?.id || groupById?.id || order.PRODUCTO_ID?.toString() || order.PRODUCTO || 'unknown';
@@ -261,13 +264,27 @@ export function useDashboardData(): DashboardDataHook {
             campaignToProductMap[`${m.campaignName}|${m.platform}`.toLowerCase()] = m.productId;
         });
 
-        // Build Name → ID map from orders
-        const countryNameToIdMap: Record<string, string> = {};
+        // Build lookup map: any product reference → normalized PRODUCTO_ID
+        // Maps both product names AND original numeric IDs to the resolved ID
+        const productIdLookup: Record<string, string> = {};
         rawOrders.forEach(o => {
-            if (o.PRODUCTO && o.PRODUCTO_ID) {
-                const key = `${o.country}|${(o.PRODUCTO as string).toLowerCase().trim()}`;
-                countryNameToIdMap[key] = o.PRODUCTO_ID.toString();
+            const normalizedId = o.PRODUCTO_ID?.toString() || '';
+            if (!normalizedId) return;
+            const cntry = o.country;
+
+            // Map product name → normalized ID
+            if (o.PRODUCTO) {
+                productIdLookup[`${cntry}|${(o.PRODUCTO as string).toLowerCase().trim()}`] = normalizedId;
             }
+
+            // Map original numeric ID → normalized ID (in case group resolution changed it)
+            const origId = (o as ExtendedDropiOrder).ORIGINAL_PRODUCTO_ID;
+            if (origId && origId !== normalizedId) {
+                productIdLookup[`${cntry}|${origId.toLowerCase().trim()}`] = normalizedId;
+            }
+
+            // Map normalized ID to itself
+            productIdLookup[`${cntry}|${normalizedId.toLowerCase().trim()}`] = normalizedId;
         });
 
         return dedupedByService.map(h => {
@@ -275,11 +292,10 @@ export function useDashboardData(): DashboardDataHook {
             if (h.source === 'api' || !prodId || prodId === 'global' || prodId === '') {
                 prodId = campaignToProductMap[`${h.campaignName}|${h.platform}`.toLowerCase()] || '';
             }
-            // Convert name-based IDs to numeric IDs
-            if (prodId && isNaN(Number(prodId)) && prodId !== 'global' && prodId !== 'unknown') {
+            // Resolve product ID to normalized order namespace (handles names, original IDs, and group IDs)
+            if (prodId && prodId !== 'global' && prodId !== 'unknown') {
                 const normalizedCountry = getOfficialCountryName(h.country);
-                const key = `${normalizedCountry}|${prodId.toLowerCase().trim()}`;
-                const mapped = countryNameToIdMap[key];
+                const mapped = productIdLookup[`${normalizedCountry}|${prodId.toLowerCase().trim()}`];
                 if (mapped) prodId = mapped;
             }
             return {
@@ -377,20 +393,9 @@ export function useDashboardData(): DashboardDataHook {
                 return;
             }
 
-            // Map NAME-based ad spend to existing ORDER-based IDs (matching Log Pose)
-            let effectivePid = h.productId;
-            if (effectivePid && isNaN(Number(effectivePid))) {
-                const matchingOrder = rawOrders.find(o =>
-                    o.country === matchedCountry &&
-                    (o.PRODUCTO || '').toLowerCase().trim() === effectivePid.toLowerCase().trim() && o.PRODUCTO_ID
-                );
-                if (matchingOrder && matchingOrder.PRODUCTO_ID) {
-                    effectivePid = matchingOrder.PRODUCTO_ID.toString();
-                }
-            }
-
+            // h.productId is already resolved in resolvedAds via productIdLookup + getEffectiveProductId
             if (!result[matchedCountry]) result[matchedCountry] = {};
-            result[matchedCountry][effectivePid] = (result[matchedCountry][effectivePid] || 0) + amountCOP;
+            result[matchedCountry][h.productId] = (result[matchedCountry][h.productId] || 0) + amountCOP;
         });
 
         const activeCountries = availableCountries.filter(c => c !== 'Todos');

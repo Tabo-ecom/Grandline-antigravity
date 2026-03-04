@@ -131,6 +131,7 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
                     if (order["PRECIO FLETE"]) normalized["PRECIO FLETE"] = toCOP(order["PRECIO FLETE"], currency, rates);
                     if (order["COSTO DEVOLUCION FLETE"]) normalized["COSTO DEVOLUCION FLETE"] = toCOP(order["COSTO DEVOLUCION FLETE"], currency, rates);
                     if (order.GANANCIA) normalized.GANANCIA = toCOP(order.GANANCIA, currency, rates);
+                    normalized.ORIGINAL_PRODUCTO_ID = order.PRODUCTO_ID?.toString() || '';
                     const groupByName = getProductGroup(order.PRODUCTO || '', groups);
                     const groupById = order.PRODUCTO_ID ? getProductGroup(order.PRODUCTO_ID.toString(), groups) : null;
                     normalized.PRODUCTO_ID = groupByName?.id || groupById?.id || order.PRODUCTO_ID?.toString() || order.PRODUCTO || 'unknown';
@@ -149,22 +150,29 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
     mappings.forEach(m => {
         campaignToProductMap[`${m.campaignName}|${m.platform}`.toLowerCase()] = m.productId;
     });
-    const countryNameToIdMap: Record<string, string> = {};
+    // Build lookup: any product reference (name, original ID, normalized ID) → normalized PRODUCTO_ID
+    const productIdLookup: Record<string, string> = {};
     allOrders.forEach(o => {
-        if (o.PRODUCTO && o.PRODUCTO_ID) {
-            const key = `${o.country}|${(o.PRODUCTO as string).toLowerCase().trim()}`;
-            countryNameToIdMap[key] = o.PRODUCTO_ID.toString();
+        const normalizedId = o.PRODUCTO_ID?.toString() || '';
+        if (!normalizedId) return;
+        const cntry = o.country;
+        if (o.PRODUCTO) {
+            productIdLookup[`${cntry}|${(o.PRODUCTO as string).toLowerCase().trim()}`] = normalizedId;
         }
+        const origId = o.ORIGINAL_PRODUCTO_ID;
+        if (origId && origId !== normalizedId) {
+            productIdLookup[`${cntry}|${origId.toLowerCase().trim()}`] = normalizedId;
+        }
+        productIdLookup[`${cntry}|${normalizedId.toLowerCase().trim()}`] = normalizedId;
     });
     const resolvedAds = dedupedAds.map(h => {
         let prodId = h.productId;
         if (h.source === 'api' || !prodId || prodId === 'global' || prodId === '') {
             prodId = campaignToProductMap[`${h.campaignName}|${h.platform}`.toLowerCase()] || '';
         }
-        if (prodId && isNaN(Number(prodId)) && prodId !== 'global' && prodId !== 'unknown') {
+        if (prodId && prodId !== 'global' && prodId !== 'unknown') {
             const normalizedCountry = getOfficialCountryName(h.country);
-            const key = `${normalizedCountry}|${prodId.toLowerCase().trim()}`;
-            const mapped = countryNameToIdMap[key];
+            const mapped = productIdLookup[`${normalizedCountry}|${prodId.toLowerCase().trim()}`];
             if (mapped) prodId = mapped;
         }
         return { ...h, productId: getEffectiveProductId(prodId || 'unknown', groups) };
