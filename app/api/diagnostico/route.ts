@@ -1,6 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 
+async function notifySlack(name: string, email: string, whatsapp: string, metrics: any, country: string) {
+    const webhookUrl = process.env.SLACK_LEADS_WEBHOOK_URL;
+    if (!webhookUrl) return;
+
+    try {
+        const lines = [
+            `:bar_chart: *Nueva auditoría completada*`,
+            `*Nombre:* ${name}`,
+            `*Email:* ${email}`,
+        ];
+        if (whatsapp) lines.push(`*WhatsApp:* ${whatsapp}`);
+        if (country) lines.push(`*País:* ${country}`);
+        if (metrics) {
+            if (metrics.total_orders) lines.push(`*Órdenes:* ${metrics.total_orders}`);
+            if (metrics.delivery_rate) lines.push(`*Tasa entrega:* ${metrics.delivery_rate.toFixed(1)}%`);
+            if (metrics.profit !== undefined) lines.push(`*Utilidad:* $${Math.round(metrics.profit).toLocaleString()}`);
+        }
+        lines.push(`*Fecha:* ${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`);
+
+        await fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: lines.join('\n') }),
+        });
+    } catch (err) {
+        console.error('[Diagnostico Slack] Error:', err);
+    }
+}
+
 export async function POST(req: NextRequest) {
     try {
         if (!adminDb) {
@@ -25,6 +54,9 @@ export async function POST(req: NextRequest) {
             dateRange: dateRange || '',
             createdAt: new Date().toISOString(),
         });
+
+        // Non-blocking Slack notification
+        notifySlack(name, email, whatsapp || '', metrics, country).catch(() => {});
 
         return NextResponse.json({ success: true });
     } catch (error) {

@@ -5,6 +5,7 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     signInWithPopup,
+    getAdditionalUserInfo,
     GoogleAuthProvider
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/config';
@@ -55,7 +56,12 @@ export default function LoginPage() {
         }
 
         try {
-            await createUserWithEmailAndPassword(auth, email, password);
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+            fetch('/api/notify-lead', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type: 'registration', email, name: result.user.displayName || email }),
+            }).catch(() => {});
             router.push('/dashboard');
         } catch (err: any) {
             console.error('Register error:', err);
@@ -77,7 +83,15 @@ export default function LoginPage() {
         const provider = new GoogleAuthProvider();
         setLoading(true);
         try {
-            await signInWithPopup(auth, provider);
+            const result = await signInWithPopup(auth, provider);
+            const isNew = getAdditionalUserInfo(result)?.isNewUser;
+            if (isNew) {
+                fetch('/api/notify-lead', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'registration', email: result.user.email, name: result.user.displayName || result.user.email }),
+                }).catch(() => {});
+            }
             router.push('/dashboard');
         } catch (err: any) {
             console.error('Google login error:', err);
