@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { AuthProvider, useAuth } from '@/lib/context/AuthContext';
 import { ThemeProvider } from '@/lib/context/ThemeContext';
@@ -268,7 +268,16 @@ export default function ProtectedLayout({
     return (
         <AuthProvider>
             <ThemeProvider>
-                <AuthGuard>{children}</AuthGuard>
+                <Suspense fallback={
+                    <div className="flex h-screen items-center justify-center bg-background text-foreground transition-all duration-300">
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#d75c33] border-t-transparent"></div>
+                            <p className="font-medium animate-pulse">NAVEGANDO HACIA EL GRAND LINE...</p>
+                        </div>
+                    </div>
+                }>
+                    <AuthGuard>{children}</AuthGuard>
+                </Suspense>
             </ThemeProvider>
         </AuthProvider>
     );
