@@ -111,7 +111,7 @@ export const PricingCards: React.FC = () => {
             const res = await authFetch('/api/stripe/checkout', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ priceId }),
+                body: JSON.stringify({ priceId, planId }),
             });
 
             const data = await res.json();

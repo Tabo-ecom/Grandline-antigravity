@@ -9,13 +9,13 @@ export async function POST(req: NextRequest) {
         const auth = await verifyAuth(req);
         if (!auth) return unauthorizedResponse();
 
-        const { priceId } = await req.json();
+        const { priceId, planId } = await req.json();
 
         if (!priceId) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
         }
 
-        const session = await stripe.checkout.sessions.create({
+        const sessionParams: Stripe.Checkout.SessionCreateParams = {
             payment_method_types: ['card'],
             customer_email: auth.email,
             client_reference_id: auth.teamId,
@@ -31,7 +31,16 @@ export async function POST(req: NextRequest) {
             metadata: {
                 userId: auth.teamId,
             },
-        });
+        };
+
+        // Rookie plan gets a 7-day free trial
+        if (planId === 'rookie') {
+            sessionParams.subscription_data = {
+                trial_period_days: 7,
+            };
+        }
+
+        const session = await stripe.checkout.sessions.create(sessionParams);
 
         if (!session.url) {
             return NextResponse.json({ error: 'Failed to create Stripe Checkout Session' }, { status: 500 });
