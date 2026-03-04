@@ -254,18 +254,12 @@ export function fixAdSpendCurrencies(spends: AdSpend[], adSettings?: AdSettings 
  * Get full ad spend history across all sources and countries
  */
 export async function getAdSpendHistory(userId: string = ''): Promise<AdSpend[]> {
-    let snapshot;
-    // Try userId-filtered query first, fall back to all docs (legacy)
-    if (userId) {
-        const q = query(
-            collection(db, 'marketing_history'),
-            where('userId', '==', userId)
-        );
-        snapshot = await getDocs(q);
-    }
-    if (!snapshot || snapshot.docs.length === 0) {
-        snapshot = await getDocs(collection(db, 'marketing_history'));
-    }
+    if (!userId) return [];
+    const q = query(
+        collection(db, 'marketing_history'),
+        where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
     const adSettings = await getAdSettings(userId);
     const raw = snapshot.docs.map(d => ({
         id: d.id,
@@ -644,25 +638,13 @@ export async function deleteAdSpendImport(importId: string) {
  * List all spend entries for a country to show history
  */
 export async function listAdSpends(country: string, userId: string = ''): Promise<AdSpend[]> {
-    let snapshot;
-    // Try userId-filtered first, fall back to legacy (no userId field)
-    if (userId) {
-        try {
-            const q = query(
-                collection(db, 'marketing_history'),
-                where('country', 'in', [country, 'Desconocido', 'Todos']),
-                where('userId', '==', userId)
-            );
-            snapshot = await getDocs(q);
-        } catch { /* index may not exist yet */ }
-    }
-    if (!snapshot || snapshot.docs.length === 0) {
-        const fallbackQ = query(
-            collection(db, 'marketing_history'),
-            where('country', 'in', [country, 'Desconocido', 'Todos'])
-        );
-        snapshot = await getDocs(fallbackQ);
-    }
+    if (!userId) return [];
+    const q = query(
+        collection(db, 'marketing_history'),
+        where('country', 'in', [country, 'Desconocido', 'Todos']),
+        where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
     const adSettings = await getAdSettings(userId);
     const raw = snapshot.docs
         .map(d => d.data() as AdSpend)

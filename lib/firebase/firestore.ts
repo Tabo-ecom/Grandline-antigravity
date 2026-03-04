@@ -22,16 +22,10 @@ export const COLLECTIONS = {
 
 // App Data helpers
 export async function getAppData<T = any>(key: string, userId: string = ''): Promise<T | null> {
-    // Try new format first (key_userId), then fall back to legacy format (just key)
-    if (userId) {
-        const newDocRef = doc(db, COLLECTIONS.APP_DATA, `${key}_${userId}`);
-        const newSnap = await getDoc(newDocRef);
-        if (newSnap.exists()) return newSnap.data().value as T;
-    }
-    // Fallback: legacy doc without userId suffix
-    const legacyRef = doc(db, COLLECTIONS.APP_DATA, key);
-    const legacySnap = await getDoc(legacyRef);
-    return legacySnap.exists() ? legacySnap.data().value as T : null;
+    if (!userId) return null;
+    const docRef = doc(db, COLLECTIONS.APP_DATA, `${key}_${userId}`);
+    const snap = await getDoc(docRef);
+    return snap.exists() ? snap.data().value as T : null;
 }
 
 export async function setAppData<T = any>(
@@ -57,26 +51,13 @@ export async function getOrderFile(country: string) {
 }
 
 export async function getAllOrderFiles(userId: string = '') {
-    // Try userId-filtered query first
-    if (userId) {
-        const q = query(
-            collection(db, COLLECTIONS.ORDER_FILES),
-            where('userId', '==', userId)
-        );
-        const snapshot = await getDocs(q);
-        if (snapshot.docs.length > 0) {
-            return snapshot.docs
-                .map(d => d.data())
-                .sort((a, b) => {
-                    const ta = a.uploaded_at?.toMillis?.() || 0;
-                    const tb = b.uploaded_at?.toMillis?.() || 0;
-                    return tb - ta;
-                });
-        }
-    }
-    // Fallback: get all docs (legacy — no userId field)
-    const fallbackSnap = await getDocs(collection(db, COLLECTIONS.ORDER_FILES));
-    return fallbackSnap.docs
+    if (!userId) return [];
+    const q = query(
+        collection(db, COLLECTIONS.ORDER_FILES),
+        where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs
         .map(d => d.data())
         .sort((a, b) => {
             const ta = a.uploaded_at?.toMillis?.() || 0;
