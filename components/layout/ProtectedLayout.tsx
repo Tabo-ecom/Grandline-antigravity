@@ -97,7 +97,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         // Landing domain (grandline.com.co): only serve landing page, redirect everything else to app subdomain
         if (isLandingDomain) {
             if (pathname !== '/' && pathname !== '/diagnostico') {
-                window.location.href = `https://app.grandline.com.co${pathname}`;
+                window.location.href = `https://app.grandline.com.co${pathname}${window.location.search}`;
             }
             return;
         }

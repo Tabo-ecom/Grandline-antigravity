@@ -15,6 +15,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
         }
 
+        // Use origin header with fallback to ensure correct app domain
+        const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://app.grandline.com.co';
+
         const sessionParams: Stripe.Checkout.SessionCreateParams = {
             payment_method_types: ['card'],
             customer_email: auth.email,
@@ -26,8 +29,8 @@ export async function POST(req: NextRequest) {
                 },
             ],
             mode: 'subscription',
-            success_url: `${req.headers.get('origin')}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${req.headers.get('origin')}/planes`,
+            success_url: `${origin}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${origin}/planes`,
             metadata: {
                 userId: auth.teamId,
             },
