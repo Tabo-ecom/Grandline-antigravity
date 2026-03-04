@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { parseDropiFile, type ParseResult } from '@/lib/utils/parser';
 import { calculateKPIs, type DropiOrder, type KPIResults } from '@/lib/calculations/kpis';
+import { parseDropiDate } from '@/lib/utils/date-parsers';
 import { evaluateHealth, getHealthColor, getHealthBgClass, getHealthLabel, findTarget } from '@/lib/utils/health';
 import { DEFAULT_KPI_TARGETS } from '@/lib/types/kpi-targets';
 
@@ -35,20 +36,20 @@ interface SurveyQuestion {
 const SURVEY_QUESTIONS: SurveyQuestion[] = [
     {
         id: 'time_in_business',
-        question: '¿Cuánto tiempo llevas en dropshipping COD?',
+        question: '¿Cuánto tiempo llevas en e-commerce?',
         options: ['Menos de 3 meses', '3 - 6 meses', '6 - 12 meses', 'Más de 1 año'],
         icon: <Clock className="w-5 h-5" />,
     },
     {
         id: 'monthly_revenue',
         question: '¿Cuál es tu facturación mensual promedio?',
-        options: ['Menos de $5M COP', '$5M - $15M', '$15M - $50M', 'Más de $50M'],
+        options: ['Menos de USD $10K', 'USD $10K - $50K', 'USD $50K - $100K', 'Más de USD $100K'],
         icon: <DollarSign className="w-5 h-5" />,
     },
     {
         id: 'ad_platform',
-        question: '¿Qué plataforma de publicidad usas principalmente?',
-        options: ['Facebook / Meta Ads', 'TikTok Ads', 'Google Ads', 'Otra'],
+        question: '¿Qué plataformas de publicidad usas?',
+        options: ['Facebook / Meta Ads', 'TikTok Ads', 'Ambas (Facebook + TikTok)', 'Otra'],
         icon: <Megaphone className="w-5 h-5" />,
     },
     {
@@ -75,23 +76,8 @@ function formatCurrency(value: number): string {
 
 function getDateRange(orders: DropiOrder[]): { from: string; to: string } {
     const dates = orders
-        .map(o => o.FECHA)
-        .filter(Boolean)
-        .map(d => {
-            const str = String(d);
-            // Try parsing common date formats
-            const parsed = new Date(str);
-            if (!isNaN(parsed.getTime())) return parsed;
-            // Try DD/MM/YYYY
-            const parts = str.split(/[/-]/);
-            if (parts.length === 3) {
-                const [a, b, c] = parts.map(Number);
-                if (a > 31) return new Date(a, b - 1, c); // YYYY-MM-DD
-                if (c > 31) return new Date(c, b - 1, a); // DD-MM-YYYY
-            }
-            return null;
-        })
-        .filter((d): d is Date => d !== null)
+        .map(o => parseDropiDate(o.FECHA))
+        .filter(d => d.getTime() > 0)
         .sort((a, b) => a.getTime() - b.getTime());
 
     if (dates.length === 0) return { from: 'N/A', to: 'N/A' };
@@ -446,31 +432,31 @@ export default function DiagnosticoPage() {
                             <h2 className="text-2xl md:text-3xl font-black tracking-tight font-['Space_Grotesk']">
                                 Detectamos <span className="text-[#d75c33]">{products.length} productos</span>
                             </h2>
-                            <p className="text-white/40 mt-2 text-sm">
+                            <p className="text-white/40 mt-2 text-base">
                                 {parsedData.orders.length} órdenes encontradas &middot; {dateRange.from} al {dateRange.to} &middot; {parsedData.country}
                             </p>
                         </div>
 
-                        <p className="text-xs text-white/50 mb-4 text-center">
+                        <p className="text-sm text-white/50 mb-4 text-center">
                             Ingresa cuánto invertiste en publicidad por cada producto durante este periodo.
                         </p>
 
                         <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
                             {products.map(p => (
-                                <div key={p.name} className="flex items-center gap-4 p-4 bg-white/[0.03] border border-white/5 rounded-2xl">
+                                <div key={p.name} className="flex items-center gap-4 p-5 bg-white/[0.03] border border-white/5 rounded-2xl">
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-white/80 truncate">{p.name}</p>
-                                        <p className="text-[10px] text-white/30">{p.orderCount} órdenes</p>
+                                        <p className="text-base font-bold text-white/80 truncate">{p.name}</p>
+                                        <p className="text-xs text-white/30">{p.orderCount} órdenes</p>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[10px] text-white/30">$</span>
+                                        <span className="text-xs text-white/30">$</span>
                                         <input
                                             type="number"
                                             min={0}
                                             placeholder="0"
                                             value={productAdSpend[p.name] || ''}
                                             onChange={(e) => setProductAdSpend(prev => ({ ...prev, [p.name]: Number(e.target.value) || 0 }))}
-                                            className="w-32 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-right font-mono focus:border-[#d75c33] outline-none transition-colors"
+                                            className="w-32 bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-base text-right font-mono focus:border-[#d75c33] outline-none transition-colors"
                                         />
                                     </div>
                                 </div>
@@ -501,7 +487,7 @@ export default function DiagnosticoPage() {
                             <h2 className="text-2xl md:text-3xl font-black tracking-tight font-['Space_Grotesk']">
                                 Cuéntanos sobre <span className="text-[#d75c33]">tu negocio</span>
                             </h2>
-                            <p className="text-white/40 mt-2 text-sm">
+                            <p className="text-white/40 mt-2 text-base">
                                 Responde estas preguntas rápidas para personalizar tu diagnóstico.
                             </p>
                         </div>
@@ -510,21 +496,21 @@ export default function DiagnosticoPage() {
                             {SURVEY_QUESTIONS.map((q, idx) => (
                                 <div
                                     key={q.id}
-                                    className="p-5 bg-white/[0.03] border border-white/5 rounded-2xl"
+                                    className="p-6 bg-white/[0.03] border border-white/5 rounded-2xl"
                                     style={{ animationDelay: `${idx * 80}ms` }}
                                 >
-                                    <div className="flex items-center gap-3 mb-3">
+                                    <div className="flex items-center gap-3 mb-4">
                                         <div className="text-[#d75c33]">{q.icon}</div>
-                                        <p className="text-sm font-bold text-white/80">{q.question}</p>
+                                        <p className="text-base font-bold text-white/80">{q.question}</p>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-2 gap-3">
                                         {q.options.map(option => {
                                             const isSelected = surveyAnswers[q.id] === option;
                                             return (
                                                 <button
                                                     key={option}
                                                     onClick={() => setSurveyAnswers(prev => ({ ...prev, [q.id]: option }))}
-                                                    className={`px-4 py-2.5 text-xs font-bold rounded-xl border transition-all text-left ${isSelected
+                                                    className={`px-4 py-3.5 text-sm font-bold rounded-xl border transition-all text-left ${isSelected
                                                         ? 'bg-[#d75c33]/15 border-[#d75c33]/40 text-[#d75c33]'
                                                         : 'bg-white/[0.02] border-white/5 text-white/50 hover:border-white/15 hover:text-white/70'
                                                         }`}
@@ -566,39 +552,39 @@ export default function DiagnosticoPage() {
                             <h2 className="text-2xl md:text-3xl font-black tracking-tight font-['Space_Grotesk']">
                                 Tu diagnóstico está <span className="text-[#d75c33]">listo</span>
                             </h2>
-                            <p className="text-white/40 mt-2 text-sm">
+                            <p className="text-white/40 mt-2 text-base">
                                 Ingresa tus datos para ver el análisis completo de tu rentabilidad.
                             </p>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="space-y-5">
                             <div>
-                                <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2 block">Nombre *</label>
+                                <label className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2 block">Nombre *</label>
                                 <input
                                     type="text"
                                     value={contact.name}
                                     onChange={(e) => setContact(prev => ({ ...prev, name: e.target.value }))}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-base focus:border-[#d75c33] outline-none transition-colors"
                                     placeholder="Tu nombre"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2 block">Email *</label>
+                                <label className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2 block">Email *</label>
                                 <input
                                     type="email"
                                     value={contact.email}
                                     onChange={(e) => setContact(prev => ({ ...prev, email: e.target.value }))}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-base focus:border-[#d75c33] outline-none transition-colors"
                                     placeholder="tu@email.com"
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest mb-2 block">WhatsApp <span className="text-white/20">(opcional)</span></label>
+                                <label className="text-xs font-bold text-white/40 uppercase tracking-widest mb-2 block">WhatsApp <span className="text-white/20">(opcional)</span></label>
                                 <input
                                     type="tel"
                                     value={contact.whatsapp}
                                     onChange={(e) => setContact(prev => ({ ...prev, whatsapp: e.target.value }))}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-[#d75c33] outline-none transition-colors"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-base focus:border-[#d75c33] outline-none transition-colors"
                                     placeholder="+57 300 123 4567"
                                 />
                             </div>
