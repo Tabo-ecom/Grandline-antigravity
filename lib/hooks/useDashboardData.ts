@@ -509,9 +509,8 @@ export function useDashboardData(): DashboardDataHook {
         });
 
         // Fill Orders & Profit Data
-        // TOTAL DE LA ORDEN = subtotal per product line, so sum ALL lines (no dedup)
-        // Shipping (PRECIO FLETE) is per-order, so deduplicate by order ID
-        const seenOrderIds: Record<string, Set<string>> = {};
+        // Dropi splits ALL financial fields per product line — sum ALL lines (no dedup)
+        // Only ORDER COUNTS are deduplicated by order ID
         const dailyOrders: Record<string, ExtendedDropiOrder[]> = {};
 
         filteredOrders.forEach(o => {
@@ -520,11 +519,6 @@ export function useDashboardData(): DashboardDataHook {
                 if (!dailyOrders[k]) dailyOrders[k] = [];
                 dailyOrders[k].push(o);
 
-                const orderId = o.ID?.toString() || '';
-                if (!seenOrderIds[k]) seenOrderIds[k] = new Set();
-                const isFirstLine = orderId && !seenOrderIds[k].has(orderId);
-                if (isFirstLine) seenOrderIds[k].add(orderId);
-
                 if (!isCancelado(o.ESTATUS)) {
                     // Sales: sum all lines (each line is a product subtotal)
                     dailyData[k].sales += (o["TOTAL DE LA ORDEN"] || 0);
@@ -532,17 +526,14 @@ export function useDashboardData(): DashboardDataHook {
                         dailyData[k].sales_despachada += (o["TOTAL DE LA ORDEN"] || 0);
                     }
 
+                    // Dropi splits ALL financial fields per product line — sum all lines, no dedup
                     if (isEntregado(o.ESTATUS)) {
-                        // Revenue: all lines
                         dailyData[k].profit += (o["TOTAL DE LA ORDEN"] || 0);
-                        // Product cost: all lines
                         dailyData[k].profit -= (o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0);
-                        // Shipping: once per order
-                        if (isFirstLine) {
-                            dailyData[k].profit -= (o["PRECIO FLETE"] || 0);
-                        }
-                    } else if (isFirstLine) {
-                        // Non-delivered shipping cost: once per order
+                        dailyData[k].profit -= (o["PRECIO FLETE"] || 0);
+                    } else if (isDevolucion(o.ESTATUS)) {
+                        dailyData[k].profit -= (o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0);
+                    } else if (isTransit(o.ESTATUS)) {
                         dailyData[k].profit -= (o["PRECIO FLETE"] || 0);
                     }
                 }

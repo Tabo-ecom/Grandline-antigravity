@@ -236,9 +236,9 @@ export default function CountryOperationPage() {
             const tra = new Set(orders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
             const can = new Set(orders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
             const nc = total - can || 1;
-            const seenFl = new Set<string>();
+            // Flete: sum ALL lines (Dropi splits shipping per product line)
             let flete = 0;
-            orders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); flete += o['PRECIO FLETE'] || 0; } });
+            orders.forEach(o => { flete += o['PRECIO FLETE'] || 0; });
             return {
                 name,
                 total,
@@ -330,19 +330,16 @@ export default function CountryOperationPage() {
             let facturado = 0;
             orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { facturado += o["TOTAL DE LA ORDEN"] || 0; });
 
-            const seenFl = new Set<string>();
+            // Dropi splits all values per product line — sum ALL lines (no dedup)
             let fleteTotal = 0;
-            orders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); fleteTotal += o["PRECIO FLETE"] || 0; } });
+            orders.forEach(o => { fleteTotal += o["PRECIO FLETE"] || 0; });
 
-            // Utilidad real: ingreso entregado - costo producto - flete entrega - flete devolución
             let costoProducto = 0;
             orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { costoProducto += o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0; });
-            const seenFlEnt = new Set<string>();
             let fleteEnt = 0;
-            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { if (o.ID && !seenFlEnt.has(o.ID)) { seenFlEnt.add(o.ID); fleteEnt += o["PRECIO FLETE"] || 0; } });
-            const seenFlDev = new Set<string>();
+            orders.filter(o => isEntregado(o.ESTATUS)).forEach(o => { fleteEnt += o["PRECIO FLETE"] || 0; });
             let fleteDev = 0;
-            orders.filter(o => isDevolucion(o.ESTATUS)).forEach(o => { if (o.ID && !seenFlDev.has(o.ID)) { seenFlDev.add(o.ID); fleteDev += o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0; } });
+            orders.filter(o => isDevolucion(o.ESTATUS)).forEach(o => { fleteDev += o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0; });
             const utilReal = facturado - costoProducto - fleteEnt - fleteDev;
 
             // Utilidad proyectada: if transit orders deliver at current avg margin
@@ -392,9 +389,9 @@ export default function CountryOperationPage() {
             const tra = new Set(matchingOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
             const can = new Set(matchingOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size;
             const nc = total - can || 1;
-            const seenFl = new Set<string>();
+            // Flete: sum ALL lines (Dropi splits shipping per product line)
             let flete = 0;
-            matchingOrders.forEach(o => { if (o.ID && !seenFl.has(o.ID)) { seenFl.add(o.ID); flete += o['PRECIO FLETE'] || 0; } });
+            matchingOrders.forEach(o => { flete += o['PRECIO FLETE'] || 0; });
             return {
                 ...carrier,
                 kpi: {
@@ -415,13 +412,14 @@ export default function CountryOperationPage() {
     }, [filteredOrders]);
 
     const avgFlete = useMemo(() => {
-        const seen = new Set<string>();
+        // Sum all flete lines, divide by unique order count
         let sum = 0;
+        const uniqueIds = new Set<string>();
         filteredOrders.forEach(o => {
-            if (o.ID && !seen.has(o.ID)) { seen.add(o.ID); sum += o["PRECIO FLETE"] || 0; }
+            sum += o["PRECIO FLETE"] || 0;
+            if (o.ID) uniqueIds.add(o.ID);
         });
-        const uniqueCount = seen.size;
-        return uniqueCount > 0 ? sum / uniqueCount : 0;
+        return uniqueIds.size > 0 ? sum / uniqueIds.size : 0;
     }, [filteredOrders]);
 
     const toggleProduct = (name: string) => {

@@ -52,10 +52,9 @@ export function aggregateByDepartment(
         const noCancelados = totalOrders - cancelados || 1;
         const dispatched = entregados + devoluciones || 1;
 
-        // Flete: deduplicate by order ID (shipping is per-order, not per-line)
-        const seenFlete = new Set<string>();
+        // Flete: sum ALL lines (Dropi splits shipping per product line)
         let totalFlete = 0;
-        deptOrders.forEach(o => { if (o.ID && !seenFlete.has(o.ID)) { seenFlete.add(o.ID); totalFlete += o['PRECIO FLETE'] || 0; } });
+        deptOrders.forEach(o => { totalFlete += o['PRECIO FLETE'] || 0; });
 
         // Revenue: sum ALL lines (TOTAL DE LA ORDEN is subtotal per product line)
         let ingresoTotal = 0;
@@ -110,9 +109,9 @@ export function aggregateByCityInDepartment(
         const totalOrders = new Set(cityOrders.map(o => o.ID)).size;
         const noCancelados = totalOrders - cancelados || 1;
 
-        const seenFlete = new Set<string>();
+        // Flete: sum ALL lines (Dropi splits shipping per product line)
         let totalFlete = 0;
-        cityOrders.forEach(o => { if (o.ID && !seenFlete.has(o.ID)) { seenFlete.add(o.ID); totalFlete += o['PRECIO FLETE'] || 0; } });
+        cityOrders.forEach(o => { totalFlete += o['PRECIO FLETE'] || 0; });
 
         results.push({
             city: displayName,

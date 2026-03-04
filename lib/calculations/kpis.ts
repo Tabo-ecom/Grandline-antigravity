@@ -93,11 +93,8 @@ export function calculateKPIs(
     let cpr = 0;          // Costo Producto Real (Entregados) - Sum of all lines
     let fact_despachada = 0; // Sum ALL lines (subtotals per product line)
 
-    // Fletes are per-order (not per-line), so deduplicate by order ID
-    const seenFlEnt = new Set<string>();
-    const seenFlDev = new Set<string>();
-    const seenFlTra = new Set<string>();
-
+    // Dropi splits ALL financial fields proportionally per product line.
+    // Sum ALL lines without deduplication for every financial field.
     let fl_ent = 0;
     let fl_dev = 0;
     let fl_tra = 0;
@@ -123,8 +120,7 @@ export function calculateKPIs(
             if (!isCan) uniqueIds.nc.add(id);
         }
 
-        // 2. Financials
-        // TOTAL DE LA ORDEN = subtotal per product line, so sum ALL lines (no dedup)
+        // 2. Financials — sum ALL lines (Dropi splits values per product line)
 
         // Non-Canceled (Facturación Neta)
         if (!isCan) {
@@ -140,31 +136,18 @@ export function calculateKPIs(
         // Delivered (Ingreso Real, Costo Producto, Flete Entrega)
         if (isEnt) {
             ing_real += (o["TOTAL DE LA ORDEN"] || 0);
-
-            // Costo Producto: sum all lines (each line = different product cost)
             cpr += (o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0);
-
-            // Flete: per-order, deduplicate by ID
-            if (id && !seenFlEnt.has(id)) {
-                seenFlEnt.add(id);
-                fl_ent += (o["PRECIO FLETE"] || 0);
-            }
+            fl_ent += (o["PRECIO FLETE"] || 0);
         }
 
-        // Returns (Flete Devolución) - check column U first, fall back to column T
+        // Returns (Flete Devolución) - COSTO DEVOLUCION FLETE if > 0, else PRECIO FLETE
         if (isDev) {
-            if (id && !seenFlDev.has(id)) {
-                seenFlDev.add(id);
-                fl_dev += (o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0);
-            }
+            fl_dev += (o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0);
         }
 
         // Transit (Flete Tránsito)
         if (isTra) {
-            if (id && !seenFlTra.has(id)) {
-                seenFlTra.add(id);
-                fl_tra += (o["PRECIO FLETE"] || 0);
-            }
+            fl_tra += (o["PRECIO FLETE"] || 0);
         }
     }
 
@@ -285,11 +268,11 @@ export function calculateProjection(
         // Orders that are NOT delivered and NOT canceled (Transit, Returns, etc.)
         const notDeliveredOrCanceled = productOrders.filter(o => !isEntregado(o.ESTATUS) && !isCancelado(o.ESTATUS));
 
-        // Calculate per-ORDER averages (not per-line) since TOTAL DE LA ORDEN is subtotal per line
+        // Dropi splits all values per product line, so averages are per unique order
         const nonCanceledBasis = productOrders.filter(o => !isCancelado(o.ESTATUS));
         const basisOrders = delivered.length > 0 ? delivered : nonCanceledBasis;
 
-        // Group lines by order ID to get true per-order totals
+        // Group by order ID to get per-order totals (sum split values back together)
         const basisByOrder = new Map<string, { revenue: number; cost: number; shipping: number }>();
         basisOrders.forEach(o => {
             const id = o.ID;
@@ -299,7 +282,7 @@ export function calculateProjection(
             const entry = basisByOrder.get(id)!;
             entry.revenue += (o["TOTAL DE LA ORDEN"] || 0);
             entry.cost += (o["PRECIO PROVEEDOR X CANTIDAD"] || o["PRECIO PROVEEDOR"] || 0);
-            entry.shipping = Math.max(entry.shipping, o["PRECIO FLETE"] || 0);
+            entry.shipping += (o["PRECIO FLETE"] || 0);
         });
 
         const basisUniqueCount = basisByOrder.size;
@@ -325,13 +308,11 @@ export function calculateProjection(
         const costo = projectedDeliveredCount * avgCost;
         const fl_ent = projectedDeliveredCount * avgShipping;
 
-        // Group non-delivered lines by order ID for shipping average
+        // Non-delivered shipping average (group by order, sum lines)
         const restByOrder = new Map<string, number>();
         notDeliveredOrCanceled.forEach(o => {
             const id = o.ID;
-            if (!restByOrder.has(id)) {
-                restByOrder.set(id, o["PRECIO FLETE"] || 0);
-            }
+            restByOrder.set(id, (restByOrder.get(id) || 0) + (o["PRECIO FLETE"] || 0));
         });
         const avgShippingRest = restByOrder.size > 0
             ? Array.from(restByOrder.values()).reduce((sum, v) => sum + v, 0) / restByOrder.size
