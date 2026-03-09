@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
-const APP_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-    ? '' : 'https://app.grandline.com.co';
+import React, { useState, useRef } from 'react';
 import {
     BarChart3, Compass, Megaphone, Bot,
     ChevronDown, ChevronUp, ArrowRight, Check, Zap, Shield,
     Globe, TrendingUp, Package, Star,
     Brain, Rocket, Target,
-    Calculator, FileText, Bell, MapPin
+    Calculator, FileText, Bell, MapPin, Mail, Loader2, CheckCircle
 } from 'lucide-react';
 
 /* ─── FAQ Data ─────────────────────────────────────────────── */
@@ -225,6 +223,81 @@ function FAQItem({ q, a }: { q: string; a: string }) {
     );
 }
 
+/* ─── Waitlist Form Component ─────────────────────────────── */
+function WaitlistForm({ variant = 'default' }: { variant?: 'default' | 'hero' | 'final' }) {
+    const [email, setEmail] = useState('');
+    const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'already' | 'error'>('idle');
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!email.trim() || status === 'loading') return;
+
+        setStatus('loading');
+        try {
+            const res = await fetch('/api/waitlist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            setStatus(data.message === 'already_registered' ? 'already' : 'success');
+        } catch {
+            setStatus('error');
+        }
+    };
+
+    if (status === 'success' || status === 'already') {
+        return (
+            <div className={`flex items-center gap-3 ${variant === 'final' ? 'justify-center' : ''}`}>
+                <div className="flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <CheckCircle className="w-5 h-5" />
+                    <span className="text-sm font-semibold">
+                        {status === 'already' ? 'Ya estás en la lista. Te contactaremos pronto.' : 'Registrado. Te avisaremos cuando lancemos.'}
+                    </span>
+                </div>
+            </div>
+        );
+    }
+
+    const isHeroOrFinal = variant === 'hero' || variant === 'final';
+
+    return (
+        <form onSubmit={handleSubmit} className={`flex ${isHeroOrFinal ? 'flex-col sm:flex-row' : 'flex-row'} items-center gap-3 ${variant === 'final' ? 'justify-center max-w-lg mx-auto' : ''}`}>
+            <div className="relative flex-1 w-full sm:w-auto">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                    ref={inputRef}
+                    type="email"
+                    required
+                    placeholder="Tu correo electrónico"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className={`w-full pl-10 pr-4 bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl focus:outline-none focus:border-[#d75c33]/50 focus:ring-1 focus:ring-[#d75c33]/30 transition-colors ${isHeroOrFinal ? 'py-3.5 text-base' : 'py-2.5 text-sm'}`}
+                />
+            </div>
+            <button
+                type="submit"
+                disabled={status === 'loading'}
+                className={`group flex items-center justify-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25 disabled:opacity-60 whitespace-nowrap ${isHeroOrFinal ? 'px-8 py-3.5 text-base w-full sm:w-auto' : 'px-5 py-2.5 text-sm'}`}
+            >
+                {status === 'loading' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                    <>
+                        Unirme a la Beta
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    </>
+                )}
+            </button>
+            {status === 'error' && (
+                <p className="text-xs text-rose-400 w-full">Error al registrar. Intenta de nuevo.</p>
+            )}
+        </form>
+    );
+}
+
 /* ─── Main Landing Page ────────────────────────────────────── */
 export default function LandingPage() {
     return (
@@ -242,17 +315,14 @@ export default function LandingPage() {
                         <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
                     </div>
                     <div className="flex items-center gap-3">
+                        <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-xs font-semibold text-amber-400">
+                            <Zap className="w-3 h-3" /> Beta Privada
+                        </span>
                         <a
-                            href={`${APP_URL}/login`}
-                            className="text-sm text-gray-300 hover:text-white transition-colors px-4 py-2"
-                        >
-                            Iniciar Sesión
-                        </a>
-                        <a
-                            href={`${APP_URL}/login`}
+                            href="#waitlist"
                             className="text-sm font-medium bg-gradient-to-r from-[#d75c33] to-orange-500 text-white px-5 py-2 rounded-lg hover:opacity-90 transition-opacity"
                         >
-                            Comenzar Gratis
+                            Lista de Espera
                         </a>
                     </div>
                 </div>
@@ -283,20 +353,12 @@ export default function LandingPage() {
                         qué transportadoras fallan, qué productos rinden y hacia dónde escalar.
                     </p>
 
-                    <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                        <a
-                            href={`${APP_URL}/login`}
-                            className="group flex items-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold px-8 py-3.5 rounded-xl text-base hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25"
-                        >
-                            Probar Gratis — Sin Tarjeta
-                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                        </a>
-                        <a
-                            href="#modulos"
-                            className="flex items-center gap-2 text-gray-300 font-medium px-8 py-3.5 rounded-xl text-base border border-white/10 hover:bg-white/5 transition-colors"
-                        >
-                            Ver Módulos
-                        </a>
+                    <div id="waitlist" className="max-w-xl mx-auto w-full">
+                        <p className="text-sm text-amber-400 font-medium mb-3 flex items-center justify-center gap-2">
+                            <Zap className="w-4 h-4" /> Beta Privada — Cupos limitados
+                        </p>
+                        <WaitlistForm variant="hero" />
+                        <p className="text-xs text-gray-500 mt-3">Te avisaremos cuando tu acceso esté listo. Sin spam.</p>
                     </div>
 
                     {/* VSL Video */}
@@ -600,7 +662,7 @@ export default function LandingPage() {
                         <h2 className="text-3xl md:text-5xl font-bold mb-4">
                             Planes para cada etapa
                         </h2>
-                        <p className="text-gray-400 text-lg">Empieza con 7 días gratis, sin tarjeta. Escala cuando estés listo.</p>
+                        <p className="text-gray-400 text-lg">Únete a la lista de espera y accede a precios exclusivos de lanzamiento.</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
@@ -630,22 +692,18 @@ export default function LandingPage() {
                                     )}
                                     {!trial && <div className="mb-6" />}
 
-                                    {comingSoon ? (
-                                        <span className="block w-full text-center py-3 rounded-xl text-sm font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 cursor-not-allowed">
-                                            Próximamente
-                                        </span>
-                                    ) : (
-                                        <a
-                                            href={`${APP_URL}/login`}
-                                            className={`block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all ${
-                                                popular
+                                    <a
+                                        href="#waitlist"
+                                        className={`block w-full text-center py-3 rounded-xl text-sm font-semibold transition-all ${
+                                            comingSoon
+                                                ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                                                : popular
                                                     ? 'bg-gradient-to-r from-[#d75c33] to-orange-500 text-white hover:opacity-90 shadow-lg shadow-[#d75c33]/20'
                                                     : 'border border-white/10 text-white hover:bg-white/5'
-                                            }`}
-                                        >
-                                            {cta}
-                                        </a>
-                                    )}
+                                        }`}
+                                    >
+                                        Unirme a la Lista de Espera
+                                    </a>
 
                                     <ul className="mt-8 space-y-3 flex-1">
                                         {features.map(f => {
@@ -711,19 +769,16 @@ export default function LandingPage() {
                 <div className="max-w-4xl mx-auto text-center relative">
                     <div className="absolute inset-0 bg-gradient-to-r from-[#d75c33]/10 via-purple-500/10 to-blue-500/10 rounded-3xl blur-[60px] pointer-events-none" />
                     <div className="relative bg-white/[0.03] border border-white/[0.08] rounded-3xl p-12 md:p-16">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 mb-6 rounded-full bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400 font-semibold">
+                            <Zap className="w-4 h-4" /> Beta Privada
+                        </div>
                         <h2 className="text-3xl md:text-4xl font-bold mb-4">
                             Cada día sin datos es dinero que pierdes
                         </h2>
                         <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
-                            Prueba Grand Line 7 días gratis, sin tarjeta de crédito. Si no ves resultados, no pagas.
+                            Regístrate en la lista de espera y sé de los primeros en acceder a Grand Line.
                         </p>
-                        <a
-                            href={`${APP_URL}/login`}
-                            className="group inline-flex items-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold px-10 py-4 rounded-xl text-lg hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25"
-                        >
-                            Crear Cuenta Gratis
-                            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                        </a>
+                        <WaitlistForm variant="final" />
                     </div>
                 </div>
             </section>

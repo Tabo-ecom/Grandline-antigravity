@@ -5,6 +5,7 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     signInWithPopup,
+    signOut as firebaseSignOut,
     getAdditionalUserInfo,
     GoogleAuthProvider
 } from 'firebase/auth';
@@ -19,6 +20,13 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const router = useRouter();
+
+    // Sign out any existing user so they can enter credentials for a different account
+    React.useEffect(() => {
+        if (auth.currentUser) {
+            firebaseSignOut(auth);
+        }
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -62,7 +70,7 @@ export default function LoginPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'registration', email, name: result.user.displayName || email }),
             }).catch(() => {});
-            router.push('/planes');
+            window.location.href = `https://wa.me/573153920396?text=${encodeURIComponent(`Hola! Acabo de registrarme en Grand Line con el correo ${email} y quiero activar mi plan.`)}`;
         } catch (err: any) {
             console.error('Register error:', err);
             if (err.code === 'auth/email-already-in-use') {
@@ -91,7 +99,7 @@ export default function LoginPage() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ type: 'registration', email: result.user.email, name: result.user.displayName || result.user.email }),
                 }).catch(() => {});
-                router.push('/planes');
+                window.location.href = `https://wa.me/573153920396?text=${encodeURIComponent(`Hola! Acabo de registrarme en Grand Line con el correo ${result.user.email} y quiero activar mi plan.`)}`;
             } else {
                 router.push('/dashboard');
             }

@@ -288,9 +288,10 @@ export function useDashboardData(): DashboardDataHook {
             campaignToProductMap[`${m.campaignName}|${m.platform}`.toLowerCase()] = m.productId;
         });
 
-        // Build lookup map: any product reference → normalized PRODUCTO_ID
-        // Maps both product names AND original numeric IDs to the resolved ID
+        // Build lookup maps: any product reference → normalized PRODUCTO_ID
+        // Country-specific map (primary) and country-agnostic map (fallback)
         const productIdLookup: Record<string, string> = {};
+        const globalProductIdLookup: Record<string, string> = {};
         rawOrders.forEach(o => {
             const normalizedId = o.PRODUCTO_ID?.toString() || '';
             if (!normalizedId) return;
@@ -298,17 +299,33 @@ export function useDashboardData(): DashboardDataHook {
 
             // Map product name → normalized ID
             if (o.PRODUCTO) {
-                productIdLookup[`${cntry}|${(o.PRODUCTO as string).toLowerCase().trim()}`] = normalizedId;
+                const nameKey = (o.PRODUCTO as string).toLowerCase().trim();
+                productIdLookup[`${cntry}|${nameKey}`] = normalizedId;
+                globalProductIdLookup[nameKey] = normalizedId;
             }
 
             // Map original numeric ID → normalized ID (in case group resolution changed it)
             const origId = (o as ExtendedDropiOrder).ORIGINAL_PRODUCTO_ID;
             if (origId && origId !== normalizedId) {
-                productIdLookup[`${cntry}|${origId.toLowerCase().trim()}`] = normalizedId;
+                const origKey = origId.toLowerCase().trim();
+                productIdLookup[`${cntry}|${origKey}`] = normalizedId;
+                globalProductIdLookup[origKey] = normalizedId;
             }
 
             // Map normalized ID to itself
-            productIdLookup[`${cntry}|${normalizedId.toLowerCase().trim()}`] = normalizedId;
+            const normKey = normalizedId.toLowerCase().trim();
+            productIdLookup[`${cntry}|${normKey}`] = normalizedId;
+            globalProductIdLookup[normKey] = normalizedId;
+        });
+
+        // Also map group member IDs/names → group ID in the global lookup
+        productGroups.forEach(group => {
+            group.productIds.forEach(memberId => {
+                const key = memberId.toLowerCase().trim();
+                if (!globalProductIdLookup[key]) {
+                    globalProductIdLookup[key] = group.id;
+                }
+            });
         });
 
         return dedupedByService.map(h => {
@@ -319,7 +336,9 @@ export function useDashboardData(): DashboardDataHook {
             // Resolve product ID to normalized order namespace (handles names, original IDs, and group IDs)
             if (prodId && prodId !== 'global' && prodId !== 'unknown') {
                 const normalizedCountry = getOfficialCountryName(h.country);
-                const mapped = productIdLookup[`${normalizedCountry}|${prodId.toLowerCase().trim()}`];
+                const lookupKey = prodId.toLowerCase().trim();
+                // Try country-specific first, then country-agnostic fallback
+                const mapped = productIdLookup[`${normalizedCountry}|${lookupKey}`] || globalProductIdLookup[lookupKey];
                 if (mapped) prodId = mapped;
             }
             return {
@@ -398,7 +417,11 @@ export function useDashboardData(): DashboardDataHook {
             if (isSharedCountry && !isGlobalPid) {
                 const allCntries = availableCountries.filter(c => c !== 'Todos');
                 const targetCountries = allCntries.filter(c => {
-                    return rawOrders.some(o => o.country === c && (o.PRODUCTO_ID?.toString() === h.productId || getEffectiveProductId(o.PRODUCTO_ID?.toString() || '', productGroups) === h.productId));
+                    return rawOrders.some(o => o.country === c && (
+                        o.PRODUCTO_ID?.toString() === h.productId
+                        || getEffectiveProductId(o.PRODUCTO_ID?.toString() || '', productGroups) === h.productId
+                        || (o as ExtendedDropiOrder).ORIGINAL_PRODUCTO_ID === h.productId
+                    ));
                 });
                 const targets = targetCountries.length > 0 ? targetCountries : allCntries;
                 const splitAmount = amountCOP / targets.length;
@@ -610,7 +633,15 @@ export function useDashboardData(): DashboardDataHook {
 
         const metricsCountries = countriesList.map(cntryName => {
             const cntryOrders = filteredOrders.filter(o => o.country === cntryName);
-            const cntryAds = adsByCountryProduct[cntryName] || {};
+            const rawCntryAds = adsByCountryProduct[cntryName] || {};
+
+            // Consolidate ad spend keys: resolve any individual product IDs to group IDs
+            const cntryAds: Record<string, number> = {};
+            Object.entries(rawCntryAds).forEach(([pid, amount]) => {
+                const resolvedPid = getEffectiveProductId(pid, productGroups);
+                cntryAds[resolvedPid] = (cntryAds[resolvedPid] || 0) + amount;
+            });
+
             const totalCntryAds = Object.values(cntryAds).reduce((sum, val) => sum + val, 0);
             const cKpis = calculateKPIs(cntryOrders, totalCntryAds);
 

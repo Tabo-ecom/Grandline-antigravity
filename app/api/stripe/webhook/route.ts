@@ -74,9 +74,10 @@ export async function POST(req: NextRequest) {
 
                 if (!usersSnapshot.empty) {
                     const userDoc = usersSnapshot.docs[0];
+                    const isActive = subscription.status === 'active' || subscription.status === 'trialing';
                     await userDoc.ref.set({
                         subscriptionStatus: subscription.status,
-                        plan: subscription.status === 'active' ? plan : 'free',
+                        plan: isActive ? plan : 'free',
                         currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
                         updatedAt: new Date(),
                     }, { merge: true });

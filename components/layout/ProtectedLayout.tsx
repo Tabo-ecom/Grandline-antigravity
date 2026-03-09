@@ -105,7 +105,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         // App domain (app.grandline.com.co): normal auth routing
         if (!user && !isPublicPage) {
             router.push('/login');
-        } else if (user && (pathname === '/login' || pathname === '/')) {
+        } else if (user && pathname === '/') {
             router.push('/dashboard');
         }
     }, [user, loading, pathname, isPublicPage, router, isLandingDomain]);
@@ -136,7 +136,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     // Redirecting — show nothing
     if (!user && !isPublicPage) return null;
-    if (user && (pathname === '/login' || pathname === '/')) return <>{children}</>;
+    if (user && pathname === '/') return <>{children}</>;
+    // Login page: user is being signed out, show the login form
+    if (pathname === '/login') return <>{children}</>;
 
     // Public pages that should NEVER load AppProviders (even when logged in)
     if (pathname === '/diagnostico') return <>{children}</>;
@@ -159,22 +161,26 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
             );
         }
 
-        // No profile yet (new registration) → redirect to plan selection
+        // No profile yet (new registration) → redirect to WhatsApp for plan activation
         if (!profile) {
+            const userEmail = user?.email || '';
+            const waUrl = `https://wa.me/573153920396?text=${encodeURIComponent(`Hola! Me registré en Grand Line con el correo ${userEmail} y quiero activar mi plan.`)}`;
             return (
                 <div className="flex h-screen items-center justify-center bg-background text-foreground">
                     <div className="max-w-md text-center p-8 space-y-4">
                         <div className="text-5xl">🚀</div>
-                        <h2 className="text-2xl font-black uppercase tracking-tighter">Elige tu Plan</h2>
+                        <h2 className="text-2xl font-black uppercase tracking-tighter">Activa tu Plan</h2>
                         <p className="text-sm text-muted">
-                            Para acceder a Grand Line, primero selecciona el plan que mejor se adapte a tu operación.
+                            Para activar tu cuenta de Grand Line, escríbenos por WhatsApp y te ayudamos a configurar tu plan.
                         </p>
-                        <button
-                            onClick={() => router.push('/planes')}
-                            className="px-6 py-3 bg-accent text-white font-black uppercase text-xs rounded-xl hover:bg-accent/90 transition-colors"
+                        <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block px-6 py-3 bg-[#25D366] text-white font-black uppercase text-xs rounded-xl hover:bg-[#25D366]/90 transition-colors"
                         >
-                            Ver Planes
-                        </button>
+                            Escribir por WhatsApp
+                        </a>
                     </div>
                 </div>
             );
@@ -261,17 +267,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
                             {/* CTA */}
                             <div className="text-center space-y-3">
-                                <button
-                                    onClick={() => router.push('/planes')}
-                                    className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-accent to-orange-500 text-white font-black uppercase text-sm rounded-2xl hover:opacity-90 transition-all shadow-xl shadow-accent/25"
+                                <a
+                                    href={`https://wa.me/573153920396?text=${encodeURIComponent(`Hola! Quiero desbloquear el plan ${planLabels[requiredPlan] || requiredPlan} en Grand Line. Mi correo es ${user?.email || ''}.`)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-2 px-8 py-4 bg-[#25D366] text-white font-black uppercase text-sm rounded-2xl hover:opacity-90 transition-all shadow-xl shadow-[#25D366]/25"
                                 >
                                     Desbloquear con plan {planLabels[requiredPlan] || requiredPlan}
                                     <ArrowRight className="w-4 h-4" />
-                                </button>
+                                </a>
                                 <p className="text-xs text-muted">
                                     {!isActive && userPlan !== 'free'
-                                        ? 'Tu suscripción no está activa. Renueva para acceder a este módulo.'
-                                        : 'Mejora tu plan para acceder a todas las funcionalidades.'}
+                                        ? 'Tu suscripción no está activa. Escríbenos para reactivar tu acceso.'
+                                        : 'Escríbenos por WhatsApp para mejorar tu plan.'}
                                 </p>
                             </div>
                         </div>
