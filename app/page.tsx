@@ -6,7 +6,7 @@ import {
     ChevronDown, ChevronUp, ArrowRight, Check, Zap, Shield,
     Globe, TrendingUp, Package, Star,
     Brain, Rocket, Target,
-    Calculator, FileText, Bell, MapPin, Mail, Loader2, CheckCircle
+    Calculator, FileText, Bell, MapPin, Mail, Loader2, CheckCircle, Phone, User
 } from 'lucide-react';
 
 /* ─── FAQ Data ─────────────────────────────────────────────── */
@@ -225,20 +225,21 @@ function FAQItem({ q, a }: { q: string; a: string }) {
 
 /* ─── Waitlist Form Component ─────────────────────────────── */
 function WaitlistForm({ variant = 'default' }: { variant?: 'default' | 'hero' | 'final' }) {
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'already' | 'error'>('idle');
-    const inputRef = useRef<HTMLInputElement>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!email.trim() || status === 'loading') return;
+        if (!email.trim() || !name.trim() || status === 'loading') return;
 
         setStatus('loading');
         try {
             const res = await fetch('/api/waitlist', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: email.trim() }),
+                body: JSON.stringify({ email: email.trim(), name: name.trim(), phone: phone.trim() }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
@@ -262,37 +263,62 @@ function WaitlistForm({ variant = 'default' }: { variant?: 'default' | 'hero' | 
     }
 
     const isHeroOrFinal = variant === 'hero' || variant === 'final';
+    const inputClass = `w-full pl-10 pr-4 bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl focus:outline-none focus:border-[#d75c33]/50 focus:ring-1 focus:ring-[#d75c33]/30 transition-colors ${isHeroOrFinal ? 'py-3.5 text-base' : 'py-2.5 text-sm'}`;
 
     return (
-        <form onSubmit={handleSubmit} className={`flex ${isHeroOrFinal ? 'flex-col sm:flex-row' : 'flex-row'} items-center gap-3 ${variant === 'final' ? 'justify-center max-w-lg mx-auto' : ''}`}>
-            <div className="relative flex-1 w-full sm:w-auto">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                    ref={inputRef}
-                    type="email"
-                    required
-                    placeholder="Tu correo electrónico"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className={`w-full pl-10 pr-4 bg-white/5 border border-white/10 text-white placeholder-gray-500 rounded-xl focus:outline-none focus:border-[#d75c33]/50 focus:ring-1 focus:ring-[#d75c33]/30 transition-colors ${isHeroOrFinal ? 'py-3.5 text-base' : 'py-2.5 text-sm'}`}
-                />
+        <form onSubmit={handleSubmit} className={`flex flex-col gap-3 ${variant === 'final' ? 'max-w-lg mx-auto' : ''}`}>
+            <div className={`grid ${isHeroOrFinal ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-2'} gap-3`}>
+                <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                        type="text"
+                        required
+                        placeholder="Tu nombre"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        className={inputClass}
+                    />
+                </div>
+                <div className="relative">
+                    <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                        type="tel"
+                        placeholder="Tu teléfono (opcional)"
+                        value={phone}
+                        onChange={e => setPhone(e.target.value)}
+                        className={inputClass}
+                    />
+                </div>
             </div>
-            <button
-                type="submit"
-                disabled={status === 'loading'}
-                className={`group flex items-center justify-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25 disabled:opacity-60 whitespace-nowrap ${isHeroOrFinal ? 'px-8 py-3.5 text-base w-full sm:w-auto' : 'px-5 py-2.5 text-sm'}`}
-            >
-                {status === 'loading' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                    <>
-                        Unirme a la Beta
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </>
-                )}
-            </button>
+            <div className={`flex ${isHeroOrFinal ? 'flex-col sm:flex-row' : 'flex-row'} items-center gap-3`}>
+                <div className="relative flex-1 w-full">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                        type="email"
+                        required
+                        placeholder="Tu correo electrónico"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        className={inputClass}
+                    />
+                </div>
+                <button
+                    type="submit"
+                    disabled={status === 'loading'}
+                    className={`group flex items-center justify-center gap-2 bg-gradient-to-r from-[#d75c33] to-orange-500 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-[#d75c33]/25 disabled:opacity-60 whitespace-nowrap ${isHeroOrFinal ? 'px-8 py-3.5 text-base w-full sm:w-auto' : 'px-5 py-2.5 text-sm'}`}
+                >
+                    {status === 'loading' ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                        <>
+                            Unirme a la Beta
+                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </>
+                    )}
+                </button>
+            </div>
             {status === 'error' && (
-                <p className="text-xs text-rose-400 w-full">Error al registrar. Intenta de nuevo.</p>
+                <p className="text-xs text-rose-400">Error al registrar. Intenta de nuevo.</p>
             )}
         </form>
     );

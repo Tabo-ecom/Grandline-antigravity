@@ -4,7 +4,7 @@ import { sendSlackBotMessage } from '@/lib/services/vega/slack-bot';
 
 export async function POST(req: NextRequest) {
     try {
-        const { email, name } = await req.json();
+        const { email, name, phone } = await req.json();
 
         if (!email || typeof email !== 'string') {
             return NextResponse.json({ error: 'Email requerido' }, { status: 400 });
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
         await adminDb.collection('waitlist').add({
             email: normalizedEmail,
             name: name?.trim() || '',
+            phone: phone?.trim() || '',
             createdAt: new Date().toISOString(),
             source: 'landing_beta',
         });
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
                 `:rocket: *Nuevo registro en Lista de Espera Beta*\n` +
                 `*Email:* ${normalizedEmail}\n` +
                 `*Nombre:* ${name || 'No proporcionado'}\n` +
+                `*Teléfono:* ${phone || 'No proporcionado'}\n` +
                 `*Fecha:* ${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' })}`
             ).catch(() => {});
         }
