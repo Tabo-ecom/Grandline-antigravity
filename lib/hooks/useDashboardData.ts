@@ -182,10 +182,49 @@ export function useDashboardData(): DashboardDataHook {
                     });
                 }
 
-                // Consolidate product IDs: some Dropi rows have empty PRODUCTO_ID,
-                // causing fallback to the product NAME as ID. If another order with
-                // the same product name has a real numeric ID, use that instead.
-                // Also prefer group IDs over raw IDs when multiple variants exist.
+                // ── Pass 1: Same-name consolidation ──
+                // Products with the exact same PRODUCTO name but different IDs
+                // should use ONE canonical ID. Prefer group IDs > most frequent ID.
+                const nameIdCounts = new Map<string, Map<string, number>>();
+                flattenedOrders.forEach(o => {
+                    const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+                    const id = o.PRODUCTO_ID?.toString() || '';
+                    if (!name || !id) return;
+                    const key = `${o.country}|${name}`;
+                    if (!nameIdCounts.has(key)) nameIdCounts.set(key, new Map());
+                    const idMap = nameIdCounts.get(key)!;
+                    idMap.set(id, (idMap.get(id) || 0) + 1);
+                });
+
+                // Pick canonical ID per name: group ID wins, otherwise most frequent
+                const nameCanonicalId = new Map<string, string>();
+                nameIdCounts.forEach((idMap, key) => {
+                    if (idMap.size <= 1) return; // Only one ID, no conflict
+                    let bestId = '', bestCount = 0, bestIsGroup = false;
+                    idMap.forEach((count, id) => {
+                        const isGroup = groups.some(g => g.id === id);
+                        if (isGroup && !bestIsGroup) {
+                            bestId = id; bestCount = count; bestIsGroup = true;
+                        } else if (isGroup === bestIsGroup && count > bestCount) {
+                            bestId = id; bestCount = count;
+                        }
+                    });
+                    if (bestId) nameCanonicalId.set(key, bestId);
+                });
+
+                // Apply canonical IDs
+                flattenedOrders.forEach(o => {
+                    const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+                    const key = `${o.country}|${name}`;
+                    const canonical = nameCanonicalId.get(key);
+                    if (canonical && o.PRODUCTO_ID?.toString() !== canonical) {
+                        o.PRODUCTO_ID = canonical;
+                    }
+                });
+
+                // ── Pass 2: Name-fallback resolution ──
+                // Orders where PRODUCTO_ID fell back to the product name:
+                // replace with the real numeric/group ID from other orders with same name
                 const nameToRealId = new Map<string, string>();
                 flattenedOrders.forEach(o => {
                     const name = (o.PRODUCTO as string || '').toLowerCase().trim();
@@ -195,7 +234,6 @@ export function useDashboardData(): DashboardDataHook {
                         const existing = nameToRealId.get(key);
                         const isGroupId = groups.some(g => g.id === id);
                         const existingIsGroupId = existing ? groups.some(g => g.id === existing) : false;
-                        // Prefer group IDs over raw IDs
                         if (!existing || (isGroupId && !existingIsGroupId)) {
                             nameToRealId.set(key, id);
                         }
@@ -207,15 +245,13 @@ export function useDashboardData(): DashboardDataHook {
                     const key = `${o.country}|${name}`;
                     if (name && id && id.toLowerCase().trim() === name) {
                         const realId = nameToRealId.get(key);
-                        if (realId) {
-                            o.PRODUCTO_ID = realId;
-                        }
+                        if (realId) o.PRODUCTO_ID = realId;
                     }
                 });
 
-                // Second pass: resolve remaining ungrouped products by name.
-                // If any order with the same product name WAS grouped,
-                // apply the same group to ungrouped orders with that name.
+                // ── Pass 3: Group-name propagation ──
+                // If any order with a given product name was resolved to a group,
+                // apply that group to ALL orders with the same name
                 const nameToGroupId = new Map<string, string>();
                 flattenedOrders.forEach(o => {
                     const name = (o.PRODUCTO as string || '').toLowerCase().trim();
@@ -229,9 +265,7 @@ export function useDashboardData(): DashboardDataHook {
                     const id = o.PRODUCTO_ID?.toString() || '';
                     if (name && id && !groups.some(g => g.id === id)) {
                         const groupId = nameToGroupId.get(name);
-                        if (groupId) {
-                            o.PRODUCTO_ID = groupId;
-                        }
+                        if (groupId) o.PRODUCTO_ID = groupId;
                     }
                 });
 
