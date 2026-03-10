@@ -42,7 +42,7 @@ export default function AddGroupModal({
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     <label className="text-[10px] font-black text-muted uppercase tracking-widest px-2">Seleccionar Productos (mín 2)</label>
                     <div className="flex flex-col gap-2">
-                        {Array.from(new Map(availableProducts.filter(p => p.id !== 'Todos').map(p => [p.label.trim().toLowerCase(), p])).values()).map(p => (
+                        {availableProducts.filter(p => p.id !== 'Todos').map(p => (
                             <label key={p.id} className="flex items-center gap-3 p-3 bg-hover-bg rounded-xl border border-card-border cursor-pointer hover:bg-white/10 transition-colors">
                                 <input
                                     type="checkbox"

@@ -38,6 +38,8 @@ export function getProductGroup(productId: string, groups: ProductGroup[]): Prod
     const searchId = productId.toLowerCase().trim();
     return groups.find(g =>
         g.productIds.some(id => id.toLowerCase().trim() === searchId)
+        || g.name.toLowerCase().trim() === searchId
+        || g.id.toLowerCase().trim() === searchId
     ) || null;
 }
 

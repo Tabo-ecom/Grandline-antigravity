@@ -185,13 +185,20 @@ export function useDashboardData(): DashboardDataHook {
                 // Consolidate product IDs: some Dropi rows have empty PRODUCTO_ID,
                 // causing fallback to the product NAME as ID. If another order with
                 // the same product name has a real numeric ID, use that instead.
+                // Also prefer group IDs over raw IDs when multiple variants exist.
                 const nameToRealId = new Map<string, string>();
                 flattenedOrders.forEach(o => {
                     const name = (o.PRODUCTO as string || '').toLowerCase().trim();
                     const id = o.PRODUCTO_ID?.toString() || '';
                     const key = `${o.country}|${name}`;
                     if (name && id && id.toLowerCase().trim() !== name) {
-                        nameToRealId.set(key, id);
+                        const existing = nameToRealId.get(key);
+                        const isGroupId = groups.some(g => g.id === id);
+                        const existingIsGroupId = existing ? groups.some(g => g.id === existing) : false;
+                        // Prefer group IDs over raw IDs
+                        if (!existing || (isGroupId && !existingIsGroupId)) {
+                            nameToRealId.set(key, id);
+                        }
                     }
                 });
                 flattenedOrders.forEach(o => {
@@ -202,6 +209,28 @@ export function useDashboardData(): DashboardDataHook {
                         const realId = nameToRealId.get(key);
                         if (realId) {
                             o.PRODUCTO_ID = realId;
+                        }
+                    }
+                });
+
+                // Second pass: resolve remaining ungrouped products by name.
+                // If any order with the same product name WAS grouped,
+                // apply the same group to ungrouped orders with that name.
+                const nameToGroupId = new Map<string, string>();
+                flattenedOrders.forEach(o => {
+                    const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+                    const id = o.PRODUCTO_ID?.toString() || '';
+                    if (name && id && groups.some(g => g.id === id)) {
+                        nameToGroupId.set(name, id);
+                    }
+                });
+                flattenedOrders.forEach(o => {
+                    const name = (o.PRODUCTO as string || '').toLowerCase().trim();
+                    const id = o.PRODUCTO_ID?.toString() || '';
+                    if (name && id && !groups.some(g => g.id === id)) {
+                        const groupId = nameToGroupId.get(name);
+                        if (groupId) {
+                            o.PRODUCTO_ID = groupId;
                         }
                     }
                 });
