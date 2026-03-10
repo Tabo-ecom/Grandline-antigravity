@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     BarChart3, Compass, Megaphone, Bot,
     ChevronDown, ChevronUp, ArrowRight, Check, Zap, Shield,
@@ -824,8 +824,9 @@ export default function LandingPage() {
                             <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
                         </div>
 
-                        <div className="text-xs text-gray-600">
-                            Built with Antigravity AI
+                        <div className="flex items-center gap-4 text-xs text-gray-600">
+                            <span>Built with Antigravity AI</span>
+                            <a href="/login" className="hover:text-gray-400 transition-colors">Iniciar Sesión</a>
                         </div>
                     </div>
                 </div>
