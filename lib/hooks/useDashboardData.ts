@@ -689,7 +689,7 @@ export function useDashboardData(): DashboardDataHook {
     }, [filteredOrders, filteredAds, dateLimits, loading, exchangeRates, projectionSettings]);
 
     // 9. Metrics By Country (kept as is for the table)
-    const { metricsByCountry, totalProjectedProfit } = useMemo(() => {
+    const { metricsByCountry } = useMemo(() => {
         if (loading) return { metricsByCountry: [], totalProjectedProfit: 0 };
 
         const countriesList = availableCountries.filter(c => c !== 'Todos');
@@ -774,6 +774,22 @@ export function useDashboardData(): DashboardDataHook {
         return { metricsByCountry: metricsCountries, totalProjectedProfit: totalProj };
     }, [filteredOrders, rawOrders, adsByCountryProduct, country, product, projectionSettings, loading, availableCountries, campaignMappings, productGroups]);
 
+    // 9.5 Align daily profit with card u_real (subtract ads)
+    // projected_profit stays as-is per day (stable regardless of date range)
+    // Card's projectedProfit will use the sum of daily values as source of truth
+    const alignedDailySalesData = useMemo(() => {
+        if (dailySalesData.length === 0) return dailySalesData;
+        return dailySalesData.map((d: any) => ({
+            ...d,
+            profit: d.profit - d.ads,
+        }));
+    }, [dailySalesData]);
+
+    // Card projected profit = sum of daily projections (single source of truth)
+    const chartProjectedProfit = useMemo(() => {
+        return dailySalesData.reduce((s: number, d: any) => s + (d.projected_profit || 0), 0);
+    }, [dailySalesData]);
+
     // 10. Product Performance Data (Consolidated from metricsByCountry)
     const productPerformanceData = useMemo(() => {
         if (loading) return [];
@@ -837,13 +853,13 @@ export function useDashboardData(): DashboardDataHook {
         availableCountries,
         availableProducts,
         filteredOrders,
-        kpis: kpis ? { ...kpis, utilidad_proyectada: totalProjectedProfit, cpaFacebook } : null,
+        kpis: kpis ? { ...kpis, utilidad_proyectada: chartProjectedProfit, cpaFacebook } : null,
         prevKpis,
         logisticStats,
         adPlatformMetrics,
-        dailySalesData,
+        dailySalesData: alignedDailySalesData,
         productPerformanceData,
-        projectedProfit: totalProjectedProfit,
+        projectedProfit: chartProjectedProfit,
         metricsByCountry,
         unmappedAdSpend: 0,
         rawDatesSample: [],

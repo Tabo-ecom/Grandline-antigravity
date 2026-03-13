@@ -279,8 +279,10 @@ function generateExpenses(): any[] {
 
     const expenses: any[] = [];
 
-    // Generate for both January and February 2026
-    for (const monthData of [{ month: 1, year: 2026 }, { month: 2, year: 2026 }]) {
+    // Generate for January through current month
+    const currentMonth = new Date().getMonth() + 1; // 1-12
+    const months = Array.from({ length: currentMonth }, (_, i) => ({ month: i + 1, year: 2026 }));
+    for (const monthData of months) {
         for (const cat of categories) {
             for (const item of cat.items) {
                 const amount = randomInt(80000, 3200000);
@@ -356,9 +358,9 @@ export async function POST(req: NextRequest) {
             is_demo: true,
         });
 
-        // ─── Step 3: Generate date range (January 1 – February 28, 2026) ─
+        // ─── Step 3: Generate date range (January 1 – today) ────────────
         const startDate = new Date('2026-01-01');
-        const endDate = new Date('2026-02-28');
+        const endDate = new Date(); // Dynamic: always up to today
         const days = getDaysInRange(startDate, endDate);
 
         // ─── Step 4: Generate & save orders ───────────────────────────────
@@ -366,20 +368,33 @@ export async function POST(req: NextRequest) {
         let totalOrders = 0;
 
         // Split orders by month to stay under Firestore 1MB doc limit
-        for (const [country, orders] of Object.entries(ordersByCountry)) {
-            const jan = orders.filter((o: any) => o.FECHA.startsWith('2026-01'));
-            const feb = orders.filter((o: any) => o.FECHA.startsWith('2026-02'));
+        const monthNames: Record<string, string> = {
+            '01': 'enero', '02': 'febrero', '03': 'marzo', '04': 'abril',
+            '05': 'mayo', '06': 'junio', '07': 'julio', '08': 'agosto',
+            '09': 'septiembre', '10': 'octubre', '11': 'noviembre', '12': 'diciembre',
+        };
 
-            for (const [month, monthOrders] of [['enero', jan], ['febrero', feb]] as [string, any[]][]) {
+        for (const [country, orders] of Object.entries(ordersByCountry)) {
+            // Group orders by YYYY-MM dynamically
+            const byMonth = new Map<string, any[]>();
+            orders.forEach((o: any) => {
+                const ym = o.FECHA.substring(0, 7); // "2026-01"
+                if (!byMonth.has(ym)) byMonth.set(ym, []);
+                byMonth.get(ym)!.push(o);
+            });
+
+            for (const [ym, monthOrders] of byMonth) {
                 if (monthOrders.length === 0) continue;
-                const docId = `demo_${country.toLowerCase().replace(/\s/g, '_')}_${month}_${demoUid}`;
+                const mm = ym.split('-')[1];
+                const monthLabel = monthNames[mm] || mm;
+                const docId = `demo_${country.toLowerCase().replace(/\s/g, '_')}_${monthLabel}_${demoUid}`;
 
                 try { await adminDb.collection('order_files').doc(docId).delete(); } catch {}
                 try { await adminDb.collection('import_logs').doc(docId).delete(); } catch {}
 
                 await adminDb.collection('order_files').doc(docId).set({
                     userId: demoUid,
-                    fileName: `demo_${country.toLowerCase()}_${month}.csv`,
+                    fileName: `demo_${country.toLowerCase()}_${monthLabel}.csv`,
                     country,
                     orderCount: monthOrders.length,
                     orders: monthOrders,
@@ -389,7 +404,7 @@ export async function POST(req: NextRequest) {
 
                 await adminDb.collection('import_logs').doc(docId).set({
                     userId: demoUid,
-                    fileName: `demo_${country.toLowerCase()}_${month}.csv`,
+                    fileName: `demo_${country.toLowerCase()}_${monthLabel}.csv`,
                     country,
                     orderCount: monthOrders.length,
                     uploaded_at: new Date(),

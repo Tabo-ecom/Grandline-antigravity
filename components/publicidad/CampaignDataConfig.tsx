@@ -127,9 +127,8 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
 
     // Form States
     const [newMapping, setNewMapping] = useState({
-        campaignNames: [] as string[],
+        selectedCampaigns: [] as { name: string; platform: 'facebook' | 'tiktok'; country?: string }[],
         productId: '',
-        platform: 'facebook' as 'facebook' | 'tiktok'
     });
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
@@ -418,21 +417,21 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
 
     const handleAddMapping = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMapping.productId || newMapping.campaignNames.length === 0) return;
+        if (!newMapping.productId || newMapping.selectedCampaigns.length === 0) return;
         setSaving(true);
         try {
             const selectedProduct = selectableProducts.find(p => p.id === newMapping.productId);
             const productLabel = selectedProduct?.label?.replace(/^📦 \[Grupo\] /, '') || newMapping.productId;
-            await addMultipleCampaignMappings(newMapping.campaignNames.map(name => ({
-                campaignName: name,
+            await addMultipleCampaignMappings(newMapping.selectedCampaigns.map(sc => ({
+                campaignName: sc.name,
                 productId: newMapping.productId,
                 productName: productLabel,
-                platform: newMapping.platform,
+                platform: sc.platform,
                 updatedAt: Date.now()
             })), effectiveUid || '');
             const updated = await getCampaignMappings(effectiveUid || '');
             setMappings(updated);
-            setNewMapping({ campaignNames: [], productId: '', platform: 'facebook' });
+            setNewMapping({ selectedCampaigns: [], productId: '' });
             setSuccess(true);
             setTimeout(() => setSuccess(false), 3000);
         } catch (error) {
@@ -1193,8 +1192,8 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                         <div className="space-y-8" ref={campaignDropdownRef}>
                                             <label className="text-[11px] font-black text-muted uppercase tracking-[0.15em] block">1. Seleccionar Campañas</label>
                                             <div onClick={() => setIsCampaignDropdownOpen(!isCampaignDropdownOpen)} className="w-full bg-card border border-card-border rounded-2xl px-6 py-5 text-sm text-foreground/80 cursor-pointer min-h-[64px] flex flex-wrap gap-2">
-                                                {newMapping.campaignNames.length > 0 ? newMapping.campaignNames.map((n, idx) => (
-                                                    <span key={`${n}_${idx}`} className="px-3 py-1 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-lg border border-blue-500/30">{n}</span>
+                                                {newMapping.selectedCampaigns.length > 0 ? newMapping.selectedCampaigns.map((sc, idx) => (
+                                                    <span key={`${sc.name}_${sc.platform}_${idx}`} className="px-3 py-1 bg-blue-500/20 text-blue-400 text-[10px] font-bold rounded-lg border border-blue-500/30">{sc.name}</span>
                                                 )) : <span className="text-muted">Seleccionar campañas detectadas...</span>}
                                             </div>
                                             {isCampaignDropdownOpen && (
@@ -1212,11 +1211,30 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                                     {availableCampaigns
                                                         .filter(c => !mappings.some(m => m.campaignName === c.name && m.platform === c.platform))
                                                         .filter(c => c.name.toLowerCase().includes(campaignSearchTerm.toLowerCase()))
-                                                        .map(c => (
-                                                            <div key={`${c.name}_${c.platform}_${c.country}`} onClick={() => setNewMapping({ ...newMapping, campaignNames: newMapping.campaignNames.includes(c.name) ? newMapping.campaignNames.filter((n: string) => n !== c.name) : [...newMapping.campaignNames, c.name], platform: c.platform })} className={`p-4 rounded-xl cursor-pointer transition-all ${newMapping.campaignNames.includes(c.name) ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-hover-bg text-muted'}`}>
-                                                                {c.name} ({c.platform}) {c.country ? `[${c.country}]` : ''}
-                                                            </div>
-                                                        ))}
+                                                        .map(c => {
+                                                            const isSelected = newMapping.selectedCampaigns.some(
+                                                                sc => sc.name === c.name && sc.platform === c.platform
+                                                            );
+                                                            return (
+                                                                <div
+                                                                    key={`${c.name}_${c.platform}_${c.country}`}
+                                                                    onClick={() => setNewMapping(prev => {
+                                                                        const alreadySelected = prev.selectedCampaigns.some(
+                                                                            sc => sc.name === c.name && sc.platform === c.platform
+                                                                        );
+                                                                        return {
+                                                                            ...prev,
+                                                                            selectedCampaigns: alreadySelected
+                                                                                ? prev.selectedCampaigns.filter(sc => !(sc.name === c.name && sc.platform === c.platform))
+                                                                                : [...prev.selectedCampaigns, { name: c.name, platform: c.platform as 'facebook' | 'tiktok', country: c.country }]
+                                                                        };
+                                                                    })}
+                                                                    className={`p-4 rounded-xl cursor-pointer transition-all ${isSelected ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-hover-bg text-muted'}`}
+                                                                >
+                                                                    {c.name} ({c.platform}) {c.country ? `[${c.country}]` : ''}
+                                                                </div>
+                                                            );
+                                                        })}
                                                 </div>
                                             )}
                                         </div>
@@ -1242,7 +1260,7 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                                         ...Array.from(new Map(selectableProducts.filter(p => p.id !== 'Todos').map(p => [p.label.trim().toLowerCase(), p])).values())
                                                     ].filter(p => p.label.toLowerCase().includes(productSearchTerm.toLowerCase()) || p.id.toLowerCase().includes(productSearchTerm.toLowerCase()))
                                                         .map(p => (
-                                                            <div key={p.id} onClick={() => { setNewMapping({ ...newMapping, productId: p.id }); setIsProductDropdownOpen(false); setProductSearchTerm(''); }} className={`p-4 rounded-xl cursor-pointer transition-all flex items-center gap-2 ${newMapping.productId === p.id ? 'bg-orange-600 text-white shadow-lg' : 'hover:bg-hover-bg text-muted'}`}>
+                                                            <div key={p.id} onClick={() => { setNewMapping(prev => ({ ...prev, productId: p.id })); setIsProductDropdownOpen(false); setProductSearchTerm(''); }} className={`p-4 rounded-xl cursor-pointer transition-all flex items-center gap-2 ${newMapping.productId === p.id ? 'bg-orange-600 text-white shadow-lg' : 'hover:bg-hover-bg text-muted'}`}>
                                                                 <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 shrink-0">
                                                                     {p.country ? (p.country === 'Global' ? 'GL' : p.country.substring(0, 2)) : 'N/A'}
                                                                 </span>
@@ -1361,7 +1379,7 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                             <p className="text-[10px] font-bold text-muted uppercase tracking-widest">Sin campañas pendientes</p>
                                         </div>
                                     ) : unmappedCampaigns.map(c => (
-                                        <div key={`${c.name}_${c.platform}_${c.country}`} onClick={() => { setNewMapping({ campaignNames: [c.name], platform: c.platform as any, productId: '' }); setMappingMode('manual'); }} className="p-5 bg-card border border-card-border rounded-2xl cursor-pointer hover:border-orange-500/50 transition-all flex justify-between items-center group">
+                                        <div key={`${c.name}_${c.platform}_${c.country}`} onClick={() => { setNewMapping({ selectedCampaigns: [{ name: c.name, platform: c.platform as 'facebook' | 'tiktok', country: c.country }], productId: '' }); setMappingMode('manual'); }} className="p-5 bg-card border border-card-border rounded-2xl cursor-pointer hover:border-orange-500/50 transition-all flex justify-between items-center group">
                                             <div className="flex flex-col">
                                                 <div className="flex items-center gap-2 mb-1">
                                                     <span className="text-[9px] font-black text-muted uppercase">{c.platform}</span>
@@ -1426,7 +1444,7 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                         </div>
                                     ) : (
                                         unmappedProducts.map(p => (
-                                            <div key={p.id} onClick={() => { setNewMapping({ ...newMapping, productId: p.id }); setMappingMode('manual'); }} className="p-5 bg-card border border-card-border rounded-2xl cursor-pointer hover:border-gray-500 transition-all flex justify-between items-center group">
+                                            <div key={p.id} onClick={() => { setNewMapping(prev => ({ ...prev, productId: p.id })); setMappingMode('manual'); }} className="p-5 bg-card border border-card-border rounded-2xl cursor-pointer hover:border-gray-500 transition-all flex justify-between items-center group">
                                                 <div className="flex flex-col">
                                                     <span className="text-[9px] font-black text-muted mb-1 uppercase">{p.country || 'Sin País'}</span>
                                                     <span className="text-[10px] font-bold text-muted uppercase truncate w-32">{p.label}</span>
