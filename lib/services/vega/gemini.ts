@@ -266,13 +266,76 @@ async function callOpenAI(apiKey: string, prompt: string, systemContext?: string
     });
 }
 
-async function callAI(prompt: string, systemContext?: string, kpiTargets?: KPITarget[], temp: AITemperature = 'balanced'): Promise<string> {
+export async function callAI(prompt: string, systemContext?: string, kpiTargets?: KPITarget[], temp: AITemperature = 'balanced'): Promise<string> {
     const { provider, apiKey } = detectProvider();
 
     if (provider === 'gemini') {
         return callGemini(apiKey, prompt, systemContext, kpiTargets, temp);
     } else {
         return callOpenAI(apiKey, prompt, systemContext, kpiTargets, temp);
+    }
+}
+
+/** Call AI WITHOUT the VEGA system prompt — for standalone tasks like research */
+export async function callAIRaw(prompt: string, temp: AITemperature = 'balanced'): Promise<string> {
+    const { provider, apiKey } = detectProvider();
+    const temperature = temp === 'precise' ? 0.2 : 0.4;
+
+    if (provider === 'gemini') {
+        return withRetry(async () => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 120_000);
+            try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature, maxOutputTokens: 8192, responseMimeType: 'application/json' },
+                        }),
+                        signal: controller.signal,
+                    }
+                );
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    const err: any = new Error(`Gemini API error (${response.status}): ${errorText.substring(0, 200)}`);
+                    err.status = response.status;
+                    throw err;
+                }
+                const data = await response.json();
+                if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    throw new Error(`Respuesta invalida de Gemini: ${data.candidates?.[0]?.finishReason || 'unknown'}`);
+                }
+                return data.candidates[0].content.parts[0].text;
+            } catch (err: any) {
+                if (err.name === 'AbortError') throw new Error('Timeout de 2 min en Gemini.');
+                throw err;
+            } finally {
+                clearTimeout(timeout);
+            }
+        });
+    } else {
+        return withRetry(async () => {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature,
+                    max_tokens: 8192,
+                    response_format: { type: 'json_object' },
+                }),
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI error (${response.status}): ${errorText.substring(0, 200)}`);
+            }
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || '';
+        });
     }
 }
 

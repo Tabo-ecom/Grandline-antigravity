@@ -38,7 +38,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         setIsLandingDomain(!isApp);
     }, []);
 
-    const isPublicPage = pathname === '/' || pathname === '/login' || pathname === '/diagnostico';
+    const isPublicPage = pathname === '/' || pathname === '/login' || pathname === '/diagnostico' || pathname === '/terms' || pathname === '/privacy';
 
     // Verify Stripe session after checkout redirect (race condition fix)
     const sessionId = searchParams.get('session_id');
@@ -96,7 +96,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
         // Landing domain (grandline.com.co): only serve landing page, redirect everything else to app subdomain
         if (isLandingDomain) {
-            if (pathname !== '/' && pathname !== '/diagnostico') {
+            if (pathname !== '/' && pathname !== '/diagnostico' && pathname !== '/terms' && pathname !== '/privacy') {
                 window.location.href = `https://app.grandline.com.co${pathname}${window.location.search}`;
             }
             return;
@@ -115,7 +115,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
     // Landing domain — always show landing page and public pages
     if (isLandingDomain) {
-        if (pathname === '/' || pathname === '/diagnostico') return <>{children}</>;
+        if (pathname === '/' || pathname === '/diagnostico' || pathname === '/terms' || pathname === '/privacy') return <>{children}</>;
         return null; // redirecting to app subdomain
     }
 

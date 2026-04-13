@@ -525,7 +525,7 @@ export interface MetaAdSetConfig {
         ageMin?: number;
         ageMax?: number;
         genders?: number[]; // 1=male, 2=female
-        excludedGeoLocations?: { cities?: { key: string }[]; zips?: { key: string }[] };
+        excludedGeoLocations?: { cities?: { key: string }[]; regions?: { key: string }[]; zips?: { key: string }[] };
     };
     pixelId?: string;
     promotedObject?: { pixelId: string; customEventType: string };
@@ -563,8 +563,8 @@ export interface MetaLaunchResult {
  */
 async function waitForVideoReady(token: string, videoId: string): Promise<string> {
     let thumbnailUrl = '';
-    for (let attempt = 0; attempt < 10; attempt++) {
-        await new Promise(r => setTimeout(r, attempt === 0 ? 2000 : 3000));
+    for (let attempt = 0; attempt < 15; attempt++) {
+        await new Promise(r => setTimeout(r, attempt === 0 ? 2000 : 4000));
         try {
             const resp = await fetch(
                 `https://graph.facebook.com/${META_API_VERSION}/${videoId}?fields=status,picture&access_token=${token}`
@@ -579,7 +579,7 @@ async function waitForVideoReady(token: string, videoId: string): Promise<string
             if (e.message?.includes('rejected')) throw e;
         }
     }
-    console.warn(`[Meta] Video ${videoId} still processing after 30s, proceeding anyway`);
+    console.warn(`[Meta] Video ${videoId} still processing after 60s, proceeding anyway`);
     return thumbnailUrl;
 }
 
@@ -637,12 +637,50 @@ export async function uploadMetaAdVideoFromUrl(
 }
 
 /**
- * Upload an image to Meta — via proxy (images are small, no chunking needed)
+ * Compress an image file client-side to stay under Vercel's ~4.5MB body limit.
+ * Uses canvas to resize and re-encode as JPEG at 0.85 quality.
+ * Max dimension: 2048px (Meta recommended max for ad images).
+ */
+async function compressImageFile(file: File, maxDim = 2048, quality = 0.85, maxBytes = 3 * 1024 * 1024): Promise<File> {
+    if (file.size <= maxBytes) return file;
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+                const ratio = Math.min(maxDim / width, maxDim / height);
+                width = Math.round(width * ratio);
+                height = Math.round(height * ratio);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Canvas not supported'));
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+                blob => {
+                    if (!blob) return reject(new Error('Image compression failed'));
+                    resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+                },
+                'image/jpeg',
+                quality,
+            );
+        };
+        img.onerror = () => reject(new Error('Failed to load image for compression'));
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+/**
+ * Upload an image to Meta — via proxy. Compresses large images first.
  */
 export async function uploadMetaAdImage(token: string, accountId: string, imageFile: File): Promise<string> {
+    const compressed = await compressImageFile(imageFile);
     const formData = new FormData();
     formData.append('access_token', token);
-    formData.append('filename', imageFile);
+    formData.append('filename', compressed);
 
     const data = await metaProxyUploadChunk(`/${META_API_VERSION}/${accountId}/adimages`, formData);
     if (data.error) throw new Error(`Image upload failed: ${data.error.message || data.error}`);
@@ -844,10 +882,27 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
     // Build the creative spec
     if (config.creative.videoId) {
         // Meta REQUIRES image_hash or image_url in video_data
-        // If we don't have a thumbnail yet, fetch it now
         let thumbnailUrl = config.creative.videoThumbnailUrl || '';
+
+        // If no thumbnail yet, poll until ready (up to 60s)
         if (!thumbnailUrl && !config.creative.imageHash) {
             thumbnailUrl = await waitForVideoReady(token, config.creative.videoId);
+        }
+
+        // Still no thumbnail — try fetching just the picture field directly
+        if (!thumbnailUrl && !config.creative.imageHash) {
+            for (let i = 0; i < 5; i++) {
+                await new Promise(r => setTimeout(r, 5000));
+                try {
+                    const resp = await fetch(
+                        `https://graph.facebook.com/${META_API_VERSION}/${config.creative.videoId}?fields=picture,thumbnails&access_token=${token}`
+                    );
+                    const data = await resp.json();
+                    if (data.picture) { thumbnailUrl = data.picture; break; }
+                    const thumbs = data.thumbnails?.data;
+                    if (thumbs && thumbs.length > 0) { thumbnailUrl = thumbs[0].uri; break; }
+                } catch { /* retry */ }
+            }
         }
 
         const videoData: Record<string, any> = {
@@ -863,6 +918,8 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
             videoData.image_hash = config.creative.imageHash;
         } else if (thumbnailUrl) {
             videoData.image_url = thumbnailUrl;
+        } else {
+            throw new Error('El video aún no tiene thumbnail después de varios intentos. Intenta de nuevo en unos minutos.');
         }
         creativeSpec.object_story_spec.video_data = videoData;
     } else if (config.creative.imageHash) {
@@ -911,6 +968,87 @@ export async function createMetaAd(token: string, config: MetaAdConfig): Promise
     if (data.error) {
         const detail = data.error.error_user_msg || data.error.message;
         throw new Error(`Ad creation failed: ${detail} (code: ${data.error.code}, subcode: ${data.error.error_subcode || 'none'})`);
+    }
+    return data.id;
+}
+
+/**
+ * Create a Multi-Format Ad with placement asset customization.
+ * Uses asset_feed_spec + asset_customization_rules to assign different
+ * image ratios to different placements (Feed=4:5, Stories/Reels=9:16).
+ */
+export interface MultiFormatAdConfig {
+    accountId: string;
+    adSetId: string;
+    name: string;
+    status: 'PAUSED' | 'ACTIVE';
+    pageId: string;
+    link: string;
+    feedImageHash: string;   // 4:5 image for Feed
+    storyImageHash: string;  // 9:16 image for Stories/Reels
+    message: string;
+    title?: string;
+    description?: string;
+    callToAction?: string;
+}
+
+export async function createMetaMultiFormatAd(token: string, config: MultiFormatAdConfig): Promise<string> {
+    const cta = config.callToAction || 'SHOP_NOW';
+
+    const assetFeedSpec: Record<string, any> = {
+        images: [
+            { hash: config.feedImageHash, adlabels: [{ name: 'feed_image' }] },
+            { hash: config.storyImageHash, adlabels: [{ name: 'story_image' }] },
+        ],
+        bodies: [{ text: config.message }],
+        link_urls: [{ website_url: config.link }],
+        call_to_action_types: [cta],
+        asset_customization_rules: [
+            {
+                customization_spec: {
+                    publisher_platforms: ['facebook', 'instagram'],
+                    facebook_positions: ['feed', 'marketplace', 'video_feeds', 'search'],
+                    instagram_positions: ['stream', 'explore', 'explore_home'],
+                },
+                image_label: { name: 'feed_image' },
+            },
+            {
+                customization_spec: {
+                    publisher_platforms: ['facebook', 'instagram'],
+                    facebook_positions: ['story', 'facebook_reels'],
+                    instagram_positions: ['story', 'reels'],
+                },
+                image_label: { name: 'story_image' },
+            },
+        ],
+    };
+
+    if (config.title) assetFeedSpec.titles = [{ text: config.title }];
+    if (config.description) assetFeedSpec.descriptions = [{ text: config.description }];
+
+    const creativeSpec = {
+        object_story_spec: { page_id: config.pageId },
+        asset_feed_spec: assetFeedSpec,
+    };
+
+    const params: Record<string, string> = {
+        access_token: token,
+        name: config.name,
+        adset_id: config.adSetId,
+        status: config.status,
+        creative: JSON.stringify(creativeSpec),
+    };
+
+    const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${config.accountId}/ads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString()
+    });
+
+    const data = await safeResponseJson(response, 'Multi-format Ad creation');
+    if (data.error) {
+        const detail = data.error.error_user_msg || data.error.message;
+        throw new Error(`Multi-format Ad creation failed: ${detail} (code: ${data.error.code}, subcode: ${data.error.error_subcode || 'none'})`);
     }
     return data.id;
 }
@@ -1065,27 +1203,58 @@ export async function searchMetaLocations(token: string, query: string, type: st
 }
 
 /**
- * Convert freeform location names to Meta location keys for exclusion targeting
+ * Convert freeform location names to Meta location keys for exclusion targeting.
+ * Tries adcity first, then adregion, then adgeolocation as fallback.
+ * Returns resolved locations and any names that couldn't be found.
  */
 export async function resolveExclusionLocations(
     token: string,
     locationNames: string[]
-): Promise<{ cities: { key: string }[] } | undefined> {
+): Promise<{ cities: { key: string }[]; regions?: { key: string }[]; unresolvedNames: string[] } | undefined> {
     const cities: { key: string }[] = [];
+    const regions: { key: string }[] = [];
+    const unresolvedNames: string[] = [];
 
-    // Resolve all location names in parallel
-    const results = await Promise.all(
-        locationNames.map(name => searchMetaLocations(token, name.trim(), 'adcity'))
-    );
+    for (const name of locationNames) {
+        const trimmed = name.trim();
+        if (!trimmed) continue;
 
-    for (const matches of results) {
+        // Try city first
+        let matches = await searchMetaLocations(token, trimmed, 'adcity');
         if (matches.length > 0) {
             cities.push({ key: matches[0].key });
+            continue;
         }
+
+        // Try region/state
+        matches = await searchMetaLocations(token, trimmed, 'adregion');
+        if (matches.length > 0) {
+            regions.push({ key: matches[0].key });
+            continue;
+        }
+
+        // Try general geolocation
+        matches = await searchMetaLocations(token, trimmed, 'adgeolocation');
+        if (matches.length > 0) {
+            // Determine type from result
+            const loc = matches[0];
+            if (loc.type === 'region' || loc.type === 'sub_city') {
+                regions.push({ key: loc.key });
+            } else {
+                cities.push({ key: loc.key });
+            }
+            continue;
+        }
+
+        unresolvedNames.push(trimmed);
     }
 
-    if (cities.length === 0) return undefined;
-    return { cities };
+    if (cities.length === 0 && regions.length === 0) return undefined;
+
+    const result: any = { unresolvedNames };
+    if (cities.length > 0) result.cities = cities;
+    if (regions.length > 0) result.regions = regions;
+    return result;
 }
 
 /**
@@ -1094,14 +1263,30 @@ export async function resolveExclusionLocations(
 export async function fetchMetaCampaigns(token: string, accountId: string): Promise<{ id: string; name: string; status: string }[]> {
     if (!token || !accountId) return [];
     try {
-        const data = await metaProxyGet(`/${META_API_VERSION}/${accountId}/campaigns`, {
+        const allCampaigns: { id: string; name: string; status: string }[] = [];
+
+        // First page via proxy
+        const firstPage: any = await metaProxyGet(`/${META_API_VERSION}/${accountId}/campaigns`, {
             access_token: token,
             fields: 'name,status',
-            limit: '50',
+            limit: '200',
             filtering: JSON.stringify([{ field: 'effective_status', operator: 'IN', value: ['ACTIVE', 'PAUSED'] }]),
         });
-        if (data.error) throw new Error(data.error.message);
-        return (data.data || []).map((c: any) => ({ id: c.id, name: c.name, status: c.status }));
+        if (firstPage.error) throw new Error(firstPage.error.message);
+        (firstPage.data || []).forEach((c: any) => allCampaigns.push({ id: c.id, name: c.name, status: c.status }));
+
+        // Follow pagination (subsequent pages are full URLs from Meta)
+        let nextUrl: string | null = firstPage.paging?.next || null;
+        let pages = 0;
+        while (nextUrl && pages < 10) {
+            const page: any = await metaFetchWithRetry(nextUrl, undefined, 'Fetch campaigns page');
+            if (page.error) break;
+            (page.data || []).forEach((c: any) => allCampaigns.push({ id: c.id, name: c.name, status: c.status }));
+            nextUrl = page.paging?.next || null;
+            pages++;
+        }
+
+        return allCampaigns;
     } catch (error) {
         console.error('Error fetching Meta campaigns:', error);
         return [];
@@ -1114,13 +1299,27 @@ export async function fetchMetaCampaigns(token: string, accountId: string): Prom
 export async function fetchMetaAdSets(token: string, campaignId: string): Promise<{ id: string; name: string; status: string }[]> {
     if (!token || !campaignId) return [];
     try {
-        const data = await metaProxyGet(`/${META_API_VERSION}/${campaignId}/adsets`, {
+        const allAdSets: { id: string; name: string; status: string }[] = [];
+
+        const firstPage: any = await metaProxyGet(`/${META_API_VERSION}/${campaignId}/adsets`, {
             access_token: token,
             fields: 'name,status',
-            limit: '50',
+            limit: '200',
         });
-        if (data.error) throw new Error(data.error.message);
-        return (data.data || []).map((s: any) => ({ id: s.id, name: s.name, status: s.status }));
+        if (firstPage.error) throw new Error(firstPage.error.message);
+        (firstPage.data || []).forEach((s: any) => allAdSets.push({ id: s.id, name: s.name, status: s.status }));
+
+        let nextUrl: string | null = firstPage.paging?.next || null;
+        let pages = 0;
+        while (nextUrl && pages < 10) {
+            const page: any = await metaFetchWithRetry(nextUrl, undefined, 'Fetch ad sets page');
+            if (page.error) break;
+            (page.data || []).forEach((s: any) => allAdSets.push({ id: s.id, name: s.name, status: s.status }));
+            nextUrl = page.paging?.next || null;
+            pages++;
+        }
+
+        return allAdSets;
     } catch (error) {
         console.error('Error fetching Meta ad sets:', error);
         return [];

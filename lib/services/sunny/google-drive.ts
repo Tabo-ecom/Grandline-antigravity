@@ -82,6 +82,7 @@ export async function openDrivePicker(userId: string): Promise<GDriveFile[] | nu
             const tokenClient = window.google.accounts.oauth2.initTokenClient({
                 client_id: clientId,
                 scope: 'https://www.googleapis.com/auth/drive.readonly',
+                ux_mode: 'popup',
                 callback: async (response: any) => {
                     if (response.error !== undefined) {
                         console.error("Auth error:", response);

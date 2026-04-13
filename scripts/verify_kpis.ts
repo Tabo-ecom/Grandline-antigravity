@@ -103,6 +103,7 @@ function calculateKPIsOld(
         g_ads, u_real,
         roas_bruto, roas_real, cpa, cpe, mer, perc_ads_revenue,
         costo_dev_orden, utilidad_por_entrega, roas: roas_bruto,
+        n_pend: 0, perc_pend: 0,
         fact_despachada: fact_neto
     };
 }
@@ -242,6 +243,7 @@ function calculateKPIsNew(
         g_ads, u_real,
         roas_bruto, roas_real, cpa, cpe, mer, perc_ads_revenue,
         costo_dev_orden, utilidad_por_entrega, roas: roas_bruto,
+        n_pend: 0, perc_pend: 0,
         fact_despachada: fact_neto
     };
 }

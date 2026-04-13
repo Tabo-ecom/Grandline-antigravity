@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Plus,
     Globe,
@@ -10,12 +10,20 @@ import {
     RefreshCw,
     MapPinOff,
     X,
-    Loader2
+    Loader2,
+    Link2,
+    Unlink,
+    Upload,
+    CheckCircle,
+    AlertCircle,
+    Video
 } from 'lucide-react';
 import { useSunny, StoreProfile, ExclusionList } from '@/lib/context/SunnyContext';
 import { getAdSettings } from '@/lib/services/marketing';
 import { fetchMetaAdAccounts, fetchMetaPixels, fetchMetaPages, MetaTokenExpiredError } from '@/lib/services/meta';
+import { buildTikTokOAuthUrl, getTikTokStatus, disconnectTikTok, initTikTokVideoUpload, checkTikTokPublishStatus } from '@/lib/services/tiktok';
 import { useAuth } from '@/lib/context/AuthContext';
+import { authFetch } from '@/lib/api/client';
 
 export const Connectivity: React.FC = () => {
     const {
@@ -46,6 +54,99 @@ export const Connectivity: React.FC = () => {
     const [fbPages, setFbPages] = useState<any[]>([]);
     const [isLoadingMeta, setIsLoadingMeta] = useState(false);
     const [selectedAdAccountId, setSelectedAdAccountId] = useState('');
+
+    // TikTok OAuth State
+    const [tiktokStatus, setTiktokStatus] = useState<{
+        connected: boolean; expired?: boolean; display_name?: string; avatar_url?: string;
+    }>({ connected: false });
+    const [tiktokLoading, setTiktokLoading] = useState(true);
+    const [disconnecting, setDisconnecting] = useState(false);
+
+    // TikTok Video Upload State
+    const [videoFile, setVideoFile] = useState<File | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+    const [uploadMessage, setUploadMessage] = useState('');
+
+    // Load TikTok status on mount
+    useEffect(() => {
+        loadTikTokStatus();
+    }, []);
+
+    // Check URL params for TikTok connection result
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('tiktok_connected') === 'true') {
+            loadTikTokStatus();
+            // Clean URL
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+        if (params.get('tiktok_error')) {
+            setUploadMessage(`Error de conexión: ${params.get('tiktok_error')}`);
+            setUploadStatus('error');
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, []);
+
+    const loadTikTokStatus = async () => {
+        setTiktokLoading(true);
+        const status = await getTikTokStatus(authFetch);
+        setTiktokStatus(status);
+        setTiktokLoading(false);
+    };
+
+    const handleConnectTikTok = () => {
+        const url = buildTikTokOAuthUrl(effectiveUid || '');
+        window.location.href = url;
+    };
+
+    const handleDisconnectTikTok = async () => {
+        if (!confirm('¿Desconectar tu cuenta de TikTok?')) return;
+        setDisconnecting(true);
+        await disconnectTikTok(authFetch);
+        setTiktokStatus({ connected: false });
+        setDisconnecting(false);
+        setVideoFile(null);
+        setUploadStatus('idle');
+    };
+
+    const handleVideoUpload = async () => {
+        if (!videoFile) return;
+        setUploading(true);
+        setUploadStatus('uploading');
+        setUploadMessage('Iniciando subida a TikTok...');
+
+        try {
+            // Step 1: Init upload — get upload URL
+            const initResult = await initTikTokVideoUpload(authFetch, videoFile.size);
+            if (!initResult?.upload_url) {
+                throw new Error('No se pudo iniciar la subida');
+            }
+
+            setUploadMessage('Subiendo video...');
+
+            // Step 2: Upload file directly to TikTok's upload URL
+            const uploadRes = await fetch(initResult.upload_url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'video/mp4',
+                    'Content-Range': `bytes 0-${videoFile.size - 1}/${videoFile.size}`,
+                },
+                body: videoFile,
+            });
+
+            if (!uploadRes.ok) throw new Error('Error subiendo video');
+
+            setUploadMessage('Video enviado como borrador. Revísalo en TikTok para publicar.');
+            setUploadStatus('success');
+            setVideoFile(null);
+        } catch (err: any) {
+            setUploadMessage(err.message || 'Error en la subida');
+            setUploadStatus('error');
+        } finally {
+            setUploading(false);
+        }
+    };
 
     // Exclusion Lists State
     const [isAddingExclusion, setIsAddingExclusion] = useState(false);
@@ -276,6 +377,144 @@ export const Connectivity: React.FC = () => {
                         </div>
                     </div>
                 )}
+            </section>
+
+            {/* Zone 2: TikTok Integration */}
+            <section className="space-y-6">
+                <div>
+                    <h2 className="text-2xl font-black italic uppercase tracking-tighter text-foreground flex items-center gap-2">
+                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.88-2.88 2.89 2.89 0 012.88-2.88c.28 0 .56.04.82.11v-3.49a6.37 6.37 0 00-.82-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.13a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.56z"/>
+                        </svg>
+                        TikTok Connect <span className="text-muted font-mono text-sm not-italic ml-2">(Content Posting)</span>
+                    </h2>
+                    <p className="text-muted text-xs font-bold uppercase tracking-widest mt-1">Conecta tu cuenta para subir borradores de video</p>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Connection Card */}
+                    <div className="p-6 bg-card border border-card-border rounded-[2rem] space-y-5 relative overflow-hidden">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted">Estado de Conexión</span>
+                            {tiktokLoading ? (
+                                <Loader2 className="w-4 h-4 text-muted animate-spin" />
+                            ) : tiktokStatus.connected ? (
+                                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-400">
+                                    <CheckCircle className="w-3.5 h-3.5" /> Conectado
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase text-muted">
+                                    <AlertCircle className="w-3.5 h-3.5" /> No conectado
+                                </span>
+                            )}
+                        </div>
+
+                        {tiktokStatus.connected ? (
+                            <>
+                                <div className="flex items-center gap-4 p-4 bg-background rounded-2xl border border-card-border">
+                                    {tiktokStatus.avatar_url ? (
+                                        <img src={tiktokStatus.avatar_url} alt="TikTok" className="w-12 h-12 rounded-full border-2 border-accent/30" />
+                                    ) : (
+                                        <div className="w-12 h-12 rounded-full bg-accent/20 border-2 border-accent/30 flex items-center justify-center">
+                                            <span className="text-lg font-black text-accent">TT</span>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <p className="text-sm font-black text-foreground">{tiktokStatus.display_name || 'Usuario TikTok'}</p>
+                                        <p className="text-[10px] font-mono text-muted uppercase tracking-wider">Cuenta conectada</p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleDisconnectTikTok}
+                                    disabled={disconnecting}
+                                    className="w-full py-3 bg-red-500/10 border border-red-500/30 hover:bg-red-500 hover:text-white transition-all rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-red-500 flex items-center justify-center gap-2"
+                                >
+                                    {disconnecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Unlink className="w-3.5 h-3.5" />}
+                                    Desconectar TikTok
+                                </button>
+                            </>
+                        ) : (
+                            <button
+                                onClick={handleConnectTikTok}
+                                disabled={tiktokLoading}
+                                className="w-full py-4 bg-foreground text-background font-black uppercase text-xs rounded-2xl hover:opacity-90 transition-all flex items-center justify-center gap-2 tracking-wider"
+                            >
+                                <Link2 className="w-4 h-4" />
+                                Conectar TikTok
+                            </button>
+                        )}
+
+                        {tiktokStatus.expired && (
+                            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                                <p className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Token expirado — reconecta tu cuenta</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Video Upload Card */}
+                    <div className={`p-6 bg-card border border-card-border rounded-[2rem] space-y-5 relative overflow-hidden ${!tiktokStatus.connected ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted">Subir Video como Borrador</span>
+
+                        <div
+                            className="relative p-8 border-2 border-dashed border-card-border rounded-2xl text-center hover:border-accent/40 transition-all cursor-pointer group"
+                            onClick={() => document.getElementById('tiktok-video-input')?.click()}
+                        >
+                            <input
+                                id="tiktok-video-input"
+                                type="file"
+                                accept="video/mp4,video/quicktime"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        setVideoFile(file);
+                                        setUploadStatus('idle');
+                                        setUploadMessage('');
+                                    }
+                                }}
+                            />
+                            {videoFile ? (
+                                <div className="space-y-2">
+                                    <Video className="w-8 h-8 text-accent mx-auto" />
+                                    <p className="text-xs font-bold text-foreground">{videoFile.name}</p>
+                                    <p className="text-[10px] text-muted font-mono">{(videoFile.size / (1024 * 1024)).toFixed(1)} MB</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <Upload className="w-8 h-8 text-muted mx-auto group-hover:text-accent transition-colors" />
+                                    <p className="text-xs font-bold text-muted group-hover:text-foreground transition-colors">Seleccionar Video</p>
+                                    <p className="text-[10px] text-muted">MP4 o MOV</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={handleVideoUpload}
+                            disabled={!videoFile || uploading}
+                            className="w-full py-3 bg-accent text-white font-black uppercase text-[10px] rounded-2xl hover:bg-accent/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 tracking-wider"
+                        >
+                            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            {uploading ? 'Subiendo...' : 'Subir como Borrador a TikTok'}
+                        </button>
+
+                        {uploadMessage && (
+                            <div className={`p-3 rounded-xl border ${
+                                uploadStatus === 'success' ? 'bg-emerald-500/10 border-emerald-500/30' :
+                                uploadStatus === 'error' ? 'bg-red-500/10 border-red-500/30' :
+                                'bg-accent/10 border-accent/30'
+                            }`}>
+                                <p className={`text-[10px] font-bold uppercase tracking-wider ${
+                                    uploadStatus === 'success' ? 'text-emerald-400' :
+                                    uploadStatus === 'error' ? 'text-red-500' :
+                                    'text-accent'
+                                }`}>
+                                    {uploadMessage}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </section>
 
             {/* Zone 3: Currency & TRM */}

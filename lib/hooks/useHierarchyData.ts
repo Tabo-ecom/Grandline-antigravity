@@ -3,6 +3,10 @@
 import { useState, useCallback, useRef } from 'react';
 import { fetchMetaAdSetInsights, fetchMetaAdLevelInsights } from '@/lib/services/meta';
 
+// Session cache for hierarchy data (survives tab switches, cleared on page reload)
+const hierarchyCache: Record<string, { adsets?: any; ads?: any; ts: number }> = {};
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface AggregatedRow {
@@ -166,6 +170,16 @@ export function useHierarchyData({ fbToken, fbAccountIds, startDate, endDate }: 
         const accountIds = fbAccountIdsRef.current;
         if (!token || accountIds.length === 0 || adSetsLoadedRef.current || isLoadingAdSetsRef.current) return;
 
+        const cacheKey = `adsets_${startDateRef.current}_${endDateRef.current}_${accountIds.join(',')}`;
+        const cached = hierarchyCache[cacheKey];
+        if (cached?.adsets && (Date.now() - cached.ts < CACHE_TTL)) {
+            setAdsetsByCampaign(cached.adsets.byCampaign);
+            setAdsetsByCampaignName(cached.adsets.byCampaignName);
+            setAdSetsLoaded(true);
+            adSetsLoadedRef.current = true;
+            return;
+        }
+
         isLoadingAdSetsRef.current = true;
         setIsLoadingAdSets(true);
         setAdSetsError(null);
@@ -195,6 +209,10 @@ export function useHierarchyData({ fbToken, fbAccountIds, startDate, endDate }: 
                 }
             });
 
+            // Save to memory cache
+            const prev = hierarchyCache[cacheKey] || {};
+            hierarchyCache[cacheKey] = { ...prev, adsets: { byCampaign, byCampaignName }, ts: Date.now() };
+
             setAdsetsByCampaign(byCampaign);
             setAdsetsByCampaignName(byCampaignName);
             setAdSetsLoaded(true);
@@ -212,6 +230,15 @@ export function useHierarchyData({ fbToken, fbAccountIds, startDate, endDate }: 
         const token = fbTokenRef.current;
         const accountIds = fbAccountIdsRef.current;
         if (!token || accountIds.length === 0 || adsLoadedRef.current || isLoadingAdsRef.current) return;
+
+        const cacheKey = `ads_${startDateRef.current}_${endDateRef.current}_${accountIds.join(',')}`;
+        const cached = hierarchyCache[cacheKey];
+        if (cached?.ads && (Date.now() - cached.ts < CACHE_TTL)) {
+            setAdsByAdSet(cached.ads);
+            setAdsLoaded(true);
+            adsLoadedRef.current = true;
+            return;
+        }
 
         isLoadingAdsRef.current = true;
         setIsLoadingAds(true);
@@ -233,6 +260,10 @@ export function useHierarchyData({ fbToken, fbAccountIds, startDate, endDate }: 
                 if (!byAdSet[asid]) byAdSet[asid] = [];
                 byAdSet[asid].push(row);
             });
+
+            // Save to memory cache
+            const prev = hierarchyCache[cacheKey] || {};
+            hierarchyCache[cacheKey] = { ...prev, ads: byAdSet, ts: Date.now() };
 
             setAdsByAdSet(byAdSet);
             setAdsLoaded(true);

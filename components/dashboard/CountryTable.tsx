@@ -1,8 +1,9 @@
-import React from 'react';
-import { Activity, ChevronDown, Loader2, Check, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, ChevronDown, Loader2, Check, Zap, Truck, Info } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils/currency';
 import { evaluateHealth, getHealthColor, findTarget } from '@/lib/utils/health';
 import InfoTooltip from '@/components/common/InfoTooltip';
+import type { FreightAnalysisResult } from '@/lib/calculations/kpis';
 
 interface ProductMetric {
     id: string;
@@ -19,6 +20,8 @@ interface ProductMetric {
     cpa: number;
     projectedProfit: number;
     projectionConfig: number;
+    pendingCancelConfig: number;
+    pendingCount: number;
 }
 
 interface CountryMetric {
@@ -30,6 +33,9 @@ interface CountryMetric {
     transitRate: number;
     returnRate: number;
     cancelCount: number;
+    pendingCount: number;
+    pendingPercent: number;
+    pendingCancelConfig: number;
     sales: number;
     adSpend: number;
     profit: number;
@@ -54,10 +60,59 @@ interface CountryTableProps {
     localOverrides: any;
     updateCountryOverride: (country: string, val: number) => void;
     updateProductOverride: (country: string, productId: string, val: number) => void;
+    toggleReturnBuffer: (country: string, enabled: boolean) => void;
+    updatePendingCancelOverride: (country: string, val: number) => void;
+    freightAnalysis: Record<string, FreightAnalysisResult>;
     handleSaveProjections: () => void;
     isSavingProjections: boolean;
     saveSuccess: boolean;
     kpiTargets: any[];
+}
+
+function FreightTooltip({ analysis }: { analysis: FreightAnalysisResult }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <div className="relative inline-block">
+            <button
+                onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+                className="p-0.5 rounded hover:bg-white/10 transition-colors"
+                title="Ver análisis de flete"
+            >
+                <Info className={`w-3.5 h-3.5 ${analysis.hasIncrease ? 'text-amber-400' : 'text-emerald-400'}`} />
+            </button>
+            {open && (
+                <div
+                    className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 bg-card border border-card-border rounded-xl shadow-2xl p-3 text-left"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-center gap-2 mb-2">
+                        <Truck className="w-4 h-4 text-muted" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted">Análisis de Flete</span>
+                    </div>
+                    <p className={`text-xs mb-2 ${analysis.hasIncrease ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {analysis.summary}
+                    </p>
+                    {analysis.carriers.length > 0 && (
+                        <div className="space-y-1.5">
+                            {analysis.carriers.map(c => (
+                                <div key={c.carrier} className="flex justify-between items-center text-[10px]">
+                                    <span className="text-foreground/70 truncate max-w-[120px]">{c.carrier}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-muted">Ida: {formatCurrency(c.avgOutbound)}</span>
+                                        <span className="text-muted">Dev: {formatCurrency(c.avgReturn)}</span>
+                                        <span className={`font-bold ${c.diffPercent > 5 ? 'text-amber-400' : c.diffPercent < -5 ? 'text-emerald-400' : 'text-foreground/50'}`}>
+                                            {c.diffPercent > 0 ? '+' : ''}{c.diffPercent}%
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-card border-r border-b border-card-border" />
+                </div>
+            )}
+        </div>
+    );
 }
 
 export default function CountryTable({
@@ -67,6 +122,9 @@ export default function CountryTable({
     localOverrides,
     updateCountryOverride,
     updateProductOverride,
+    toggleReturnBuffer,
+    updatePendingCancelOverride,
+    freightAnalysis,
     handleSaveProjections,
     isSavingProjections,
     saveSuccess,
@@ -120,7 +178,7 @@ export default function CountryTable({
                     <thead className="sticky top-0 z-20">
                         <tr className="bg-card border-b border-card-border">
                             <th className="px-5 py-2 border-r border-card-border bg-card"></th>
-                            <th colSpan={6} className="px-5 py-2 text-center text-[10px] font-black uppercase text-blue-400 tracking-widest border-r border-card-border bg-blue-500/5">
+                            <th colSpan={7} className="px-5 py-2 text-center text-[10px] font-black uppercase text-blue-400 tracking-widest border-r border-card-border bg-blue-500/5">
                                 Grupo Logística
                             </th>
                             <th colSpan={6} className="px-5 py-2 text-center text-[10px] font-black uppercase text-emerald-400 tracking-widest bg-emerald-500/5">
@@ -135,7 +193,8 @@ export default function CountryTable({
                             <th className="px-5 py-3.5 text-center bg-blue-500/5">% Canc.</th>
                             <th className="px-5 py-3.5 text-center bg-blue-500/5">% Entrega</th>
                             <th className="px-5 py-3.5 text-center bg-blue-500/5">% Tránsito</th>
-                            <th className="px-5 py-3.5 text-center border-r border-card-border bg-blue-500/5">% Dev.</th>
+                            <th className="px-5 py-3.5 text-center bg-blue-500/5">% Dev.</th>
+                            <th className="px-5 py-3.5 text-center border-r border-card-border bg-violet-500/5">Pend.</th>
                             <th className="px-5 py-3.5 text-right bg-emerald-500/5">Venta Desp.</th>
                             <th className="px-5 py-3.5 text-right bg-emerald-500/5">Ads (Part.)</th>
                             <th className="px-5 py-3.5 text-right bg-emerald-500/5">CPA Desp.</th>
@@ -183,7 +242,17 @@ export default function CountryTable({
                                             </span>
                                         </td>
                                         <td className="px-5 py-4 text-center text-xs font-mono text-blue-400 bg-blue-500/5">{ctry.transitRate.toFixed(1)}%</td>
-                                        <td className="px-5 py-4 text-center text-xs font-mono text-amber-500 border-r border-card-border bg-blue-500/5">{ctry.returnRate.toFixed(1)}%</td>
+                                        <td className="px-5 py-4 text-center text-xs font-mono text-amber-500 bg-blue-500/5">{ctry.returnRate.toFixed(1)}%</td>
+                                        <td className="px-5 py-4 text-center border-r border-card-border bg-violet-500/5">
+                                            {ctry.pendingCount > 0 ? (
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    <span className="font-mono font-bold text-xs text-violet-400">{ctry.pendingCount}</span>
+                                                    <span className="text-[9px] font-bold text-violet-400/60">{ctry.pendingPercent.toFixed(1)}%</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-muted">-</span>
+                                            )}
+                                        </td>
                                         <td className="px-5 py-4 text-right font-mono text-foreground/80 text-sm bg-emerald-500/5">{formatCurrency(ctry.sales)}</td>
                                         <td className="px-5 py-4 text-right bg-emerald-500/5">
                                             <div className="flex flex-col items-end gap-0.5">
@@ -231,8 +300,48 @@ export default function CountryTable({
                                     {expandedCountry === ctry.name && (
                                         <>
                                             <tr className="bg-hover-bg/30">
-                                                <td colSpan={14} className="px-6 py-2 text-[10px] font-black uppercase text-muted tracking-widest border-b border-card-border sticky left-0 z-10 bg-hover-bg/30">
-                                                    Detalle de Operación: {ctry.name}
+                                                <td colSpan={15} className="px-6 py-2 border-b border-card-border sticky left-0 z-10 bg-hover-bg/30">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-black uppercase text-muted tracking-widest">
+                                                            Detalle de Operación: {ctry.name}
+                                                        </span>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="flex items-center gap-1.5 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted">Recargo flete dev.</span>
+                                                                    <div
+                                                                        className={`relative w-8 h-4 rounded-full transition-colors ${(localOverrides?.countries?.[ctry.name]?.return_buffer_enabled !== false) ? 'bg-amber-500' : 'bg-gray-600'}`}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const current = localOverrides?.countries?.[ctry.name]?.return_buffer_enabled !== false;
+                                                                            toggleReturnBuffer(ctry.name, !current);
+                                                                        }}
+                                                                    >
+                                                                        <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${(localOverrides?.countries?.[ctry.name]?.return_buffer_enabled !== false) ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                                                    </div>
+                                                                </label>
+                                                                {freightAnalysis[ctry.name] && (
+                                                                    <FreightTooltip analysis={freightAnalysis[ctry.name]} />
+                                                                )}
+                                                            </div>
+                                                            {ctry.pendingCount > 0 && (
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-[9px] font-bold uppercase tracking-wider text-muted">% Cancel pend.</span>
+                                                                <input
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={100}
+                                                                    value={localOverrides?.countries?.[ctry.name]?.pending_cancel_percent ?? ctry.pendingCancelConfig}
+                                                                    onChange={(e) => updatePendingCancelOverride(ctry.name, parseFloat(e.target.value) || 0)}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    className="w-10 bg-transparent border-b border-transparent hover:border-muted focus:border-violet-500 focus:outline-none text-center font-mono text-sm text-violet-400 transition-colors"
+                                                                />
+                                                                <span className="text-[9px] text-muted">%</span>
+                                                                <InfoTooltip text={`De las ${ctry.pendingCount} órdenes pendientes por confirmar, se proyecta que este % se cancelará. El resto entra al cálculo de proyección normal.`} />
+                                                            </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             {ctry.products.map((prod: ProductMetric, idx: number) => {
@@ -245,7 +354,7 @@ export default function CountryTable({
                                                         <td className="px-5 py-3 font-medium text-foreground/80 sticky left-0 z-20 bg-card group-hover/row:bg-hover-bg overflow-hidden text-ellipsis whitespace-nowrap transition-colors pl-8" title={prod.name}>
                                                             <div className="flex items-center gap-2">
                                                                 <div className="w-1 h-3 rounded-full bg-border"></div>
-                                                                <span className="truncate max-w-[150px]">{prod.name}</span>
+                                                                <span className="truncate max-w-[250px] text-[10px]">{prod.name}</span>
                                                             </div>
                                                         </td>
                                                         <td className="px-5 py-3 text-center bg-blue-500/5">
@@ -263,7 +372,8 @@ export default function CountryTable({
                                                         <td className="px-5 py-3 text-center font-mono text-xs text-red-400 bg-blue-500/5">{prod.cancelRate.toFixed(1)}%</td>
                                                         <td className="px-5 py-3 text-center font-mono text-xs text-emerald-400 bg-blue-500/5">{prod.deliveryRate.toFixed(1)}%</td>
                                                         <td className="px-5 py-3 text-center font-mono text-xs text-blue-400 bg-blue-500/5">{prod.transitRate.toFixed(1)}%</td>
-                                                        <td className="px-5 py-3 text-center font-mono text-xs text-orange-400 bg-blue-500/5 border-r border-card-border">{prod.returnRate.toFixed(1)}%</td>
+                                                        <td className="px-5 py-3 text-center font-mono text-xs text-orange-400 bg-blue-500/5">{prod.returnRate.toFixed(1)}%</td>
+                                                        <td className="px-5 py-3 text-center font-mono text-xs text-violet-400 bg-violet-500/5 border-r border-card-border">{prod.pendingCount > 0 ? prod.pendingCount : '-'}</td>
                                                         <td className="px-5 py-3 text-right font-mono text-foreground/80 text-sm bg-emerald-500/5">{formatCurrency(prod.netSales)}</td>
                                                         <td className="px-5 py-3 text-right bg-emerald-500/5">
                                                             <div className="flex flex-col items-end gap-0.5">

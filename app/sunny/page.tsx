@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
     Zap,
@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useSunny } from '@/lib/context/SunnyContext';
+import { getTikTokStatus } from '@/lib/services/tiktok';
+import { authFetch } from '@/lib/api/client';
 
 const Lanzador = dynamic(() => import('@/components/sunny/Lanzador').then(m => ({ default: m.Lanzador })), {
     loading: () => <div className="flex h-[600px] items-center justify-center"><Loader2 className="w-8 h-8 text-accent animate-spin" /></div>,
@@ -22,6 +24,11 @@ export default function SunnyPage() {
     const { user } = useAuth();
     const { loading } = useSunny();
     const [activeTab, setActiveTab] = useState('lanzador');
+    const [ttConnected, setTtConnected] = useState(false);
+
+    useEffect(() => {
+        getTikTokStatus(authFetch).then(s => setTtConnected(s.connected));
+    }, []);
 
     if (!user) return null;
 
@@ -48,8 +55,8 @@ export default function SunnyPage() {
                             <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
                                 <span className="text-[10px] font-black text-blue-400">FB</span>
                             </div>
-                            <div className="w-8 h-8 rounded-lg bg-card border border-card-border flex items-center justify-center">
-                                <span className="text-[10px] font-black text-foreground">TT</span>
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${ttConnected ? 'bg-pink-600/20 border border-pink-500/30' : 'bg-card border border-card-border'}`}>
+                                <span className={`text-[10px] font-black ${ttConnected ? 'text-pink-400' : 'text-foreground'}`}>TT</span>
                             </div>
                         </div>
                     </div>

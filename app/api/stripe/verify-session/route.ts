@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
         }
 
-        console.log(`[verify-session] Verifying session ${sessionId} for user ${auth.teamId}`);
+        console.info(`[verify-session] Verifying session ${sessionId} for user ${auth.teamId}`);
 
         const session = await stripe.checkout.sessions.retrieve(sessionId);
 
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         const priceId = subscription.items.data[0]?.price?.id;
         const plan = PRICE_TO_PLAN[priceId || ''] || 'rookie';
 
-        console.log(`[verify-session] Plan: ${plan}, Status: ${subscription.status}, User: ${auth.teamId}`);
+        console.info(`[verify-session] Plan: ${plan}, Status: ${subscription.status}, User: ${auth.teamId}`);
 
         // Update Firestore profile immediately
         const userRef = adminDb!.collection('user_profiles').doc(auth.teamId);
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
             updatedAt: new Date(),
         }, { merge: true });
 
-        console.log(`[verify-session] Profile updated successfully for ${auth.teamId}`);
+        console.info(`[verify-session] Profile updated successfully for ${auth.teamId}`);
         return NextResponse.json({ success: true, plan, status: subscription.status });
     } catch (error: any) {
         console.error('[verify-session] Error:', error.message, error.stack);

@@ -4,11 +4,12 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { getAllOrderFiles, getAppData, setAppData } from '@/lib/firebase/firestore';
 import { fetchExchangeRates, ExchangeRates, DEFAULT_RATES, toCOP, isMatchingCountry, getCurrencyForCountry, normalizeCountry, getOfficialCountryName } from '@/lib/utils/currency';
 import { getAdSettings, AdSpend, listAllAdSpends, getCampaignMappings, CampaignMapping, deduplicateAdSpends } from '@/lib/services/marketing';
-import { DropiOrder, calculateKPIs, KPIResults, calculateProjection, ProjectionResult } from '@/lib/calculations/kpis';
+import { DropiOrder, calculateKPIs, KPIResults, calculateProjection, ProjectionResult, analyzeFreightByCountry, FreightAnalysisResult } from '@/lib/calculations/kpis';
 import { parseDropiDate, getLocalDateKey, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
-import { isEntregado, isCancelado, isTransit, isDevolucion } from '@/lib/utils/status';
+import { isEntregado, isCancelado, isTransit, isDevolucion, isPendienteConfirmacion } from '@/lib/utils/status';
 import { getProductGroups, ProductGroup, getEffectiveProductId, getProductGroup } from '@/lib/services/productGroups';
 import { getPriceCorrections, savePriceCorrection as savePriceCorrectionService, deletePriceCorrection as deletePriceCorrectionService, applyPriceCorrections, PriceCorrection } from '@/lib/services/priceCorrections';
+import { invalidateSupplierCache } from '@/lib/hooks/useSupplierData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import { useAuth } from '@/lib/context/AuthContext';
 import { resolveProductName } from '@/lib/services/productResolution';
@@ -75,7 +76,7 @@ export interface DashboardDataHook {
     filteredOrders: ExtendedDropiOrder[];
     kpis: (KPIResults & { cpaFacebook?: number }) | null;
     prevKpis: KPIResults | null;
-    logisticStats: { entregados: number; transito: number; cancelados: number; devoluciones: number };
+    logisticStats: { entregados: number; transito: number; cancelados: number; devoluciones: number; pendientes: number };
     adPlatformMetrics: { fb: number; tiktok: number; google: number };
     dailySalesData: any[]; // Trends chart data
     productPerformanceData: any[]; // Product comparison chart data
@@ -95,6 +96,11 @@ export interface DashboardDataHook {
     priceCorrections: PriceCorrection[];
     savePriceCorrection: (correction: PriceCorrection) => Promise<void>;
     deletePriceCorrection: (id: string) => Promise<void>;
+    // Product Groups & Ad Spend
+    productGroups: ProductGroup[];
+    adsByCountryProduct: Record<string, Record<string, number>>;
+    // Freight Analysis
+    freightAnalysis: Record<string, FreightAnalysisResult>;
 }
 
 export function useDashboardData(): DashboardDataHook {
@@ -180,6 +186,29 @@ export function useDashboardData(): DashboardDataHook {
                             });
                         }
                     });
+                }
+
+                // ── Deduplication ──
+                // When multiple files contain the same order (e.g. user uploads
+                // a 1-day file alongside a full report), keep only one copy of
+                // each order line. Key: country + order ID + product name + quantity.
+                // If duplicates exist, prefer the entry from the most recent file.
+                {
+                    const seen = new Map<string, number>();
+                    for (let i = 0; i < flattenedOrders.length; i++) {
+                        const o = flattenedOrders[i];
+                        const key = `${o.country}|${o.ID}|${(o.PRODUCTO as string || '').toLowerCase().trim()}|${o.CANTIDAD || 1}`;
+                        if (seen.has(key)) {
+                            // Mark earlier entry for removal (keep later = from more recent file)
+                            const prevIdx = seen.get(key)!;
+                            flattenedOrders[prevIdx] = null as any;
+                        }
+                        seen.set(key, i);
+                    }
+                    // Remove nulled entries
+                    const deduped = flattenedOrders.filter(Boolean);
+                    flattenedOrders.length = 0;
+                    flattenedOrders.push(...deduped);
                 }
 
                 // ── Pass 1: Same-name consolidation ──
@@ -269,8 +298,9 @@ export function useDashboardData(): DashboardDataHook {
                     }
                 });
 
-                // Apply price corrections after currency conversion
-                applyPriceCorrections(flattenedOrders, corrections);
+                // Apply price corrections after currency conversion (only dropshipper + both scope)
+                const dropshipperCorrections = corrections.filter(c => !c.scope || c.scope === 'both' || c.scope === 'dropshipper');
+                applyPriceCorrections(flattenedOrders, dropshipperCorrections);
 
                 // Save to session cache
                 dashboardCache = {
@@ -591,12 +621,13 @@ export function useDashboardData(): DashboardDataHook {
 
     // 7. Logistic Stats
     const logisticStats = useMemo(() => {
-        if (loading) return { entregados: 0, transito: 0, cancelados: 0, devoluciones: 0 };
+        if (loading) return { entregados: 0, transito: 0, cancelados: 0, devoluciones: 0, pendientes: 0 };
         return {
             entregados: new Set(filteredOrders.filter(o => isEntregado(o.ESTATUS)).map(o => o.ID)).size,
             transito: new Set(filteredOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size,
             cancelados: new Set(filteredOrders.filter(o => isCancelado(o.ESTATUS)).map(o => o.ID)).size,
-            devoluciones: new Set(filteredOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size
+            devoluciones: new Set(filteredOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size,
+            pendientes: new Set(filteredOrders.filter(o => isPendienteConfirmacion(o.ESTATUS)).map(o => o.ID)).size,
         };
     }, [filteredOrders, loading]);
 
@@ -669,9 +700,11 @@ export function useDashboardData(): DashboardDataHook {
                     const cSettings = projectionSettings?.countries?.[cntry];
                     const pOverrides = projectionSettings?.products?.[cntry] || {};
                     const pDeliveryRate = pOverrides[pid] !== undefined ? pOverrides[pid] : (cSettings?.delivery_percent ?? 80);
-                    const pBuffer = cSettings?.buffer ?? 1.4;
+                    const returnBufferEnabled = cSettings?.return_buffer_enabled !== false; // default true
+                    const pBuffer = returnBufferEnabled ? (cSettings?.buffer ?? 1.4) : 1.0;
 
-                    const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: 0 }); // Ads handled at day level or split
+                    const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 0);
+                    const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: 0 }, { [pid]: pPendCancel }); // Ads handled at day level or split
                     totalDayProj += pproj.reduce((s, p) => s + p.utilidad, 0);
                 });
                 // Subtract total day ads from the sum of product projections
@@ -718,9 +751,11 @@ export function useDashboardData(): DashboardDataHook {
                 const cSettings = projectionSettings?.countries?.[cntryName];
                 const pOverrides = projectionSettings?.products?.[cntryName] || {};
                 const pDeliveryRate = pOverrides[pid] !== undefined ? pOverrides[pid] : (cSettings?.delivery_percent ?? 80);
-                const pBuffer = cSettings?.buffer ?? 1.4;
+                const returnBufferEnabled = cSettings?.return_buffer_enabled !== false; // default true
+                const pBuffer = returnBufferEnabled ? (cSettings?.buffer ?? 1.4) : 1.0;
 
-                const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: pAds });
+                const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 0);
+                const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: pAds }, { [pid]: pPendCancel });
                 const baseProj = pproj.reduce((s, p) => s + p.utilidad, 0);
                 // If no orders but has ads, projected profit is negative (pure loss)
                 const finalProj = pOrders.length === 0 ? -pAds : baseProj;
@@ -739,7 +774,9 @@ export function useDashboardData(): DashboardDataHook {
                     roas: pkpi.roas,
                     cpa: pkpi.n_nc > 0 ? pkpi.g_ads / pkpi.n_nc : 0,
                     projectedProfit: finalProj,
-                    projectionConfig: pDeliveryRate
+                    projectionConfig: pDeliveryRate,
+                    pendingCancelConfig: pPendCancel,
+                    pendingCount: pkpi.n_pend,
                 };
             }).filter(p => p.orderCount > 0 || p.adSpend > 0)
                 .sort((a, b) => b.orderCount - a.orderCount);
@@ -752,6 +789,9 @@ export function useDashboardData(): DashboardDataHook {
                 cancelRate: cKpis.tasa_can,
                 transitRate: cKpis.n_tra > 0 ? (cKpis.n_tra / cKpis.n_nc) * 100 : 0,
                 returnRate: cKpis.n_dev > 0 ? (cKpis.n_dev / cKpis.n_nc) * 100 : 0,
+                pendingCount: cKpis.n_pend,
+                pendingPercent: cKpis.perc_pend,
+                pendingCancelConfig: projectionSettings?.countries?.[cntryName]?.pending_cancel_percent ?? 0,
                 cancelCount: cKpis.n_can,
                 sales: cKpis.fact_neto,
                 adSpend: cKpis.g_ads,
@@ -773,6 +813,12 @@ export function useDashboardData(): DashboardDataHook {
 
         return { metricsByCountry: metricsCountries, totalProjectedProfit: totalProj };
     }, [filteredOrders, rawOrders, adsByCountryProduct, country, product, projectionSettings, loading, availableCountries, campaignMappings, productGroups]);
+
+    // 9.4 Freight analysis by country (outbound vs return shipping)
+    const freightAnalysis = useMemo(() => {
+        if (loading || filteredOrders.length === 0) return {};
+        return analyzeFreightByCountry(filteredOrders);
+    }, [filteredOrders, loading]);
 
     // 9.5 Align daily profit with card u_real (subtract ads)
     // projected_profit stays as-is per day (stable regardless of date range)
@@ -890,6 +936,7 @@ export function useDashboardData(): DashboardDataHook {
             if (!effectiveUid) return;
             await savePriceCorrectionService(correction, effectiveUid);
             invalidateDashboardCache();
+            invalidateSupplierCache(); // Sync correction to supplier inventory
             // Re-trigger data load
             const updated = await getPriceCorrections(effectiveUid);
             setPriceCorrections(updated);
@@ -898,8 +945,12 @@ export function useDashboardData(): DashboardDataHook {
             if (!effectiveUid) return;
             await deletePriceCorrectionService(id, effectiveUid);
             invalidateDashboardCache();
+            invalidateSupplierCache();
             const updated = await getPriceCorrections(effectiveUid);
             setPriceCorrections(updated);
-        }
+        },
+        productGroups,
+        adsByCountryProduct,
+        freightAnalysis,
     };
 }

@@ -20,7 +20,9 @@ import {
     Moon,
     Crown,
     Users,
-    Lock
+    Lock,
+    Package,
+    Cpu
 } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { useTheme } from '@/lib/context/ThemeContext';
@@ -37,6 +39,7 @@ const NAV_ITEMS = [
     { name: 'Módulo Sunny', icon: Rocket, href: '/sunny', isotipo: '/logos/sunny-isotipo.png' },
     { name: 'Berry', icon: Wallet, href: '/berry', isotipo: '/logos/berry-isotipo.png' },
     { name: 'Vega AI', icon: Bot, href: '/vega-ai', isotipo: '/logos/vega-isotipo.png' },
+    { name: 'Proveedor', icon: Package, href: '/proveedor' },
 ];
 
 const ALL_COUNTRIES = [

@@ -23,7 +23,9 @@ import {
     Shuffle,
     Info,
     ChevronDown,
-    Search
+    Search,
+    ArrowUpDown,
+    GalleryHorizontalEnd,
 } from 'lucide-react';
 import { useSunny } from '@/lib/context/SunnyContext';
 import { getAdSettings } from '@/lib/services/marketing';
@@ -49,8 +51,19 @@ import {
     type UploadProgressCallback,
     resolveExclusionLocations,
     fetchMetaAdAccounts,
+    createMetaMultiFormatAd,
     MetaTokenExpiredError
 } from '@/lib/services/meta';
+import {
+    createTikTokCampaign,
+    createTikTokAdGroup,
+    createTikTokAd,
+    uploadTikTokVideo,
+    uploadTikTokImage,
+    getTikTokLocationId,
+    getTikTokAgeGroups,
+    type TikTokLaunchResult,
+} from '@/lib/services/tiktok';
 import { useAuth } from '@/lib/context/AuthContext';
 import { PLAN_CAMPAIGN_LIMIT } from '@/lib/hooks/usePlanAccess';
 import { countSunnyCampaignsThisMonth, saveSunnyCampaign } from '@/lib/firebase/firestore';
@@ -62,6 +75,14 @@ interface UploadedFile {
     type: 'local' | 'gdrive';
     file?: File;
     mimeType?: string;
+    ratio?: '4:5' | '9:16' | 'other'; // detected aspect ratio
+    width?: number;
+    height?: number;
+}
+
+interface FormatPair {
+    feed?: UploadedFile;   // 4:5 for Feed
+    story?: UploadedFile;  // 9:16 for Stories/Reels
 }
 
 type AdStructure = 'grouped' | 'isolated' | 'flexible';
@@ -107,6 +128,8 @@ export const Lanzador: React.FC = () => {
     const [launchResults, setLaunchResults] = useState<(MetaLaunchResult & { accountName: string })[]>([]);
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
     const [metaToken, setMetaToken] = useState<string | null>(null);
+    const [ttToken, setTtToken] = useState<string | null>(null);
+    const [platform, setPlatform] = useState<'facebook' | 'tiktok'>('facebook');
     const [campaignsUsed, setCampaignsUsed] = useState(0);
 
     const userPlan = profile?.plan || 'free';
@@ -137,6 +160,9 @@ export const Lanzador: React.FC = () => {
     });
 
     const [adStructure, setAdStructure] = useState<AdStructure>('grouped');
+    const [adsPerAdSet, setAdsPerAdSet] = useState<number>(0); // 0 = all in one ad set
+    const [multiFormat, setMultiFormat] = useState(false);
+    const [formatPairs, setFormatPairs] = useState<FormatPair[]>([]);
 
     const currencyConfig: Record<string, { min: number; max: number; step: number; presets: number[]; symbol: string }> = {
         COP: { min: 10000, max: 2000000, step: 5000, presets: [30000, 50000, 100000], symbol: '$' },
@@ -168,13 +194,13 @@ export const Lanzador: React.FC = () => {
     const [selectedCopyIndices, setSelectedCopyIndices] = useState<number[]>([]);
     const [showNamingEditor, setShowNamingEditor] = useState(false);
     const [campaignMode, setCampaignMode] = useState<'new' | 'existing'>('new');
-    const [existingCampaigns, setExistingCampaigns] = useState<{ id: string; name: string; status: string }[]>([]);
-    const [existingAdSets, setExistingAdSets] = useState<{ id: string; name: string; status: string }[]>([]);
-    const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
-    const [selectedAdSetId, setSelectedAdSetId] = useState<string>('');
+    const [campaignsByAccount, setCampaignsByAccount] = useState<Record<string, { id: string; name: string; status: string }[]>>({});
+    const [adSetsByAccount, setAdSetsByAccount] = useState<Record<string, { id: string; name: string; status: string }[]>>({});
+    const [selectedCampaignByAccount, setSelectedCampaignByAccount] = useState<Record<string, string>>({});
+    const [selectedAdSetByAccount, setSelectedAdSetByAccount] = useState<Record<string, string>>({});
     const [isLoadingCampaigns, setIsLoadingCampaigns] = useState(false);
-    const [isLoadingAdSets, setIsLoadingAdSets] = useState(false);
-    const [campaignSearch, setCampaignSearch] = useState('');
+    const [campaignSearchByAccount, setCampaignSearchByAccount] = useState<Record<string, string>>({});
+    const [vegaInstruction, setVegaInstruction] = useState('');
 
     useEffect(() => {
         if (effectiveUid) {
@@ -194,6 +220,20 @@ export const Lanzador: React.FC = () => {
         }
     }, [activeStore]);
 
+    // Auto-build format pairs when multiFormat is on
+    useEffect(() => {
+        if (!multiFormat) { setFormatPairs([]); return; }
+        const images = uploadedFiles.filter(f => !f.mimeType?.startsWith('video'));
+        const feed = images.filter(f => f.ratio === '4:5');
+        const story = images.filter(f => f.ratio === '9:16');
+        const maxLen = Math.max(feed.length, story.length);
+        const pairs: FormatPair[] = [];
+        for (let i = 0; i < maxLen; i++) {
+            pairs.push({ feed: feed[i] || undefined, story: story[i] || undefined });
+        }
+        setFormatPairs(pairs);
+    }, [multiFormat, uploadedFiles]);
+
     useEffect(() => {
         const loadAccounts = async () => {
             setIsLoadingAccounts(true);
@@ -201,6 +241,7 @@ export const Lanzador: React.FC = () => {
                 const settings = await getAdSettings(effectiveUid || '');
                 if (settings) {
                     if (settings.fb_token) setMetaToken(settings.fb_token);
+                    if (settings.tt_token) setTtToken(settings.tt_token);
                     let fb = (settings.fb_account_ids || []).map((acc: any) => ({ ...acc, platform: 'facebook' }));
 
                     // Enrich accounts that only have numeric IDs as names
@@ -233,59 +274,42 @@ export const Lanzador: React.FC = () => {
         loadAccounts();
     }, []);
 
-    // Load existing campaigns when switching to existing mode
+    // Load existing campaigns when switching to existing mode (for all selected accounts)
     const loadExistingCampaigns = async () => {
         if (!metaToken || selectedAccountIds.length === 0) return;
         setIsLoadingCampaigns(true);
         try {
-            const accId = selectedAccountIds[0];
-            const accountId = accId.startsWith('act_') ? accId : `act_${accId}`;
-            const campaigns = await fetchMetaCampaigns(metaToken, accountId);
-            setExistingCampaigns(campaigns);
-        } catch (e) {
-            console.error('Error loading campaigns:', e);
+            const results: Record<string, { id: string; name: string; status: string }[]> = {};
+            await Promise.all(selectedAccountIds.map(async (accId) => {
+                const accountId = accId.startsWith('act_') ? accId : `act_${accId}`;
+                try {
+                    results[accId] = await fetchMetaCampaigns(metaToken!, accountId);
+                } catch (e) {
+                    console.error(`Error loading campaigns for ${accId}:`, e);
+                    results[accId] = [];
+                }
+            }));
+            setCampaignsByAccount(results);
         } finally {
             setIsLoadingCampaigns(false);
         }
     };
 
-    const loadExistingAdSets = async (campaignId: string) => {
+    const loadExistingAdSets = async (accountId: string, campaignId: string) => {
         if (!metaToken || !campaignId) return;
-        setIsLoadingAdSets(true);
         try {
-            const adSets = await fetchMetaAdSets(metaToken, campaignId);
-            setExistingAdSets(adSets);
+            const adSets = await fetchMetaAdSets(metaToken!, campaignId);
+            setAdSetsByAccount(prev => ({ ...prev, [accountId]: adSets }));
         } catch (e) {
             console.error('Error loading ad sets:', e);
-        } finally {
-            setIsLoadingAdSets(false);
         }
     };
-
-    // Force 'new' campaign mode when multiple accounts are selected
-    // (campaign/adset IDs are account-specific and can't be reused across accounts)
-    useEffect(() => {
-        if (selectedAccountIds.length > 1 && campaignMode === 'existing') {
-            setCampaignMode('new');
-            setSelectedCampaignId('');
-            setSelectedAdSetId('');
-        }
-    }, [selectedAccountIds]);
 
     useEffect(() => {
         if (campaignMode === 'existing') {
             loadExistingCampaigns();
         }
     }, [campaignMode, selectedAccountIds, metaToken]);
-
-    useEffect(() => {
-        if (selectedCampaignId) {
-            loadExistingAdSets(selectedCampaignId);
-        } else {
-            setExistingAdSets([]);
-            setSelectedAdSetId('');
-        }
-    }, [selectedCampaignId]);
 
     const campaignName = generateCampaignName(naming, namingTemplate);
 
@@ -297,7 +321,8 @@ export const Lanzador: React.FC = () => {
                 product: naming.product,
                 target: naming.country,
                 style: 'hype',
-                destinationLink: destinationUrl
+                destinationLink: destinationUrl,
+                instruction: vegaInstruction || undefined,
             });
             setAiTitle(result.title);
             setAiDescription(result.description);
@@ -341,8 +366,12 @@ export const Lanzador: React.FC = () => {
             }
         }
 
-        if (!metaToken) {
+        if (platform === 'facebook' && !metaToken) {
             setLaunchError('No hay token de Meta configurado. Ve a Ajustes y conecta tu cuenta de Facebook.');
+            return;
+        }
+        if (platform === 'tiktok' && !ttToken) {
+            setLaunchError('No hay token de TikTok configurado. Ve a Ajustes y conecta tu cuenta de TikTok.');
             return;
         }
 
@@ -350,8 +379,16 @@ export const Lanzador: React.FC = () => {
             .map(id => adAccounts.find(a => a.id === id && a.platform === 'facebook'))
             .filter(Boolean);
 
-        if (fbAccounts.length === 0) {
+        const ttAccounts = selectedAccountIds
+            .map(id => adAccounts.find(a => a.id === id && a.platform === 'tiktok'))
+            .filter(Boolean);
+
+        if (platform === 'facebook' && fbAccounts.length === 0) {
             setLaunchError('Selecciona al menos una cuenta publicitaria de Facebook.');
+            return;
+        }
+        if (platform === 'tiktok' && ttAccounts.length === 0) {
+            setLaunchError('Selecciona al menos una cuenta publicitaria de TikTok.');
             return;
         }
 
@@ -379,26 +416,161 @@ export const Lanzador: React.FC = () => {
             return;
         }
 
-        if (campaignMode === 'existing' && !selectedCampaignId) {
-            setLaunchError('Selecciona una campaña existente o cambia a "Nueva Campaña".');
-            return;
+        if (campaignMode === 'existing') {
+            const missingCampaign = fbAccounts.some(acc => !selectedCampaignByAccount[acc.id]);
+            if (missingCampaign) {
+                setLaunchError('Selecciona una campaña existente para cada cuenta o cambia a "Nueva Campaña".');
+                return;
+            }
         }
 
         setIsLaunching(true);
         setLaunchProgress('Preparando campaña...');
 
         try {
+            // ─── TikTok Launch Flow ─────────────────────────
+            if (platform === 'tiktok') {
+                const token = ttToken!;
+                const allResults: (TikTokLaunchResult)[] = [];
+
+                for (const acc of ttAccounts) {
+                    const advertiserId = acc.advertiser_id || acc.id;
+                    setLaunchProgress(`Subiendo creativos a ${acc.name || advertiserId}...`);
+
+                    // Upload creatives
+                    const videoFiles = uploadedFiles.filter(f => f.type === 'local' && f.file?.type.startsWith('video/'));
+                    const imageFiles = uploadedFiles.filter(f => f.type === 'local' && f.file && !f.file.type.startsWith('video/'));
+
+                    const ttVideoIds: string[] = [];
+                    const ttImageIds: string[] = [];
+
+                    for (const vf of videoFiles) {
+                        if (vf.file) {
+                            setLaunchProgress(`Subiendo video ${vf.name}...`);
+                            const vid = await uploadTikTokVideo(token, advertiserId, vf.file);
+                            ttVideoIds.push(vid);
+                        }
+                    }
+                    for (const imgf of imageFiles) {
+                        if (imgf.file) {
+                            const imgId = await uploadTikTokImage(token, advertiserId, imgf.file);
+                            ttImageIds.push(imgId);
+                        }
+                    }
+
+                    // Create campaign
+                    setLaunchProgress(`Creando campaña TikTok en ${acc.name || advertiserId}...`);
+                    const isCBO = naming.strategy === 'CBO';
+                    const ttBudget = budget.amount; // TikTok uses actual currency value
+
+                    const campaignId = await createTikTokCampaign(token, {
+                        advertiserId,
+                        name: campaignName,
+                        objectiveType: 'CONVERSIONS',
+                        budgetMode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+                        budget: isCBO ? ttBudget : undefined,
+                        status: 'DISABLE', // Start paused
+                    });
+
+                    // Create ad group
+                    setLaunchProgress('Creando ad group...');
+                    const scheduleTime = naming.date.toISOString().replace('T', ' ').slice(0, 19);
+                    const locationId = getTikTokLocationId(naming.country);
+                    const ageGroups = getTikTokAgeGroups(demographics.ageMin, demographics.ageMax);
+                    const ttGender = demographics.gender === 'male' ? 'GENDER_MALE' : demographics.gender === 'female' ? 'GENDER_FEMALE' : 'GENDER_UNLIMITED';
+
+                    const adGroupId = await createTikTokAdGroup(token, {
+                        advertiserId,
+                        campaignId,
+                        name: `${campaignName} - AdGroup`,
+                        budgetMode: !isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+                        budget: !isCBO ? ttBudget : undefined,
+                        optimizationGoal: activeStore?.pixelId ? 'CONVERT' : 'CLICK',
+                        billingEvent: 'OCPM',
+                        bidType: 'BID_TYPE_NO_BID',
+                        scheduleStartTime: scheduleTime,
+                        locationIds: [locationId],
+                        ageGroups,
+                        gender: ttGender,
+                        pixelId: activeStore?.pixelId || undefined,
+                        optimizationEvent: activeStore?.pixelId ? 'COMPLETE_PAYMENT' : undefined,
+                    });
+
+                    // Create ads
+                    setLaunchProgress('Creando anuncios...');
+                    let lastAdId = '';
+                    const allCreatives = [...ttVideoIds.map(id => ({ type: 'video' as const, id })), ...ttImageIds.map(id => ({ type: 'image' as const, id }))];
+
+                    if (allCreatives.length === 0) {
+                        throw new Error('Sube al menos un video o imagen para crear anuncios en TikTok.');
+                    }
+
+                    for (let i = 0; i < allCreatives.length; i++) {
+                        const creative = allCreatives[i];
+                        const adName = uploadedFiles[i]?.name.replace(/\.[^/.]+$/, '') || `Ad ${i + 1}`;
+
+                        lastAdId = await createTikTokAd(token, {
+                            advertiserId,
+                            adGroupId,
+                            name: adName,
+                            adFormat: creative.type === 'video' ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+                            videoId: creative.type === 'video' ? creative.id : undefined,
+                            imageId: creative.type === 'image' ? creative.id : undefined,
+                            adText: copy || naming.product,
+                            callToAction: 'SHOP_NOW',
+                            landingPageUrl: destinationUrl || 'https://example.com',
+                            displayName: naming.product || 'Grand Line',
+                        });
+                    }
+
+                    allResults.push({ campaignId, adGroupId, adId: lastAdId, accountName: acc.name || advertiserId });
+                }
+
+                setLaunchResults(allResults.map(r => ({ campaignId: r.campaignId, adSetId: r.adGroupId, adId: r.adId, accountName: r.accountName })));
+                setLaunchProgress('');
+                setIsLaunched(true);
+
+                if (effectiveUid) {
+                    for (const result of allResults) {
+                        await saveSunnyCampaign({
+                            campaignId: result.campaignId,
+                            campaignName: campaignName,
+                            accountId: result.accountName,
+                            createdAt: new Date().toISOString(),
+                        }, effectiveUid);
+                    }
+                    setCampaignsUsed(prev => prev + allResults.length);
+                }
+                return;
+            }
+
+            // ─── Facebook Launch Flow ───────────────────────
+            const token = metaToken!;
             const countryCode = getCountryCode(naming.country);
             const metaBudget = getBudgetForMeta(budget.amount, budget.currency);
             const isASC = naming.strategy === 'ASC';
 
             // Resolve exclusion list locations to Meta location keys
             const selectedExclusion = selectedExclusionId ? exclusionLists.find(l => l.id === selectedExclusionId) : null;
-            let excludedGeoLocations: { cities: { key: string }[] } | undefined;
-            if (selectedExclusion && metaToken) {
+            let excludedGeoLocations: { cities?: { key: string }[]; regions?: { key: string }[] } | undefined;
+            if (selectedExclusion && token) {
                 setLaunchProgress('Resolviendo ubicaciones de exclusión...');
                 const locationNames = selectedExclusion.locations.split(',').map(l => l.trim()).filter(Boolean);
-                excludedGeoLocations = await resolveExclusionLocations(metaToken, locationNames);
+                const resolved = await resolveExclusionLocations(token, locationNames);
+                if (resolved) {
+                    excludedGeoLocations = {};
+                    if (resolved.cities?.length) excludedGeoLocations.cities = resolved.cities;
+                    if (resolved.regions?.length) excludedGeoLocations.regions = resolved.regions;
+                    if (resolved.unresolvedNames?.length > 0) {
+                        console.warn('[SUNNY] No se encontraron estas ubicaciones en Meta:', resolved.unresolvedNames);
+                        setLaunchProgress(`⚠️ No se encontraron: ${resolved.unresolvedNames.join(', ')}. Continuando...`);
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                } else {
+                    console.warn('[SUNNY] Ninguna ubicación de exclusión fue resuelta');
+                    setLaunchProgress('⚠️ No se pudieron resolver las exclusiones. Continuando sin exclusiones...');
+                    await new Promise(r => setTimeout(r, 2000));
+                }
             }
 
             const genders = demographics.gender === 'male' ? [1] : demographics.gender === 'female' ? [2] : undefined;
@@ -413,6 +585,7 @@ export const Lanzador: React.FC = () => {
                 const imageHashes: string[] = [];
                 const imageNames: string[] = [];
                 const videoIds: string[] = [];
+                const videoThumbnails: string[] = [];
                 const videoNames: string[] = [];
 
                 // Separate images and videos
@@ -429,10 +602,10 @@ export const Lanzador: React.FC = () => {
                 const imagePromises = imageFiles.map(async (file) => {
                     let hash: string | null = null;
                     if (file.type === 'local' && file.file) {
-                        hash = await uploadMetaAdImage(metaToken, accountId, file.file);
+                        hash = await uploadMetaAdImage(token, accountId, file.file);
                     } else if (file.type === 'gdrive') {
                         const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
-                        hash = await uploadMetaAdImageFromUrl(metaToken, accountId, downloadUrl);
+                        hash = await uploadMetaAdImageFromUrl(token, accountId, downloadUrl);
                     }
                     return hash ? { hash, name: file.name } : null;
                 });
@@ -442,7 +615,7 @@ export const Lanzador: React.FC = () => {
 
                 // Upload videos in parallel (max 3 concurrent)
                 const MAX_CONCURRENT_VIDEOS = 3;
-                const videoResults: { videoId: string; name: string }[] = [];
+                const videoResults: { videoId: string; thumbnailUrl: string; name: string }[] = [];
                 let videoIdx = 0;
 
                 const uploadNextVideo = async (): Promise<void> => {
@@ -455,12 +628,12 @@ export const Lanzador: React.FC = () => {
 
                         let result: { videoId: string; thumbnailUrl: string } | undefined;
                         if (file.type === 'local' && file.file) {
-                            result = await uploadMetaAdVideo(metaToken, accountId, file.file, fileProgress);
+                            result = await uploadMetaAdVideo(token, accountId, file.file, fileProgress);
                         } else if (file.type === 'gdrive') {
                             const downloadUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
-                            result = await uploadMetaAdVideoFromUrl(metaToken, accountId, downloadUrl, file.name, fileProgress);
+                            result = await uploadMetaAdVideoFromUrl(token, accountId, downloadUrl, file.name, fileProgress);
                         }
-                        if (result) videoResults.push({ videoId: result.videoId, name: file.name });
+                        if (result) videoResults.push({ videoId: result.videoId, thumbnailUrl: result.thumbnailUrl, name: file.name });
                     }
                 };
 
@@ -469,7 +642,7 @@ export const Lanzador: React.FC = () => {
                     await Promise.all(
                         Array.from({ length: Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length) }, () => uploadNextVideo())
                     );
-                    videoResults.forEach(r => { videoIds.push(r.videoId); videoNames.push(r.name); });
+                    videoResults.forEach(r => { videoIds.push(r.videoId); videoThumbnails.push(r.thumbnailUrl || ''); videoNames.push(r.name); });
                     setVideoProgress(new Map());
                 }
 
@@ -497,15 +670,16 @@ export const Lanzador: React.FC = () => {
                     startTime: naming.date.toISOString(),
                 };
 
-                if (campaignMode === 'existing' && selectedCampaignId) {
-                    campaignId = selectedCampaignId;
+                if (campaignMode === 'existing' && selectedCampaignByAccount[acc.id]) {
+                    campaignId = selectedCampaignByAccount[acc.id];
                     setLaunchProgress(`Usando campaña existente en ${acc.name}...`);
 
-                    if (selectedAdSetId) {
-                        adSetId = selectedAdSetId;
+                    const accountAdSetId = selectedAdSetByAccount[acc.id];
+                    if (accountAdSetId) {
+                        adSetId = accountAdSetId;
                     } else {
                         setLaunchProgress(`Creando ad set en campaña existente...`);
-                        adSetId = await createMetaAdSet(metaToken, {
+                        adSetId = await createMetaAdSet(token, {
                             ...baseAdSetConfig,
                             campaignId,
                             name: `${campaignName} - AdSet`,
@@ -525,9 +699,9 @@ export const Lanzador: React.FC = () => {
                         dailyBudget: (naming.strategy === 'CBO' || naming.strategy === 'ASC') ? metaBudget : undefined,
                     };
 
-                    campaignId = await createMetaCampaign(metaToken, campaignConfig);
+                    campaignId = await createMetaCampaign(token, campaignConfig);
 
-                    adSetId = await createMetaAdSet(metaToken, {
+                    adSetId = await createMetaAdSet(token, {
                         ...baseAdSetConfig,
                         campaignId,
                         name: `${campaignName} - AdSet`,
@@ -547,7 +721,54 @@ export const Lanzador: React.FC = () => {
                     return `Ad ${index + 1}`;
                 };
 
-                if (adStructure === 'flexible') {
+                if (multiFormat && formatPairs.length > 0) {
+                    // Multi-format: upload paired images and create ads with placement customization
+                    const validPairs = formatPairs.filter(p => p.feed && p.story);
+                    setLaunchProgress(`Subiendo ${validPairs.length * 2} imágenes multi-formato...`);
+
+                    let lastAdId = '';
+                    for (let i = 0; i < validPairs.length; i++) {
+                        const pair = validPairs[i];
+
+                        // Upload both images
+                        let feedHash: string;
+                        let storyHash: string;
+
+                        if (pair.feed!.type === 'local' && pair.feed!.file) {
+                            feedHash = await uploadMetaAdImage(token, accountId, pair.feed!.file);
+                        } else {
+                            const url = `https://drive.google.com/uc?export=download&id=${pair.feed!.id}`;
+                            feedHash = await uploadMetaAdImageFromUrl(token, accountId, url);
+                        }
+
+                        if (pair.story!.type === 'local' && pair.story!.file) {
+                            storyHash = await uploadMetaAdImage(token, accountId, pair.story!.file);
+                        } else {
+                            const url = `https://drive.google.com/uc?export=download&id=${pair.story!.id}`;
+                            storyHash = await uploadMetaAdImageFromUrl(token, accountId, url);
+                        }
+
+                        const adName = pair.feed!.name.replace(/\.[^/.]+$/, '');
+                        setLaunchProgress(`Creando ad multi-formato ${i + 1}/${validPairs.length}...`);
+
+                        lastAdId = await createMetaMultiFormatAd(token, {
+                            accountId,
+                            adSetId,
+                            name: adName,
+                            status: 'ACTIVE',
+                            pageId: activeStore.pageId,
+                            link: destinationUrl || 'https://example.com',
+                            feedImageHash: feedHash,
+                            storyImageHash: storyHash,
+                            message: copy || naming.product,
+                            title: aiTitle || undefined,
+                            description: aiDescription || undefined,
+                            callToAction: 'SHOP_NOW',
+                        });
+                    }
+                    allLaunchResults.push({ campaignId, adSetId, adId: lastAdId, accountName: acc.name });
+
+                } else if (adStructure === 'flexible') {
                     const bodies = selectedCopyIndices.length > 0
                         ? selectedCopyIndices.map(i => aiCopies[i])
                         : [copy || naming.product];
@@ -567,14 +788,14 @@ export const Lanzador: React.FC = () => {
                         callToAction: 'SHOP_NOW',
                     };
 
-                    const adId = await createMetaFlexibleAd(metaToken, flexConfig);
+                    const adId = await createMetaFlexibleAd(token, flexConfig);
                     allLaunchResults.push({ campaignId, adSetId, adId, accountName: acc.name });
 
                 } else if (adStructure === 'isolated') {
                     let lastAdId = '';
                     for (let i = 0; i < Math.max(imageHashes.length + videoIds.length, 1); i++) {
                         const isoAdSetId = i === 0 ? adSetId :
-                            await createMetaAdSet(metaToken, {
+                            await createMetaAdSet(token, {
                                 ...baseAdSetConfig,
                                 campaignId,
                                 name: `${campaignName} - AdSet ${i + 1}`
@@ -593,38 +814,58 @@ export const Lanzador: React.FC = () => {
                                 link: destinationUrl || 'https://example.com',
                                 imageHash: i < imageHashes.length ? imageHashes[i] : undefined,
                                 videoId: i >= imageHashes.length ? videoIds[i - imageHashes.length] : undefined,
+                                videoThumbnailUrl: i >= imageHashes.length ? videoThumbnails[i - imageHashes.length] : undefined,
                                 callToAction: 'SHOP_NOW',
                             }
                         };
 
-                        lastAdId = await createMetaAd(metaToken, adConfig);
+                        lastAdId = await createMetaAd(token, adConfig);
                     }
                     allLaunchResults.push({ campaignId, adSetId, adId: lastAdId || '', accountName: acc.name });
 
                 } else {
-                    // Grouped (default): all ads in one adset, one ad per creative
+                    // Grouped (default): ads distributed across ad sets
                     let lastAdId = '';
-                    const totalCreatives = imageHashes.length + videoIds.length;
+                    const totalCreatives = Math.max(imageHashes.length + videoIds.length, 1);
 
-                    for (let i = 0; i < Math.max(totalCreatives, 1); i++) {
-                        const isVideo = i >= imageHashes.length;
-                        const adConfig: MetaAdConfig = {
-                            accountId,
-                            adSetId,
-                            name: getAdName(i),
-                            status: 'ACTIVE',
-                            creative: {
-                                pageId: activeStore.pageId,
-                                message: copy || naming.product,
-                                title: aiTitle || undefined,
-                                description: aiDescription || undefined,
-                                link: destinationUrl || 'https://example.com',
-                                imageHash: !isVideo ? imageHashes[i] : undefined,
-                                videoId: isVideo ? videoIds[i - imageHashes.length] : undefined,
-                                callToAction: 'SHOP_NOW',
-                            }
-                        };
-                        lastAdId = await createMetaAd(metaToken, adConfig);
+                    // Split creatives into chunks if adsPerAdSet is set
+                    const chunkSize = adsPerAdSet > 0 ? adsPerAdSet : totalCreatives;
+                    const numChunks = Math.ceil(totalCreatives / chunkSize);
+
+                    for (let chunk = 0; chunk < numChunks; chunk++) {
+                        // First chunk uses the already-created adSetId, subsequent chunks create new ad sets
+                        const currentAdSetId = chunk === 0 ? adSetId : await createMetaAdSet(token, {
+                            ...baseAdSetConfig,
+                            campaignId,
+                            name: `${campaignName} - AdSet ${chunk + 1}`,
+                        });
+
+                        const startIdx = chunk * chunkSize;
+                        const endIdx = Math.min(startIdx + chunkSize, totalCreatives);
+
+                        for (let i = startIdx; i < endIdx; i++) {
+                            const isVideo = i >= imageHashes.length;
+                            const adConfig: MetaAdConfig = {
+                                accountId,
+                                adSetId: currentAdSetId,
+                                name: getAdName(i),
+                                status: 'ACTIVE',
+                                creative: {
+                                    pageId: activeStore.pageId,
+                                    message: copy || naming.product,
+                                    title: aiTitle || undefined,
+                                    description: aiDescription || undefined,
+                                    link: destinationUrl || 'https://example.com',
+                                    imageHash: !isVideo ? imageHashes[i] : undefined,
+                                    videoId: isVideo ? videoIds[i - imageHashes.length] : undefined,
+                                    videoThumbnailUrl: isVideo ? videoThumbnails[i - imageHashes.length] : undefined,
+                                    callToAction: 'SHOP_NOW',
+                                }
+                            };
+                            lastAdId = await createMetaAd(token, adConfig);
+                        }
+
+                        setLaunchProgress(`AdSet ${chunk + 1}/${numChunks} creado (${endIdx - startIdx} ads)...`);
                     }
                     allLaunchResults.push({ campaignId, adSetId, adId: lastAdId, accountName: acc.name });
                 }
@@ -656,7 +897,31 @@ export const Lanzador: React.FC = () => {
 
     const handleFileClick = () => fileInputRef.current?.click();
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Detect image aspect ratio from dimensions
+    // Feed = 4:5 (0.8) or 1:1 (1.0) — anything roughly square or slightly tall
+    // Story = 9:16 (0.5625) — clearly tall/vertical
+    const detectRatio = (w: number, h: number): '4:5' | '9:16' | 'other' => {
+        const r = w / h;
+        // 9:16 = 0.5625 — vertical formats (r < 0.7)
+        if (r >= 0.35 && r < 0.7) return '9:16';
+        // 4:5 = 0.8, 1:1 = 1.0 — feed formats (r >= 0.7 and <= 1.15)
+        if (r >= 0.7 && r <= 1.15) return '4:5';
+        return 'other';
+    };
+
+    const loadImageDimensions = (file: UploadedFile): Promise<UploadedFile> => {
+        if (file.mimeType?.startsWith('video')) return Promise.resolve(file);
+        return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                resolve({ ...file, width: img.naturalWidth, height: img.naturalHeight, ratio: detectRatio(img.naturalWidth, img.naturalHeight) });
+            };
+            img.onerror = () => resolve(file);
+            img.src = file.preview;
+        });
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
         const newFiles: UploadedFile[] = files.map(file => ({
             id: `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -666,7 +931,10 @@ export const Lanzador: React.FC = () => {
             type: 'local',
             mimeType: file.type
         }));
-        setUploadedFiles(prev => [...prev, ...newFiles]);
+
+        // Detect dimensions for images
+        const withDimensions = await Promise.all(newFiles.map(loadImageDimensions));
+        setUploadedFiles(prev => [...prev, ...withDimensions]);
     };
 
     const handleGoogleDriveUpload = async () => {
@@ -698,6 +966,29 @@ export const Lanzador: React.FC = () => {
         );
     };
 
+    const resetForm = () => {
+        setNaming(prev => ({ ...prev, product: '', buyer: '', date: getDefaultScheduleDate() }));
+        setCopy('');
+        setDestinationUrl('');
+        setUploadedFiles([]);
+        setAiCopies([]);
+        setAiTitle('');
+        setAiDescription('');
+        setSelectedCopyIndices([]);
+        setVegaInstruction('');
+        setCampaignMode('new');
+        setSelectedCampaignByAccount({});
+        setSelectedAdSetByAccount({});
+        setCampaignsByAccount({});
+        setAdSetsByAccount({});
+        setCampaignSearchByAccount({});
+        setSelectedExclusionId(null);
+        setLaunchError(null);
+        setAdsPerAdSet(0);
+        setMultiFormat(false);
+        setFormatPairs([]);
+    };
+
     if (isLaunched) {
         return (
             <div className="h-[600px] flex items-center justify-center p-8 text-center animate-in zoom-in-95 duration-500">
@@ -707,7 +998,7 @@ export const Lanzador: React.FC = () => {
                     </div>
                     <h2 className="text-4xl font-black italic uppercase tracking-tighter text-foreground">¡MISIÓN LANZADA!</h2>
                     <p className="text-muted text-sm font-bold uppercase tracking-widest leading-relaxed">
-                        Tu campaña <span className="text-accent">{naming.product}</span> fue creada exitosamente en Meta Ads.
+                        Tu campaña <span className="text-accent">{naming.product}</span> fue creada exitosamente en {platform === 'tiktok' ? 'TikTok Ads' : 'Meta Ads'}.
                     </p>
                     <div className="p-4 bg-card border border-card-border rounded-2xl font-mono text-xs text-muted">
                         {campaignName}
@@ -728,7 +1019,7 @@ export const Lanzador: React.FC = () => {
                         </div>
                     )}
                     <button
-                        onClick={() => { setIsLaunched(false); setLaunchResults([]); }}
+                        onClick={() => { setIsLaunched(false); setLaunchResults([]); resetForm(); }}
                         className="px-8 py-3 bg-card hover:bg-hover-bg text-foreground font-black uppercase text-xs rounded-xl transition-all border border-card-border"
                     >
                         Volver al Lanzador
@@ -744,6 +1035,26 @@ export const Lanzador: React.FC = () => {
 
                 {/* 1. Configuración */}
                 <CollapsibleSection title="Configuración" icon={Zap}>
+                    {/* Platform Selector */}
+                    <div className="flex gap-2 mb-5">
+                        <button
+                            onClick={() => setPlatform('facebook')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${platform === 'facebook'
+                                ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
+                                : 'bg-card border-card-border text-muted hover:border-blue-500/20'}`}
+                        >
+                            <span className="text-sm font-black">FB</span> Facebook Ads
+                        </button>
+                        <button
+                            onClick={() => setPlatform('tiktok')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${platform === 'tiktok'
+                                ? 'bg-pink-600/20 border-pink-500/40 text-pink-400'
+                                : 'bg-card border-card-border text-muted hover:border-pink-500/20'}`}
+                        >
+                            <span className="text-sm font-black">TT</span> TikTok Ads
+                        </button>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                         <div>
                             <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Perfil de Tienda</label>
@@ -792,9 +1103,18 @@ export const Lanzador: React.FC = () => {
                                 value={naming.strategy}
                                 onChange={e => { const s = e.target.value as NamingVariables['strategy']; setNaming(prev => ({ ...prev, strategy: s })); }}
                             >
-                                <option value="CBO">CBO (Campaign Budget Opt)</option>
-                                <option value="ABO">ABO (Ad Set Budget Opt)</option>
-                                <option value="ASC">ASC (Advantage+ Shopping)</option>
+                                {platform === 'facebook' ? (
+                                    <>
+                                        <option value="CBO">CBO (Campaign Budget Opt)</option>
+                                        <option value="ABO">ABO (Ad Set Budget Opt)</option>
+                                        <option value="ASC">ASC (Advantage+ Shopping)</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        <option value="CBO">CBO (Campaign Budget)</option>
+                                        <option value="ABO">ABO (Ad Group Budget)</option>
+                                    </>
+                                )}
                             </select>
                         </div>
 
@@ -867,8 +1187,8 @@ export const Lanzador: React.FC = () => {
                                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
                                 <p className="text-xs font-black uppercase tracking-widest text-muted italic animate-pulse">Consultando APIs de Marketing...</p>
                             </div>
-                        ) : adAccounts.length > 0 ? (
-                            adAccounts.map((acc) => {
+                        ) : adAccounts.filter(a => a.platform === platform).length > 0 ? (
+                            adAccounts.filter(a => a.platform === platform).map((acc) => {
                                 const isSelected = selectedAccountIds.includes(acc.id);
                                 return (
                                     <button
@@ -913,7 +1233,7 @@ export const Lanzador: React.FC = () => {
                 <CollapsibleSection title="Destino de Campaña" icon={Rocket}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <button
-                            onClick={() => { setCampaignMode('new'); setSelectedCampaignId(''); setSelectedAdSetId(''); }}
+                            onClick={() => { setCampaignMode('new'); setSelectedCampaignByAccount({}); setSelectedAdSetByAccount({}); }}
                             className={`p-5 rounded-2xl border transition-all text-left ${campaignMode === 'new'
                                 ? 'bg-accent/10 border-accent/30'
                                 : 'bg-background border-card-border hover:border-accent/20'
@@ -924,96 +1244,123 @@ export const Lanzador: React.FC = () => {
                             <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">Crear campaña desde cero</p>
                         </button>
                         <button
-                            onClick={() => { if (selectedAccountIds.length <= 1) setCampaignMode('existing'); }}
-                            disabled={selectedAccountIds.length > 1}
+                            onClick={() => setCampaignMode('existing')}
                             className={`p-5 rounded-2xl border transition-all text-left ${campaignMode === 'existing'
                                 ? 'bg-accent/10 border-accent/30'
-                                : selectedAccountIds.length > 1
-                                    ? 'bg-background border-card-border opacity-40 cursor-not-allowed'
-                                    : 'bg-background border-card-border hover:border-accent/20'
+                                : 'bg-background border-card-border hover:border-accent/20'
                                 }`}
                         >
                             <Layers className={`w-5 h-5 mb-3 ${campaignMode === 'existing' ? 'text-accent' : 'text-muted'}`} />
                             <h4 className="text-sm font-black uppercase tracking-tighter">Campaña Existente</h4>
-                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">
-                                {selectedAccountIds.length > 1
-                                    ? 'Solo disponible con 1 cuenta'
-                                    : 'Agregar ads a una campaña activa'}
-                            </p>
+                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">Agregar ads a una campaña activa</p>
                         </button>
                     </div>
 
                     {campaignMode === 'existing' && (
                         <div className="space-y-4 animate-in fade-in duration-200">
-                            <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Seleccionar Campaña</label>
-                                {isLoadingCampaigns ? (
-                                    <div className="flex items-center gap-2 p-3">
-                                        <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                                        <span className="text-xs text-muted">Cargando campañas...</span>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <div className="relative">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
-                                            <input
-                                                type="text"
-                                                placeholder="Buscar campaña por nombre..."
-                                                className="w-full bg-background border border-card-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
-                                                value={campaignSearch}
-                                                onChange={e => setCampaignSearch(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="max-h-48 overflow-y-auto border border-card-border rounded-xl bg-background">
-                                            {existingCampaigns
-                                                .filter(c => !campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase()))
-                                                .map(c => (
-                                                    <button
-                                                        key={c.id}
-                                                        onClick={() => { setSelectedCampaignId(c.id); setSelectedAdSetId(''); setCampaignSearch(''); }}
-                                                        className={`w-full text-left px-4 py-2.5 text-sm transition-colors border-b border-card-border last:border-b-0 ${selectedCampaignId === c.id ? 'bg-accent/10 text-accent font-bold' : 'text-foreground hover:bg-accent/5'}`}
-                                                    >
-                                                        {c.name} <span className="text-[10px] text-muted ml-1">({c.status})</span>
-                                                    </button>
-                                                ))}
-                                            {existingCampaigns.filter(c => !campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase())).length === 0 && (
-                                                <p className="px-4 py-3 text-xs text-muted text-center">No se encontraron campañas</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {selectedCampaignId && (
-                                <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Ad Set (opcional — dejar vacío para crear nuevo)</label>
-                                    {isLoadingAdSets ? (
-                                        <div className="flex items-center gap-2 p-3">
-                                            <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                                            <span className="text-xs text-muted">Cargando ad sets...</span>
-                                        </div>
-                                    ) : (
-                                        <select
-                                            className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
-                                            value={selectedAdSetId}
-                                            onChange={e => setSelectedAdSetId(e.target.value)}
-                                        >
-                                            <option value="">Crear nuevo Ad Set</option>
-                                            {existingAdSets.map(s => (
-                                                <option key={s.id} value={s.id}>
-                                                    {s.name} ({s.status})
-                                                </option>
-                                            ))}
-                                        </select>
-                                    )}
+                            {isLoadingCampaigns ? (
+                                <div className="flex items-center gap-2 p-3">
+                                    <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                                    <span className="text-xs text-muted">Cargando campañas...</span>
                                 </div>
-                            )}
-
-                            {existingCampaigns.length === 0 && !isLoadingCampaigns && selectedAccountIds.length > 0 && (
+                            ) : selectedAccountIds.length === 0 ? (
                                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3">
                                     <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-                                    <p className="text-xs text-amber-500 font-bold">No se encontraron campañas activas o pausadas en esta cuenta.</p>
+                                    <p className="text-xs text-amber-500 font-bold">Selecciona al menos una cuenta publicitaria.</p>
                                 </div>
+                            ) : (
+                                <>
+                                    {selectedAccountIds.map(accId => {
+                                        const acc = adAccounts.find(a => a.id === accId);
+                                        const campaigns = campaignsByAccount[accId] || [];
+                                        const search = campaignSearchByAccount[accId] || '';
+                                        const selectedCampId = selectedCampaignByAccount[accId] || '';
+                                        const adSets = adSetsByAccount[accId] || [];
+                                        const selectedAdSet = selectedAdSetByAccount[accId] || '';
+
+                                        return (
+                                            <div key={accId} className="border border-card-border rounded-xl p-4 space-y-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-6 h-6 bg-blue-600/20 text-blue-400 rounded-lg flex items-center justify-center text-xs font-black">f</div>
+                                                    <span className="text-xs font-black uppercase tracking-widest">{acc?.name || accId}</span>
+                                                    {selectedCampId && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 ml-auto" />}
+                                                </div>
+
+                                                <div className="relative">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Buscar campaña..."
+                                                        className="w-full bg-background border border-card-border rounded-xl pl-9 pr-4 py-2 text-sm text-foreground focus:border-accent/50 outline-none"
+                                                        value={search}
+                                                        onChange={e => setCampaignSearchByAccount(prev => ({ ...prev, [accId]: e.target.value }))}
+                                                    />
+                                                </div>
+                                                <div className="max-h-36 overflow-y-auto border border-card-border rounded-xl bg-background">
+                                                    {campaigns
+                                                        .filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase()))
+                                                        .map(c => (
+                                                            <button
+                                                                key={c.id}
+                                                                onClick={() => {
+                                                                    setSelectedCampaignByAccount(prev => ({ ...prev, [accId]: c.id }));
+                                                                    setSelectedAdSetByAccount(prev => ({ ...prev, [accId]: '' }));
+                                                                    setCampaignSearchByAccount(prev => ({ ...prev, [accId]: '' }));
+                                                                    loadExistingAdSets(accId, c.id);
+                                                                }}
+                                                                className={`w-full text-left px-4 py-2 text-sm transition-colors border-b border-card-border last:border-b-0 ${selectedCampId === c.id ? 'bg-accent/10 text-accent font-bold' : 'text-foreground hover:bg-accent/5'}`}
+                                                            >
+                                                                {c.name} <span className="text-[10px] text-muted ml-1">({c.status})</span>
+                                                            </button>
+                                                        ))}
+                                                    {campaigns.filter(c => !search || c.name.toLowerCase().includes(search.toLowerCase())).length === 0 && (
+                                                        <p className="px-4 py-3 text-xs text-muted text-center">No se encontraron campañas</p>
+                                                    )}
+                                                </div>
+
+                                                {selectedCampId && adSets.length > 0 && (
+                                                    <div>
+                                                        <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-1 block">Ad Set (opcional)</label>
+                                                        <select
+                                                            className="w-full bg-background border border-card-border rounded-xl px-4 py-2 text-sm text-foreground focus:border-accent/50 outline-none"
+                                                            value={selectedAdSet}
+                                                            onChange={e => setSelectedAdSetByAccount(prev => ({ ...prev, [accId]: e.target.value }))}
+                                                        >
+                                                            <option value="">Crear nuevo Ad Set</option>
+                                                            {adSets.map(s => (
+                                                                <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+
+                                    {/* Confirmation summary */}
+                                    {Object.values(selectedCampaignByAccount).some(id => id) && (
+                                        <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Resumen de Selección</p>
+                                            {selectedAccountIds.map(accId => {
+                                                const acc = adAccounts.find(a => a.id === accId);
+                                                const campId = selectedCampaignByAccount[accId];
+                                                if (!campId) return null;
+                                                const camp = (campaignsByAccount[accId] || []).find(c => c.id === campId);
+                                                const adSetId = selectedAdSetByAccount[accId];
+                                                const adSet = adSetId ? (adSetsByAccount[accId] || []).find(s => s.id === adSetId) : null;
+                                                return (
+                                                    <div key={accId} className="flex items-center gap-2 text-xs">
+                                                        <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                                                        <span className="text-foreground font-bold truncate">{acc?.name}</span>
+                                                        <span className="text-muted shrink-0">&rarr;</span>
+                                                        <span className="text-accent truncate">{camp?.name}</span>
+                                                        {adSet && <><span className="text-muted shrink-0">&rarr;</span><span className="text-muted truncate">{adSet.name}</span></>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
@@ -1022,24 +1369,64 @@ export const Lanzador: React.FC = () => {
                 {/* 4. Ad Structure */}
                 <CollapsibleSection title="Estructura de Anuncios" icon={Layers}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {([
-                            { id: 'grouped' as const, label: 'Agrupados', desc: '1 AdSet, todos los ads juntos', icon: Layers },
-                            { id: 'isolated' as const, label: 'Aislados', desc: '1 AdSet por cada creativo', icon: Split },
-                            { id: 'flexible' as const, label: 'Flexible Ads', desc: 'asset_feed_spec (multi-asset)', icon: Shuffle },
-                        ]).map((opt) => (
-                            <button
-                                key={opt.id}
-                                onClick={() => setAdStructure(opt.id)}
-                                className={`p-5 rounded-2xl border transition-all text-left ${adStructure === opt.id
-                                    ? 'bg-accent/10 border-accent/30'
-                                    : 'bg-background border-card-border hover:border-accent/20'
-                                    }`}
-                            >
-                                <opt.icon className={`w-5 h-5 mb-3 ${adStructure === opt.id ? 'text-accent' : 'text-muted'}`} />
-                                <h4 className="text-sm font-black uppercase tracking-tighter">{opt.label}</h4>
-                                <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">{opt.desc}</p>
-                            </button>
-                        ))}
+                        {/* Grouped */}
+                        <button
+                            onClick={() => setAdStructure('grouped')}
+                            className={`p-5 rounded-2xl border transition-all text-left ${adStructure === 'grouped'
+                                ? 'bg-accent/10 border-accent/30'
+                                : 'bg-background border-card-border hover:border-accent/20'
+                                }`}
+                        >
+                            <Layers className={`w-5 h-5 mb-3 ${adStructure === 'grouped' ? 'text-accent' : 'text-muted'}`} />
+                            <h4 className="text-sm font-black uppercase tracking-tighter">Agrupados</h4>
+                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">
+                                {adsPerAdSet > 0 ? `${adsPerAdSet} ads por AdSet` : '1 AdSet, todos los ads juntos'}
+                            </p>
+                            {adStructure === 'grouped' && (
+                                <div className="mt-3 pt-3 border-t border-card-border" onClick={(e) => e.stopPropagation()}>
+                                    <label className="text-[9px] font-bold uppercase tracking-widest text-muted block mb-1.5">Ads por AdSet</label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={50}
+                                            value={adsPerAdSet}
+                                            onChange={(e) => setAdsPerAdSet(Math.max(0, parseInt(e.target.value) || 0))}
+                                            className="w-14 bg-background border border-card-border rounded-lg px-2 py-1.5 text-center font-mono text-sm focus:border-accent focus:outline-none"
+                                        />
+                                        <span className="text-[9px] text-muted uppercase tracking-wider">
+                                            {adsPerAdSet === 0 ? 'Todos en 1 AdSet' : `${uploadedFiles.length > 0 ? Math.ceil(uploadedFiles.length / adsPerAdSet) : '?'} AdSets`}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </button>
+
+                        {/* Isolated */}
+                        <button
+                            onClick={() => setAdStructure('isolated')}
+                            className={`p-5 rounded-2xl border transition-all text-left ${adStructure === 'isolated'
+                                ? 'bg-accent/10 border-accent/30'
+                                : 'bg-background border-card-border hover:border-accent/20'
+                                }`}
+                        >
+                            <Split className={`w-5 h-5 mb-3 ${adStructure === 'isolated' ? 'text-accent' : 'text-muted'}`} />
+                            <h4 className="text-sm font-black uppercase tracking-tighter">Aislados</h4>
+                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">1 AdSet por cada creativo</p>
+                        </button>
+
+                        {/* Flexible */}
+                        <button
+                            onClick={() => setAdStructure('flexible')}
+                            className={`p-5 rounded-2xl border transition-all text-left ${adStructure === 'flexible'
+                                ? 'bg-accent/10 border-accent/30'
+                                : 'bg-background border-card-border hover:border-accent/20'
+                                }`}
+                        >
+                            <Shuffle className={`w-5 h-5 mb-3 ${adStructure === 'flexible' ? 'text-accent' : 'text-muted'}`} />
+                            <h4 className="text-sm font-black uppercase tracking-tighter">Flexible Ads</h4>
+                            <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">asset_feed_spec (multi-asset)</p>
+                        </button>
                     </div>
                 </CollapsibleSection>
 
@@ -1269,6 +1656,123 @@ export const Lanzador: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Multi-Format Toggle */}
+                    {uploadedFiles.filter(f => !f.mimeType?.startsWith('video')).length >= 2 && (
+                        <div className="mb-6">
+                            <label className="flex items-center gap-3 cursor-pointer" onClick={() => setMultiFormat(!multiFormat)}>
+                                <div className={`relative w-9 h-5 rounded-full transition-colors ${multiFormat ? 'bg-accent' : 'bg-gray-600'}`}>
+                                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${multiFormat ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <GalleryHorizontalEnd className={`w-4 h-4 ${multiFormat ? 'text-accent' : 'text-muted'}`} />
+                                    <span className="text-xs font-black uppercase tracking-wider">Multi-Formato</span>
+                                    <span className="text-[9px] text-muted uppercase tracking-widest">Feed (4:5) + Stories (9:16)</span>
+                                </div>
+                            </label>
+                        </div>
+                    )}
+
+                    {/* Multi-Format Pairing UI */}
+                    {multiFormat && formatPairs.length > 0 && (
+                        <div className="mb-6 p-4 bg-background border border-card-border rounded-2xl">
+                            <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-muted flex items-center gap-2">
+                                    <ArrowUpDown className="w-3.5 h-3.5" />
+                                    Emparejamiento ({formatPairs.filter(p => p.feed && p.story).length} pares)
+                                </h4>
+                                <span className="text-[9px] text-muted uppercase tracking-widest">
+                                    {uploadedFiles.filter(f => f.ratio === '4:5').length} feed · {uploadedFiles.filter(f => f.ratio === '9:16').length} story
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center mb-2">
+                                <span className="text-[9px] font-bold text-center uppercase tracking-widest text-muted">Feed 4:5</span>
+                                <span></span>
+                                <span className="text-[9px] font-bold text-center uppercase tracking-widest text-muted">Story 9:16</span>
+                            </div>
+
+                            {formatPairs.map((pair, idx) => (
+                                <div key={idx} className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center mb-2">
+                                    {/* Feed (4:5) */}
+                                    <div className={`aspect-[4/5] max-h-24 rounded-xl overflow-hidden border ${pair.feed ? 'border-card-border' : 'border-dashed border-muted/30'} bg-card`}>
+                                        {pair.feed ? (
+                                            <div className="relative w-full h-full group">
+                                                <img src={pair.feed.preview} className="w-full h-full object-cover" alt="" />
+                                                <span className="absolute bottom-0.5 left-0.5 text-[8px] bg-black/60 text-white px-1 rounded truncate max-w-[90%]">{pair.feed.name}</span>
+                                                {/* Move buttons */}
+                                                <div className="absolute top-0.5 right-0.5 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {idx > 0 && (
+                                                        <button onClick={() => {
+                                                            setFormatPairs(prev => {
+                                                                const next = [...prev];
+                                                                const temp = next[idx].feed;
+                                                                next[idx] = { ...next[idx], feed: next[idx - 1].feed };
+                                                                next[idx - 1] = { ...next[idx - 1], feed: temp };
+                                                                return next;
+                                                            });
+                                                        }} className="p-0.5 bg-black/60 rounded text-white text-[8px]">▲</button>
+                                                    )}
+                                                    {idx < formatPairs.length - 1 && (
+                                                        <button onClick={() => {
+                                                            setFormatPairs(prev => {
+                                                                const next = [...prev];
+                                                                const temp = next[idx].feed;
+                                                                next[idx] = { ...next[idx], feed: next[idx + 1].feed };
+                                                                next[idx + 1] = { ...next[idx + 1], feed: temp };
+                                                                return next;
+                                                            });
+                                                        }} className="p-0.5 bg-black/60 rounded text-white text-[8px]">▼</button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-muted text-[9px]">Sin imagen</div>
+                                        )}
+                                    </div>
+
+                                    {/* Pair indicator */}
+                                    <div className={`text-xs font-bold ${pair.feed && pair.story ? 'text-accent' : 'text-muted/30'}`}>⟷</div>
+
+                                    {/* Story (9:16) */}
+                                    <div className={`aspect-[9/16] max-h-24 rounded-xl overflow-hidden border ${pair.story ? 'border-card-border' : 'border-dashed border-muted/30'} bg-card`}>
+                                        {pair.story ? (
+                                            <div className="relative w-full h-full group">
+                                                <img src={pair.story.preview} className="w-full h-full object-cover" alt="" />
+                                                <span className="absolute bottom-0.5 left-0.5 text-[8px] bg-black/60 text-white px-1 rounded truncate max-w-[90%]">{pair.story.name}</span>
+                                                <div className="absolute top-0.5 right-0.5 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {idx > 0 && (
+                                                        <button onClick={() => {
+                                                            setFormatPairs(prev => {
+                                                                const next = [...prev];
+                                                                const temp = next[idx].story;
+                                                                next[idx] = { ...next[idx], story: next[idx - 1].story };
+                                                                next[idx - 1] = { ...next[idx - 1], story: temp };
+                                                                return next;
+                                                            });
+                                                        }} className="p-0.5 bg-black/60 rounded text-white text-[8px]">▲</button>
+                                                    )}
+                                                    {idx < formatPairs.length - 1 && (
+                                                        <button onClick={() => {
+                                                            setFormatPairs(prev => {
+                                                                const next = [...prev];
+                                                                const temp = next[idx].story;
+                                                                next[idx] = { ...next[idx], story: next[idx + 1].story };
+                                                                next[idx + 1] = { ...next[idx + 1], story: temp };
+                                                                return next;
+                                                            });
+                                                        }} className="p-0.5 bg-black/60 rounded text-white text-[8px]">▼</button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-muted text-[9px]">Sin imagen</div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Destination Link */}
                     <div className="mb-6">
                         <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Link de Destino</label>
@@ -1310,6 +1814,20 @@ export const Lanzador: React.FC = () => {
                                 <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs text-muted">
                                     {copy.length}
                                 </div>
+                        </div>
+                        </div>
+
+                        {/* VEGA Instruction */}
+                        <div className="mb-4">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-2 block">Instrucción para Vega AI (opcional)</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder='Ej: "Para Black Friday", "Enfocado en madres", "Tono urgente"...'
+                                    className="flex-1 bg-background border border-purple-500/20 rounded-xl px-4 py-2.5 text-sm text-foreground focus:border-purple-500/50 outline-none transition-colors placeholder:text-muted"
+                                    value={vegaInstruction}
+                                    onChange={e => setVegaInstruction(e.target.value)}
+                                />
                                 <div className="relative group/vega">
                                     <button
                                         onClick={handleGenerateCopy}

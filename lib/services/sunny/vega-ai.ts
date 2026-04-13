@@ -12,6 +12,7 @@ export interface VegaAIRequest {
     target: string;
     style?: string;
     destinationLink?: string;
+    instruction?: string;
 }
 
 export interface VegaAIResult {
@@ -21,7 +22,7 @@ export interface VegaAIResult {
 }
 
 export async function generateCopy(req: VegaAIRequest): Promise<VegaAIResult> {
-    const { product, target, destinationLink } = req;
+    const { product, target, destinationLink, instruction } = req;
 
     const response = await authFetch('/api/sunny/generate-copy', {
         method: 'POST',
@@ -29,7 +30,8 @@ export async function generateCopy(req: VegaAIRequest): Promise<VegaAIResult> {
         body: JSON.stringify({
             product,
             country: target,
-            destinationUrl: destinationLink
+            destinationUrl: destinationLink,
+            instruction,
         })
     });
 

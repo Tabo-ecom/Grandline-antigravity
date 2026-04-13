@@ -25,6 +25,7 @@ export default function PriceCorrections() {
     const [selectedProduct, setSelectedProduct] = useState<string>('');
     const [editingPrice, setEditingPrice] = useState<number | null>(null);
     const [correctedValue, setCorrectedValue] = useState<string>('');
+    const [correctionScope, setCorrectionScope] = useState<'both' | 'dropshipper' | 'supplier'>('both');
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -89,6 +90,7 @@ export default function PriceCorrections() {
                 productName: selectedProductName,
                 originalUnitPrice: originalPrice,
                 correctedUnitPrice: corrected,
+                scope: correctionScope,
                 createdAt: Date.now(),
             };
             await savePriceCorrection(correction);
@@ -235,7 +237,7 @@ export default function PriceCorrections() {
                                                 {/* Correction Input */}
                                                 {isEditing && (
                                                     <div className="mt-4 pt-4 border-t border-card-border animate-in fade-in slide-in-from-top-2">
-                                                        <div className="flex items-center gap-3">
+                                                        <div className="flex items-end gap-3">
                                                             <div className="flex-1">
                                                                 <label className="text-[10px] text-muted uppercase tracking-wider font-bold mb-1 block">
                                                                     Precio correcto por unidad
@@ -252,10 +254,31 @@ export default function PriceCorrections() {
                                                                     />
                                                                 </div>
                                                             </div>
+                                                            <div>
+                                                                <label className="text-[10px] text-muted uppercase tracking-wider font-bold mb-1 block">
+                                                                    Aplica en
+                                                                </label>
+                                                                <div className="flex gap-1">
+                                                                    {([['both', 'Ambos'], ['dropshipper', 'Dropshipper'], ['supplier', 'Proveedor']] as const).map(([val, label]) => (
+                                                                        <button
+                                                                            key={val}
+                                                                            type="button"
+                                                                            onClick={() => setCorrectionScope(val)}
+                                                                            className={`px-2.5 py-2 rounded-lg text-[10px] font-bold transition-all ${
+                                                                                correctionScope === val
+                                                                                    ? 'bg-accent/20 text-accent border border-accent/30'
+                                                                                    : 'bg-hover-bg text-muted border border-card-border hover:text-foreground'
+                                                                            }`}
+                                                                        >
+                                                                            {label}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
                                                             <button
                                                                 onClick={() => handleSave(price)}
                                                                 disabled={saving || !correctedValue || parseFloat(correctedValue) <= 0}
-                                                                className="mt-5 px-6 py-2.5 rounded-xl text-sm font-bold bg-accent text-white hover:bg-accent/90 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                                                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-accent text-white hover:bg-accent/90 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                                             >
                                                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                                                                 Aplicar
@@ -319,6 +342,8 @@ export default function PriceCorrections() {
                                                 <p className="text-[10px] text-muted mt-1">
                                                     {correctionCounts[corr.id] || 0} órdenes afectadas
                                                     {corr.country && ` · ${corr.country}`}
+                                                    {corr.scope && corr.scope !== 'both' && ` · Solo ${corr.scope === 'dropshipper' ? 'Dropshipper' : 'Proveedor'}`}
+                                                    {(!corr.scope || corr.scope === 'both') && ' · Ambos reportes'}
                                                 </p>
                                             </div>
                                             <button

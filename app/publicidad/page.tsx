@@ -121,8 +121,10 @@ export default function AdvertisingPage() {
 
     // Re-calculate local startDate/endDate based on global filters to maintain compatibility
     const { startDate, endDate } = useMemo(() => {
+        // Use local date (not UTC) to avoid timezone mismatch
+        const toLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const today = new Date();
-        const end = today.toISOString().split('T')[0];
+        const end = toLocalDate(today);
         let start = end;
 
         if (dateRange === 'Personalizado' && startDateCustom && endDateCustom) {
@@ -133,38 +135,43 @@ export default function AdvertisingPage() {
             case 'Hoy':
                 start = end;
                 break;
-            case 'Ayer':
+            case 'Ayer': {
                 const yesterday = new Date();
                 yesterday.setDate(yesterday.getDate() - 1);
-                start = yesterday.toISOString().split('T')[0];
-                return { startDate: start, endDate: start };
-            case 'Últimos 7 Días':
+                const d = toLocalDate(yesterday);
+                return { startDate: d, endDate: d };
+            }
+            case 'Últimos 7 Días': {
                 const last7 = new Date();
                 last7.setDate(last7.getDate() - 7);
-                start = last7.toISOString().split('T')[0];
+                start = toLocalDate(last7);
                 break;
-            case 'Últimos 30 Días':
+            }
+            case 'Últimos 30 Días': {
                 const last30 = new Date();
                 last30.setDate(last30.getDate() - 30);
-                start = last30.toISOString().split('T')[0];
+                start = toLocalDate(last30);
                 break;
+            }
             case 'Este Mes':
-                start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+                start = toLocalDate(new Date(today.getFullYear(), today.getMonth(), 1));
                 break;
-            case 'Mes Pasado':
+            case 'Mes Pasado': {
                 const firstDayLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                 const lastDayLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
                 return {
-                    startDate: firstDayLastMonth.toISOString().split('T')[0],
-                    endDate: lastDayLastMonth.toISOString().split('T')[0]
+                    startDate: toLocalDate(firstDayLastMonth),
+                    endDate: toLocalDate(lastDayLastMonth)
                 };
+            }
             case 'Todos':
-                start = '2020-01-01'; // Default far back
+                start = '2020-01-01';
                 break;
-            default:
+            default: {
                 const d = new Date();
                 d.setDate(d.getDate() - 30);
-                start = d.toISOString().split('T')[0];
+                start = toLocalDate(d);
+            }
         }
 
         return { startDate: start, endDate: end };
@@ -223,14 +230,16 @@ export default function AdvertisingPage() {
 
     // Initial Load
     useEffect(() => {
+        if (!effectiveUid) return;
         async function loadData() {
             try {
                 // Check cache first (valid for 5 mins)
                 const now = Date.now();
                 const isCacheValid = adCenterSessionCache.timestamp > 0 && (now - adCenterSessionCache.timestamp < 300000);
 
-                const h = isCacheValid ? adCenterSessionCache.history! : await getAdSpendHistory(effectiveUid || '');
-                const m = isCacheValid ? adCenterSessionCache.mappings! : await getCampaignMappings(effectiveUid || '');
+                const uid = effectiveUid!;
+                const h = isCacheValid ? adCenterSessionCache.history! : await getAdSpendHistory(uid);
+                const m = isCacheValid ? adCenterSessionCache.mappings! : await getCampaignMappings(uid);
                 const s = await getAdSettings(effectiveUid || '');
                 const g = await getProductGroups(effectiveUid || '');
                 const ai = await getAISuggestions(effectiveUid || '');
@@ -265,8 +274,10 @@ export default function AdvertisingPage() {
                 setIsInitialLoading(false);
             }
         }
+        // Invalidate cache when user changes
+        adCenterSessionCache.timestamp = 0;
         loadData();
-    }, []);
+    }, [effectiveUid]);
 
     // Effect for orders - depends on filters
     useEffect(() => {

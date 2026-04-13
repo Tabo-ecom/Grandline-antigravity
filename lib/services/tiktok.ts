@@ -1,10 +1,299 @@
 /**
- * TikTok Marketing API Service
+ * TikTok Marketing API + Content Posting Service
  */
 
 interface TikTokAdAccount {
     advertiser_id: string;
     advertiser_name: string;
+}
+
+interface TikTokOAuthStatus {
+    connected: boolean;
+    expired?: boolean;
+    display_name?: string;
+    avatar_url?: string;
+    open_id?: string;
+    connected_at?: string | null;
+}
+
+/* ─── OAuth Helpers ──────────────────────────────────────── */
+
+/**
+ * Build TikTok OAuth URL for Login Kit
+ */
+export function buildTikTokOAuthUrl(userId: string): string {
+    const clientKey = process.env.NEXT_PUBLIC_TIKTOK_CLIENT_KEY || '';
+    const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://app.grandline.com.co';
+    const redirectUri = `${appDomain}/api/auth/tiktok/callback`;
+    const scope = 'user.info.basic,video.upload';
+    const state = userId;
+
+    const params = new URLSearchParams({
+        client_key: clientKey,
+        response_type: 'code',
+        scope,
+        redirect_uri: redirectUri,
+        state,
+    });
+
+    return `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+}
+
+/**
+ * Fetch TikTok connection status from our API
+ */
+export async function getTikTokStatus(authFetch: (url: string, opts?: RequestInit) => Promise<Response>): Promise<TikTokOAuthStatus> {
+    try {
+        const res = await authFetch('/api/auth/tiktok');
+        if (!res.ok) return { connected: false };
+        return await res.json();
+    } catch {
+        return { connected: false };
+    }
+}
+
+/**
+ * Disconnect TikTok account
+ */
+export async function disconnectTikTok(authFetch: (url: string, opts?: RequestInit) => Promise<Response>): Promise<boolean> {
+    try {
+        const res = await authFetch('/api/auth/tiktok', { method: 'DELETE' });
+        return res.ok;
+    } catch {
+        return false;
+    }
+}
+
+/* ─── Content Posting API (via proxy) ────────────────────── */
+
+/**
+ * Upload video to TikTok as draft via server proxy
+ * Returns { upload_url, publish_id } for client to PUT the file
+ */
+export async function initTikTokVideoUpload(
+    authFetch: (url: string, opts?: RequestInit) => Promise<Response>,
+    fileSize: number
+): Promise<{ upload_url: string; publish_id: string } | null> {
+    try {
+        const res = await authFetch('/api/sunny/tiktok-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'init_video_upload', fileSize }),
+        });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Check TikTok publish status
+ */
+export async function checkTikTokPublishStatus(
+    authFetch: (url: string, opts?: RequestInit) => Promise<Response>,
+    publishId: string
+): Promise<any> {
+    try {
+        const res = await authFetch('/api/sunny/tiktok-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'check_publish_status', publishId }),
+        });
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
+/* ─── TikTok Marketing API — Campaign Creation ───────────── */
+
+interface TikTokCampaignConfig {
+    advertiserId: string;
+    name: string;
+    objectiveType: 'TRAFFIC' | 'CONVERSIONS' | 'REACH' | 'VIDEO_VIEWS';
+    budgetMode: 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL' | 'BUDGET_MODE_INFINITE';
+    budget?: number; // in micro-currency (value * 1_000_000) for CBO
+    status?: 'ENABLE' | 'DISABLE';
+}
+
+interface TikTokAdGroupConfig {
+    advertiserId: string;
+    campaignId: string;
+    name: string;
+    placementType?: 'PLACEMENT_TYPE_AUTOMATIC' | 'PLACEMENT_TYPE_NORMAL';
+    placements?: string[];
+    budget?: number; // daily budget in micro-currency for ABO
+    budgetMode?: 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL' | 'BUDGET_MODE_INFINITE';
+    optimizationGoal?: 'CONVERT' | 'CLICK' | 'REACH' | 'VIDEO_VIEW';
+    billingEvent?: 'CPC' | 'CPM' | 'OCPM';
+    bidType?: 'BID_TYPE_NO_BID' | 'BID_TYPE_CUSTOM';
+    scheduleStartTime: string; // "2026-04-07 05:00:00"
+    locationIds: string[]; // country codes ["CO", "MX"]
+    ageGroups?: string[]; // ["AGE_18_24", "AGE_25_34", ...]
+    gender?: 'GENDER_UNLIMITED' | 'GENDER_MALE' | 'GENDER_FEMALE';
+    pixelId?: string;
+    optimizationEvent?: string;
+}
+
+interface TikTokAdConfig {
+    advertiserId: string;
+    adGroupId: string;
+    name: string;
+    adFormat?: 'SINGLE_VIDEO' | 'SINGLE_IMAGE';
+    imageId?: string;
+    videoId?: string;
+    adText: string;
+    callToAction?: string;
+    landingPageUrl: string;
+    identityType?: 'CUSTOMIZED_USER' | 'AUTH_CODE';
+    displayName?: string;
+}
+
+export interface TikTokLaunchResult {
+    campaignId: string;
+    adGroupId: string;
+    adId: string;
+    accountName: string;
+}
+
+const TT_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3';
+
+async function ttApiCall(endpoint: string, token: string, body: any): Promise<any> {
+    const res = await fetch(`${TT_API_BASE}${endpoint}`, {
+        method: 'POST',
+        headers: {
+            'Access-Token': token,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.code !== 0) {
+        throw new Error(data.message || `TikTok API error: ${data.code}`);
+    }
+    return data.data;
+}
+
+export async function createTikTokCampaign(token: string, config: TikTokCampaignConfig): Promise<string> {
+    const body: any = {
+        advertiser_id: config.advertiserId,
+        campaign_name: config.name,
+        objective_type: config.objectiveType,
+        budget_mode: config.budgetMode,
+    };
+    if (config.budget && config.budgetMode !== 'BUDGET_MODE_INFINITE') {
+        body.budget = config.budget;
+    }
+    if (config.status) {
+        body.operation_status = config.status;
+    }
+    const data = await ttApiCall('/campaign/create/', token, body);
+    return data.campaign_id;
+}
+
+export async function createTikTokAdGroup(token: string, config: TikTokAdGroupConfig): Promise<string> {
+    const body: any = {
+        advertiser_id: config.advertiserId,
+        campaign_id: config.campaignId,
+        adgroup_name: config.name,
+        placement_type: config.placementType || 'PLACEMENT_TYPE_AUTOMATIC',
+        budget_mode: config.budgetMode || 'BUDGET_MODE_INFINITE',
+        optimization_goal: config.optimizationGoal || 'CLICK',
+        billing_event: config.billingEvent || 'OCPM',
+        bid_type: config.bidType || 'BID_TYPE_NO_BID',
+        schedule_start_time: config.scheduleStartTime,
+        location_ids: config.locationIds,
+    };
+    if (config.budget && config.budgetMode === 'BUDGET_MODE_DAY') {
+        body.budget = config.budget;
+    }
+    if (config.ageGroups?.length) body.age_groups = config.ageGroups;
+    if (config.gender) body.gender = config.gender;
+    if (config.pixelId) {
+        body.pixel_id = config.pixelId;
+        body.optimization_event = config.optimizationEvent || 'COMPLETE_PAYMENT';
+    }
+    const data = await ttApiCall('/adgroup/create/', token, body);
+    return data.adgroup_id;
+}
+
+export async function createTikTokAd(token: string, config: TikTokAdConfig): Promise<string> {
+    const body: any = {
+        advertiser_id: config.advertiserId,
+        adgroup_id: config.adGroupId,
+        ad_name: config.name,
+        ad_format: config.adFormat || 'SINGLE_VIDEO',
+        ad_text: config.adText,
+        landing_page_url: config.landingPageUrl,
+        call_to_action: config.callToAction || 'SHOP_NOW',
+        identity_type: config.identityType || 'CUSTOMIZED_USER',
+    };
+    if (config.videoId) body.video_id = config.videoId;
+    if (config.imageId) body.image_ids = [config.imageId];
+    if (config.displayName) body.display_name = config.displayName;
+    const data = await ttApiCall('/ad/create/', token, body);
+    return data.ad_ids?.[0] || data.ad_id;
+}
+
+export async function uploadTikTokVideo(token: string, advertiserId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('advertiser_id', advertiserId);
+    formData.append('upload_type', 'UPLOAD_BY_FILE');
+    formData.append('video_file', file);
+
+    const res = await fetch(`${TT_API_BASE}/file/video/ad/upload/`, {
+        method: 'POST',
+        headers: { 'Access-Token': token },
+        body: formData,
+    });
+    const data = await res.json();
+    if (data.code !== 0) throw new Error(data.message || 'Error uploading video to TikTok');
+    return data.data?.video_id;
+}
+
+export async function uploadTikTokImage(token: string, advertiserId: string, file: File): Promise<string> {
+    const formData = new FormData();
+    formData.append('advertiser_id', advertiserId);
+    formData.append('upload_type', 'UPLOAD_BY_FILE');
+    formData.append('image_file', file);
+
+    const res = await fetch(`${TT_API_BASE}/file/image/ad/upload/`, {
+        method: 'POST',
+        headers: { 'Access-Token': token },
+        body: formData,
+    });
+    const data = await res.json();
+    if (data.code !== 0) throw new Error(data.message || 'Error uploading image to TikTok');
+    return data.data?.image_id;
+}
+
+/** Map country name to TikTok location ID */
+export function getTikTokLocationId(country: string): string {
+    const map: Record<string, string> = {
+        'Colombia': 'CO', 'México': 'MX', 'Mexico': 'MX', 'Ecuador': 'EC',
+        'Perú': 'PE', 'Peru': 'PE', 'Chile': 'CL', 'Argentina': 'AR',
+        'Paraguay': 'PY', 'Guatemala': 'GT', 'Panamá': 'PA', 'Panama': 'PA',
+        'España': 'ES', 'Costa Rica': 'CR',
+    };
+    return map[country] || 'CO';
+}
+
+/** Map demographics age range to TikTok age groups */
+export function getTikTokAgeGroups(ageMin: number, ageMax: number): string[] {
+    const groups: string[] = [];
+    const ranges = [
+        { id: 'AGE_13_17', min: 13, max: 17 },
+        { id: 'AGE_18_24', min: 18, max: 24 },
+        { id: 'AGE_25_34', min: 25, max: 34 },
+        { id: 'AGE_35_44', min: 35, max: 44 },
+        { id: 'AGE_45_54', min: 45, max: 54 },
+        { id: 'AGE_55_100', min: 55, max: 100 },
+    ];
+    for (const r of ranges) {
+        if (r.max >= ageMin && r.min <= ageMax) groups.push(r.id);
+    }
+    return groups;
 }
 
 export async function fetchTikTokAdAccounts(token: string): Promise<TikTokAdAccount[]> {

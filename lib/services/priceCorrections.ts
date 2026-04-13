@@ -1,4 +1,5 @@
 import { getAppData, setAppData } from '../firebase/firestore';
+import { getInventory, saveInventoryProduct, type InventoryProduct } from './supplierInventory';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -9,6 +10,7 @@ export interface PriceCorrection {
     originalUnitPrice: number;   // The wrong unit price to match (e.g., 3000) — in COP
     correctedUnitPrice: number;  // The correct unit price (e.g., 7000) — in COP
     country?: string;            // Optional: limit to a specific country
+    scope?: 'dropshipper' | 'supplier' | 'both'; // Which reports this applies to (default: 'both')
     createdAt: number;
 }
 
@@ -44,6 +46,32 @@ export async function savePriceCorrection(correction: PriceCorrection, userId: s
     const current = await getPriceCorrections(userId);
     const filtered = current.filter(c => c.id !== correction.id);
     await setAppData(CORRECTIONS_KEY, [...filtered, correction], userId);
+
+    // Auto-sync to supplier inventory: update precioProveedor for matching products
+    if (correction.scope === 'supplier' || correction.scope === 'both' || !correction.scope) {
+        await syncCorrectionToSupplierInventory(correction, userId);
+    }
+}
+
+/** Update precioProveedor in supplier inventory for products matching this correction */
+async function syncCorrectionToSupplierInventory(correction: PriceCorrection, userId: string): Promise<void> {
+    try {
+        const inventory = await getInventory(userId);
+        const matching = inventory.filter(p =>
+            p.productoId === correction.productId &&
+            (p.precioProveedor === correction.originalUnitPrice ||
+             Math.abs(p.precioProveedor - correction.originalUnitPrice) <= 1)
+        );
+        for (const product of matching) {
+            await saveInventoryProduct({
+                ...product,
+                precioProveedor: correction.correctedUnitPrice,
+                updatedAt: Date.now(),
+            }, userId);
+        }
+    } catch {
+        // Non-critical: don't block the correction save if inventory sync fails
+    }
 }
 
 export async function deletePriceCorrection(id: string, userId: string): Promise<void> {

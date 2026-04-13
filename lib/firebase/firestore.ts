@@ -18,6 +18,8 @@ export const COLLECTIONS = {
     ORDER_FILES: 'order_files',
     USER_PROFILES: 'user_profiles',
     IMPORT_LOGS: 'import_logs',
+    SUPPLIER_ORDER_FILES: 'supplier_order_files',
+    SUPPLIER_IMPORT_LOGS: 'supplier_import_logs',
 } as const;
 
 // App Data helpers
@@ -183,6 +185,113 @@ export async function getImportHistory(userId?: string) {
     }));
 
     // Sort by uploaded_at descending (most recent first)
+    return logs.sort((a, b) => b.uploaded_at.getTime() - a.uploaded_at.getTime());
+}
+
+// ─── Supplier Order Files helpers ─────────────────────────
+export async function getAllSupplierOrderFiles(userId: string = '') {
+    if (!userId) return [];
+    const q = query(
+        collection(db, COLLECTIONS.SUPPLIER_ORDER_FILES),
+        where('userId', '==', userId)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs
+        .map(d => d.data())
+        .sort((a, b) => {
+            const ta = a.uploaded_at?.toMillis?.() || 0;
+            const tb = b.uploaded_at?.toMillis?.() || 0;
+            return tb - ta;
+        });
+}
+
+export async function saveSupplierOrderFile(data: {
+    userId: string;
+    fileName: string;
+    country: string;
+    orderCount: number;
+    orders: any[];
+}) {
+    const logRef = doc(collection(db, COLLECTIONS.SUPPLIER_IMPORT_LOGS));
+    const docRef = doc(db, COLLECTIONS.SUPPLIER_ORDER_FILES, logRef.id);
+    await setDoc(docRef, {
+        ...data,
+        id: logRef.id,
+        uploaded_at: Timestamp.now(),
+    });
+    await setDoc(logRef, {
+        userId: data.userId,
+        fileName: data.fileName,
+        country: data.country,
+        orderCount: data.orderCount,
+        uploaded_at: Timestamp.now(),
+    });
+}
+
+export async function deleteSupplierImportLog(logId: string) {
+    await deleteDoc(doc(db, COLLECTIONS.SUPPLIER_ORDER_FILES, logId));
+    await deleteDoc(doc(db, COLLECTIONS.SUPPLIER_IMPORT_LOGS, logId));
+}
+
+export async function findOverlappingSupplierImports(userId: string, country: string, newOrderIds: string[]) {
+    const q = query(
+        collection(db, COLLECTIONS.SUPPLIER_ORDER_FILES),
+        where('userId', '==', userId),
+        where('country', '==', country)
+    );
+    const snapshot = await getDocs(q);
+    const existingImports = snapshot.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as { fileName: string, orders: { ID: string }[] })
+    }));
+
+    const results = {
+        superseded: [] as { id: string, fileName: string }[],
+        conflicts: [] as { id: string, fileName: string, missingCount: number, commonCount: number }[],
+        isSubset: false as boolean | string,
+    };
+
+    const newIdsSet = new Set(newOrderIds);
+    for (const old of existingImports) {
+        const oldIds = old.orders.map(o => o.ID);
+        const oldIdsSet = new Set(oldIds);
+        const common = oldIds.filter(id => newIdsSet.has(id));
+        const missingFromNew = oldIds.filter(id => !newIdsSet.has(id));
+        const missingFromOld = newOrderIds.filter(id => !oldIdsSet.has(id));
+
+        if (common.length === 0) continue;
+        if (missingFromNew.length === 0) {
+            results.superseded.push({ id: old.id, fileName: old.fileName });
+        } else if (missingFromOld.length === 0) {
+            results.isSubset = old.fileName;
+        } else {
+            results.conflicts.push({
+                id: old.id,
+                fileName: old.fileName,
+                missingCount: missingFromNew.length,
+                commonCount: common.length,
+            });
+        }
+    }
+    return results;
+}
+
+export async function getSupplierImportHistory(userId?: string) {
+    let q;
+    if (userId) {
+        q = query(
+            collection(db, COLLECTIONS.SUPPLIER_IMPORT_LOGS),
+            where('userId', '==', userId)
+        );
+    } else {
+        q = query(collection(db, COLLECTIONS.SUPPLIER_IMPORT_LOGS));
+    }
+    const snapshot = await getDocs(q);
+    const logs = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        uploaded_at: d.data().uploaded_at?.toDate?.() || new Date(),
+    }));
     return logs.sort((a, b) => b.uploaded_at.getTime() - a.uploaded_at.getTime());
 }
 

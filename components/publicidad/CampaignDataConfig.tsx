@@ -852,13 +852,10 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                             });
                         }
 
-                        // Log detailed data for debugging
-                        console.log('[TikTok Import] Headers:', headers);
-                        console.log('[TikTok Import] Column indices:', { campaignIdx, spendIdx, dateIdx, currencyIdx, impressionsIdx, clicksIdx, ctrIdx, cpcIdx, conversionsIdx, reachIdx, revenueIdx });
-                        console.log('[TikTok Import] Mapped campaigns:', Object.fromEntries(mappedCampaigns));
-                        console.log('[TikTok Import] Unmapped campaigns:', Object.fromEntries(unmappedCampaigns));
-                        console.log('[TikTok Import] Total spend:', totalSpend);
-                        console.log('[TikTok Import] Sample rows:', bulkRows.slice(0, 3));
+                        // Debug info (dev only)
+                        if (process.env.NODE_ENV === 'development') {
+                            console.log('[TikTok Import] Mapped:', mappedCampaigns.size, 'Unmapped:', unmappedCampaigns.size, 'Spend:', totalSpend);
+                        }
 
                         alert(msg);
                         resolve();

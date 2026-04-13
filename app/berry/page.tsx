@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
     Loader2, Plus, X, Trash2, Edit3, ChevronDown, ChevronRight,
     TrendingUp, TrendingDown, DollarSign, Users, Cpu, Building,
-    Calendar, Save, AlertCircle, FileSpreadsheet
+    Calendar, Save, AlertCircle, FileSpreadsheet, Warehouse, ShieldCheck
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -23,6 +23,11 @@ import { getAdSpendHistory, AdSpend, getCampaignMappings, CampaignMapping } from
 import { useCurrency } from '@/lib/hooks/useCurrency';
 import { toCOP } from '@/lib/utils/currency';
 import InfoTooltip from '@/components/common/InfoTooltip';
+import { useSupplierData } from '@/lib/hooks/useSupplierData';
+import type { SupplierKPIResults } from '@/lib/calculations/supplierKpis';
+import { useDashboardData, type ExtendedDropiOrder } from '@/lib/hooks/useDashboardData';
+import { parseDropiDate } from '@/lib/utils/date-parsers';
+import { calculateKPIs, type KPIResults } from '@/lib/calculations/kpis';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fmtCOP = (v: number) => {
@@ -45,6 +50,8 @@ const CATEGORY_ICONS: Record<ExpenseCategory, React.ElementType> = {
     'Impuestos': FileSpreadsheet,
     'Pendiente': AlertCircle,
     'Marketing': TrendingUp,
+    'Costos Bodega': Warehouse,
+    'Garantías': ShieldCheck,
 };
 
 export default function BerryPage() {
@@ -76,6 +83,9 @@ export default function BerryPage() {
     const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0]);
     const [formNotes, setFormNotes] = useState('');
     const [formRecurring, setFormRecurring] = useState(false);
+
+    // Tab
+    const [activeTab, setActiveTab] = useState<'gastos' | 'pnl'>('gastos');
 
     // Expanded categories
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -219,6 +229,80 @@ export default function BerryPage() {
     const totalMonth = useMemo(() => monthExpenses.reduce((s, e) => s + e.amount, 0), [monthExpenses]);
     const totalPrevMonth = useMemo(() => prevMonthExpenses.reduce((s, e) => s + e.amount, 0), [prevMonthExpenses]);
     const monthChange = totalPrevMonth > 0 ? ((totalMonth - totalPrevMonth) / totalPrevMonth) * 100 : 0;
+
+    // ── P&L: Supplier data ──────────────────────────────────────────────────
+    const supplierPeriodRange = useMemo(() => {
+        if (viewMode === 'annual') {
+            return { start: new Date(selectedYear, 0, 1), end: new Date(selectedYear, 11, 31, 23, 59, 59) };
+        }
+        return {
+            start: new Date(selectedYear, selectedMonth - 1, 1),
+            end: new Date(selectedYear, selectedMonth, 0, 23, 59, 59),
+        };
+    }, [selectedMonth, selectedYear, viewMode]);
+
+    const supplierYearRange = useMemo(() => ({
+        start: new Date(selectedYear, 0, 1),
+        end: new Date(selectedYear, 11, 31, 23, 59, 59),
+    }), [selectedYear]);
+
+    const supplierPeriod = useSupplierData(supplierPeriodRange);
+    const supplierYear = useSupplierData(supplierYearRange);
+
+    // ── P&L: Sales/Dropi data ─────────────────────────────────────────────────
+    const dashData = useDashboardData();
+
+    const salesOrdersByMonth = useMemo(() => {
+        const buckets: Record<number, ExtendedDropiOrder[]> = {};
+        for (let m = 1; m <= 12; m++) buckets[m] = [];
+        dashData.rawOrders.forEach(o => {
+            const d = parseDropiDate(o.FECHA);
+            if (d && d.getFullYear() === selectedYear) {
+                buckets[d.getMonth() + 1]?.push(o);
+            }
+        });
+        return buckets;
+    }, [dashData.rawOrders, selectedYear]);
+
+    const berrySalesOrders = useMemo(() => {
+        if (viewMode === 'annual') return Object.values(salesOrdersByMonth).flat();
+        return salesOrdersByMonth[selectedMonth] || [];
+    }, [salesOrdersByMonth, selectedMonth, viewMode]);
+
+    const berryAdsTotal = useMemo(() => {
+        return monthExpenses
+            .filter(e => e.category === 'Marketing')
+            .reduce((sum, e) => sum + e.amount, 0);
+    }, [monthExpenses]);
+
+    const salesKpis = useMemo<KPIResults | null>(() => {
+        if (dashData.loading || !berrySalesOrders.length) return null;
+        return calculateKPIs(berrySalesOrders, berryAdsTotal);
+    }, [berrySalesOrders, berryAdsTotal, dashData.loading]);
+
+    const salesByCountry = useMemo(() => {
+        if (!berrySalesOrders.length) return [];
+        const countries = [...new Set(berrySalesOrders.map(o => o.country))];
+        return countries.map(country => {
+            const orders = berrySalesOrders.filter(o => o.country === country);
+            const countryAds = monthExpenses
+                .filter(e => e.category === 'Marketing' && e.subcategory?.toLowerCase().includes(country.toLowerCase()))
+                .reduce((sum, e) => sum + e.amount, 0);
+            return { country, kpis: calculateKPIs(orders, countryAds) };
+        }).sort((a, b) => b.kpis.ing_real - a.kpis.ing_real);
+    }, [berrySalesOrders, monthExpenses]);
+
+    const salesTrend = useMemo(() => {
+        return Array.from({ length: 12 }, (_, i) => {
+            const m = i + 1;
+            const mOrders = salesOrdersByMonth[m] || [];
+            const mAds = allExpenses
+                .filter(e => e.category === 'Marketing' && e.year === selectedYear && e.month === m)
+                .reduce((sum, e) => sum + e.amount, 0);
+            const k = calculateKPIs(mOrders, mAds);
+            return { mes: MONTH_NAMES[i], ingresos: k.ing_real, costos: k.cpr + k.fl_ent + k.fl_dev + k.fl_tra + k.g_ads, utilidad: k.u_real };
+        });
+    }, [salesOrdersByMonth, allExpenses, selectedYear]);
 
     // Trend data (Always Monthly for Berry Dashboard as per user request)
     const trendData = useMemo(() => {
@@ -570,35 +654,36 @@ export default function BerryPage() {
                                 Anual
                             </button>
                         </div>
-                        <input
-                            type="file"
-                            accept=".xlsx, .xls"
-                            id="excel-import"
-                            className="hidden"
-                            onChange={handleImport}
-                        />
-                        <button
-                            onClick={() => document.getElementById('excel-import')?.click()}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-card hover:bg-hover-bg text-foreground rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 border border-card-border shadow-sm"
-                        >
-                            <FileSpreadsheet className="w-4 h-4" />
-                            Importar
-                        </button>
-                        <button
-                            onClick={handleClearAll}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 border border-red-500/20"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            Eliminar Todo
-                        </button>
-                        <button
-                            onClick={openAddModal}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-[#d75c33] hover:bg-orange-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-lg shadow-orange-500/20"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Nuevo Gasto
-                        </button>
+                        {activeTab === 'gastos' && (
+                            <>
+                                <input type="file" accept=".xlsx, .xls" id="excel-import" className="hidden" onChange={handleImport} />
+                                <button onClick={() => document.getElementById('excel-import')?.click()}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-card hover:bg-hover-bg text-foreground rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 border border-card-border shadow-sm">
+                                    <FileSpreadsheet className="w-4 h-4" /> Importar
+                                </button>
+                                <button onClick={handleClearAll}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 border border-red-500/20">
+                                    <Trash2 className="w-4 h-4" /> Eliminar Todo
+                                </button>
+                                <button onClick={openAddModal}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#d75c33] hover:bg-orange-500 text-white rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 shadow-lg shadow-orange-500/20">
+                                    <Plus className="w-4 h-4" /> Nuevo Gasto
+                                </button>
+                            </>
+                        )}
                     </div>
+                </div>
+
+                {/* ── Tab Toggle ───────────────────────────────────────────── */}
+                <div className="flex gap-1 bg-card/50 border border-card-border rounded-xl p-1">
+                    <button onClick={() => setActiveTab('gastos')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'gastos' ? 'bg-[#d75c33]/10 text-[#d75c33] border border-[#d75c33]/20' : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'}`}>
+                        <DollarSign className="w-4 h-4" /> Gastos
+                    </button>
+                    <button onClick={() => setActiveTab('pnl')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'pnl' ? 'bg-[#d75c33]/10 text-[#d75c33] border border-[#d75c33]/20' : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'}`}>
+                        <TrendingUp className="w-4 h-4" /> P&L
+                    </button>
                 </div>
 
                 {/* ── Month Selector (Hidden in Annual Mode) ──────────────── */}
@@ -628,6 +713,7 @@ export default function BerryPage() {
                     </select>
                 </div>
 
+                {activeTab === 'gastos' && (<>
                 {/* ── KPI Cards ──────────────────────────────────────────── */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {kpis.map(kpi => {
@@ -898,8 +984,28 @@ export default function BerryPage() {
                             <span className="text-lg font-black text-accent tabular-nums">{fmtFull(totalMonth)}</span>
                         </div>
                     </div>
-                </div >
-            </div >
+                </div>
+                </>)}
+
+                {/* ── P&L Tab ──────────────────────────────────────────────── */}
+                {activeTab === 'pnl' && (
+                    <PnLTab
+                        selectedMonth={selectedMonth}
+                        selectedYear={selectedYear}
+                        viewMode={viewMode}
+                        allExpenses={allExpenses}
+                        monthExpenses={monthExpenses}
+                        categoryTotals={categoryTotals}
+                        totalExpenses={totalMonth}
+                        supplierKpis={supplierPeriod.kpis}
+                        supplierYearKpis={supplierYear.kpis}
+                        supplierLoading={supplierPeriod.loading}
+                        salesKpis={salesKpis}
+                        salesByCountry={salesByCountry}
+                        salesTrend={salesTrend}
+                        salesLoading={dashData.loading}
+                    />
+                )}
 
             {/* ── Add/Edit Modal ──────────────────────────────────────────── */}
             {
@@ -1059,6 +1165,480 @@ export default function BerryPage() {
                     </div>
                 )
             }
+            </div>
         </div >
+    );
+}
+
+// ── P&L Helper Components ────────────────────────────────────────────────────
+
+function PnLRow({ label, value, color, bold, indent, highlight, percent }: {
+    label: string; value: number; color?: string; bold?: boolean; indent?: boolean;
+    highlight?: boolean; percent?: boolean;
+}) {
+    const textColor = color || 'text-foreground';
+    return (
+        <div className={`flex items-center justify-between py-2.5 px-3 ${highlight ? 'bg-hover-bg/40 rounded-lg my-1' : ''} ${indent ? 'pl-8' : ''}`}>
+            <span className={`text-sm ${bold ? 'font-black' : 'font-medium'} ${indent ? 'text-muted' : textColor}`}>
+                {indent && '(-) '}{label}
+            </span>
+            <span className={`text-sm tabular-nums ${bold ? 'font-black' : 'font-bold'} ${textColor}`}>
+                {percent ? `${value.toFixed(1)}%` : fmtFull(value)}
+            </span>
+        </div>
+    );
+}
+
+function WaterfallBar({ label, value, maxValue, color }: {
+    label: string; value: number; maxValue: number; color: string;
+}) {
+    const pct = maxValue > 0 ? Math.min((Math.abs(value) / maxValue) * 100, 100) : 0;
+    return (
+        <div className="flex items-center gap-3 py-1.5">
+            <span className="text-xs font-medium text-muted w-32 truncate text-right">{label}</span>
+            <div className="flex-1 h-6 bg-hover-bg/30 rounded-md overflow-hidden">
+                <div className="h-full rounded-md transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+            </div>
+            <span className="text-xs font-bold tabular-nums w-24 text-right" style={{ color }}>{fmtCOP(value)}</span>
+        </div>
+    );
+}
+
+// ── P&L Sub-Views ────────────────────────────────────────────────────────────
+
+function KpiCard({ label, value, color, percent }: { label: string; value: number; color: string; percent?: boolean }) {
+    return (
+        <div className="bg-card border border-card-border rounded-xl p-4 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-black text-muted uppercase tracking-widest mb-1">{label}</span>
+            <span className={`text-xl font-black tabular-nums ${color}`}>
+                {percent ? `${value.toFixed(1)}%` : fmtCOP(value)}
+            </span>
+        </div>
+    );
+}
+
+function PnLStatement({ title, rows, warning }: {
+    title: string;
+    rows: { label: string; value: number; color?: string; bold?: boolean; indent?: boolean; highlight?: boolean; percent?: boolean }[];
+    warning?: string;
+}) {
+    return (
+        <div className="lg:col-span-2 bg-card border border-card-border rounded-xl p-5">
+            <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">{title}</h3>
+            {warning && (
+                <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-500 font-medium">{warning}</span>
+                </div>
+            )}
+            <div className="divide-y divide-card-border/50">
+                {rows.map((r, i) => <PnLRow key={i} {...r} />)}
+            </div>
+        </div>
+    );
+}
+
+function ProveedorPnLView({ supplierKpis, periodLabel }: {
+    supplierKpis: SupplierKPIResults | null; periodLabel: string;
+}) {
+    const ing = supplierKpis?.ingreso_proveedor ?? 0;
+    const costo = supplierKpis?.costo_interno ?? 0;
+    const bruta = supplierKpis?.ganancia_real ?? 0;
+    const flEnt = supplierKpis?.flete_entregados ?? 0;
+    const flDev = supplierKpis?.flete_devoluciones ?? 0;
+    const util = bruta - flEnt - flDev;
+    const margen = ing > 0 ? (util / ing) * 100 : 0;
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <PnLStatement
+                    title={`P&L Proveedor — ${periodLabel}`}
+                    warning={!supplierKpis ? 'Importa órdenes en el módulo Proveedor para ver datos' : undefined}
+                    rows={[
+                        { label: 'Ingresos Proveedor', value: ing, color: 'text-emerald-400', bold: true },
+                        { label: 'Costo Mercancía', value: costo, color: 'text-red-400', indent: true },
+                        { label: 'Ganancia Bruta', value: bruta, color: 'text-blue-400', bold: true, highlight: true },
+                        { label: 'Fletes Entregados', value: flEnt, color: 'text-orange-400', indent: true },
+                        { label: 'Fletes Devoluciones', value: flDev, color: 'text-orange-400', indent: true },
+                        { label: 'Utilidad Proveedor', value: util, color: util >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
+                        { label: 'Margen Proveedor', value: margen, color: margen >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
+                    ]}
+                />
+                <div className="flex flex-col gap-4">
+                    <KpiCard label="Ingresos" value={ing} color="text-emerald-400" />
+                    <KpiCard label="Utilidad" value={util} color={util >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+                    <KpiCard label="Margen" value={margen} color={margen >= 0 ? 'text-emerald-400' : 'text-red-400'} percent />
+                </div>
+            </div>
+            <div className="bg-card border border-card-border rounded-xl p-5">
+                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
+                <div className="space-y-1">
+                    <WaterfallBar label="Ingresos" value={ing} maxValue={ing} color="#34d399" />
+                    <WaterfallBar label="Costo Mercancía" value={costo} maxValue={ing} color="#f87171" />
+                    <WaterfallBar label="Fletes" value={flEnt + flDev} maxValue={ing} color="#fb923c" />
+                    <WaterfallBar label="Utilidad" value={util} maxValue={ing} color={util >= 0 ? '#34d399' : '#f87171'} />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function VentasPnLView({ salesKpis, salesByCountry, periodLabel }: {
+    salesKpis: KPIResults | null;
+    salesByCountry: { country: string; kpis: KPIResults }[];
+    periodLabel: string;
+}) {
+    const ing = salesKpis?.ing_real ?? 0;
+    const cpr = salesKpis?.cpr ?? 0;
+    const flEnt = salesKpis?.fl_ent ?? 0;
+    const flDev = salesKpis?.fl_dev ?? 0;
+    const flTra = salesKpis?.fl_tra ?? 0;
+    const ads = salesKpis?.g_ads ?? 0;
+    const util = salesKpis?.u_real ?? 0;
+    const margen = ing > 0 ? (util / ing) * 100 : 0;
+    const roas = ads > 0 ? (ing / ads) : 0;
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <PnLStatement
+                    title={`P&L Ventas — ${periodLabel}`}
+                    warning={!salesKpis ? 'Importa órdenes en el Dashboard para ver ventas' : undefined}
+                    rows={[
+                        { label: 'Ingreso Real Entregados', value: ing, color: 'text-emerald-400', bold: true },
+                        { label: 'Costo Producto', value: cpr, color: 'text-red-400', indent: true },
+                        { label: 'Flete Entrega', value: flEnt, color: 'text-orange-400', indent: true },
+                        { label: 'Flete Devolución', value: flDev, color: 'text-orange-400', indent: true },
+                        { label: 'Flete Tránsito', value: flTra, color: 'text-orange-400', indent: true },
+                        { label: 'Publicidad', value: ads, color: 'text-purple-400', indent: true },
+                        { label: 'Utilidad Real Ventas', value: util, color: util >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
+                        { label: 'Margen Ventas', value: margen, color: margen >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
+                    ]}
+                />
+                <div className="flex flex-col gap-4">
+                    <KpiCard label="Ingresos" value={ing} color="text-emerald-400" />
+                    <KpiCard label="Utilidad" value={util} color={util >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+                    <KpiCard label="ROAS" value={roas} color="text-blue-400" />
+                </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-xl p-5">
+                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
+                <div className="space-y-1">
+                    <WaterfallBar label="Ingresos" value={ing} maxValue={ing} color="#34d399" />
+                    <WaterfallBar label="Costo Producto" value={cpr} maxValue={ing} color="#f87171" />
+                    <WaterfallBar label="Fletes" value={flEnt + flDev + flTra} maxValue={ing} color="#fb923c" />
+                    <WaterfallBar label="Publicidad" value={ads} maxValue={ing} color="#a855f7" />
+                    <WaterfallBar label="Utilidad" value={util} maxValue={ing} color={util >= 0 ? '#34d399' : '#f87171'} />
+                </div>
+            </div>
+
+            {salesByCountry.length > 0 && (
+                <div className="bg-card border border-card-border rounded-xl p-5">
+                    <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose por País</h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-card-border/50">
+                                    <th className="text-left text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">País</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Ingresos</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Costo</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Fletes</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Ads</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Utilidad</th>
+                                    <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Margen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {salesByCountry.map(({ country, kpis: k }) => {
+                                    const cMargen = k.ing_real > 0 ? (k.u_real / k.ing_real) * 100 : 0;
+                                    return (
+                                        <tr key={country} className="border-b border-card-border/20 hover:bg-hover-bg/20 transition-colors">
+                                            <td className="py-2.5 px-3 font-medium capitalize">{country}</td>
+                                            <td className="text-right py-2.5 px-3 font-bold tabular-nums">{fmtCOP(k.ing_real)}</td>
+                                            <td className="text-right py-2.5 px-3 tabular-nums text-red-400">{fmtCOP(k.cpr)}</td>
+                                            <td className="text-right py-2.5 px-3 tabular-nums text-orange-400">{fmtCOP(k.fl_ent + k.fl_dev + k.fl_tra)}</td>
+                                            <td className="text-right py-2.5 px-3 tabular-nums text-purple-400">{fmtCOP(k.g_ads)}</td>
+                                            <td className={`text-right py-2.5 px-3 font-bold tabular-nums ${k.u_real >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtCOP(k.u_real)}</td>
+                                            <td className={`text-right py-2.5 px-3 tabular-nums ${cMargen >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{cMargen.toFixed(1)}%</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function OperacionPnLView({ supplierKpis, salesKpis, categoryTotals, totalExpenses, allExpenses, supplierYearKpis, salesTrend, selectedYear, periodLabel }: {
+    supplierKpis: SupplierKPIResults | null;
+    salesKpis: KPIResults | null;
+    categoryTotals: Record<string, number>;
+    totalExpenses: number;
+    allExpenses: Expense[];
+    supplierYearKpis: SupplierKPIResults | null;
+    salesTrend: { mes: string; ingresos: number; costos: number; utilidad: number }[];
+    selectedYear: number;
+    periodLabel: string;
+}) {
+    const sIng = supplierKpis?.ingreso_proveedor ?? 0;
+    const sCosto = supplierKpis?.costo_interno ?? 0;
+    const sFlEnt = supplierKpis?.flete_entregados ?? 0;
+    const sFlDev = supplierKpis?.flete_devoluciones ?? 0;
+
+    const vIng = salesKpis?.ing_real ?? 0;
+    const vCpr = salesKpis?.cpr ?? 0;
+    const vFlEnt = salesKpis?.fl_ent ?? 0;
+    const vFlDev = salesKpis?.fl_dev ?? 0;
+    const vFlTra = salesKpis?.fl_tra ?? 0;
+    const vAds = salesKpis?.g_ads ?? 0;
+
+    const ingTotal = sIng + vIng;
+    const costoTotal = sCosto + vCpr;
+    const gananciaBruta = ingTotal - costoTotal;
+    const fletesTotal = sFlEnt + sFlDev + vFlEnt + vFlDev + vFlTra;
+    const gastosOpSinMarketing = totalExpenses - (categoryTotals['Marketing'] || 0);
+    const utilidadOp = ingTotal - costoTotal - fletesTotal - vAds - gastosOpSinMarketing;
+    const margenOp = ingTotal > 0 ? (utilidadOp / ingTotal) * 100 : 0;
+
+    const noData = !supplierKpis && !salesKpis;
+    const warningMsg = noData
+        ? 'Importa datos en Dashboard y Proveedor para ver el P&L completo'
+        : !supplierKpis ? 'Sin datos de proveedor — mostrando solo ventas'
+        : !salesKpis ? 'Sin datos de ventas — mostrando solo proveedor' : undefined;
+
+    // Trend chart
+    const trendData = useMemo(() => {
+        const expByMonth = totalByMonth(allExpenses, selectedYear);
+        const supplierByMonth: Record<number, { ingreso: number; costo: number }> = {};
+        if (supplierYearKpis?.datos_diarios) {
+            for (const d of supplierYearKpis.datos_diarios) {
+                let month: number | null = null;
+                const ddmm = d.fecha.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+                if (ddmm) month = Number(ddmm[2]);
+                else {
+                    const yyyymm = d.fecha.match(/^(\d{4})[/-](\d{1,2})/);
+                    if (yyyymm) month = Number(yyyymm[2]);
+                }
+                if (month) {
+                    if (!supplierByMonth[month]) supplierByMonth[month] = { ingreso: 0, costo: 0 };
+                    supplierByMonth[month].ingreso += d.ingreso;
+                    supplierByMonth[month].costo += (d.ingreso - d.ganancia);
+                }
+            }
+        }
+        return Array.from({ length: 12 }, (_, i) => {
+            const m = i + 1;
+            const smI = supplierByMonth[m]?.ingreso ?? 0;
+            const smC = supplierByMonth[m]?.costo ?? 0;
+            const vmI = salesTrend[i]?.ingresos ?? 0;
+            const vmC = salesTrend[i]?.costos ?? 0;
+            const exp = expByMonth[m] ?? 0;
+            const mktExp = allExpenses.filter(e => e.category === 'Marketing' && e.year === selectedYear && e.month === m).reduce((s, e) => s + e.amount, 0);
+            return {
+                mes: MONTH_NAMES[i],
+                ingresos: smI + vmI,
+                gastos: smC + vmC + (exp - mktExp),
+                utilidad: (smI + vmI) - (smC + vmC) - (exp - mktExp),
+            };
+        });
+    }, [allExpenses, selectedYear, supplierYearKpis, salesTrend]);
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <PnLStatement
+                    title={`Estado de Resultados — ${periodLabel}`}
+                    warning={warningMsg}
+                    rows={[
+                        { label: 'Ingresos Totales', value: ingTotal, color: 'text-emerald-400', bold: true },
+                        { label: 'Costos Producto', value: costoTotal, color: 'text-red-400', indent: true },
+                        { label: 'Ganancia Bruta', value: gananciaBruta, color: 'text-blue-400', bold: true, highlight: true },
+                        { label: 'Fletes Totales', value: fletesTotal, color: 'text-orange-400', indent: true },
+                        { label: 'Publicidad', value: vAds, color: 'text-purple-400', indent: true },
+                        { label: 'Gastos Operativos', value: gastosOpSinMarketing, color: 'text-red-400', indent: true },
+                        { label: 'Utilidad Operacional', value: utilidadOp, color: utilidadOp >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
+                        { label: 'Margen Operacional', value: margenOp, color: margenOp >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
+                    ]}
+                />
+                <div className="flex flex-col gap-4">
+                    <KpiCard label="Ingresos" value={ingTotal} color="text-emerald-400" />
+                    <KpiCard label="Utilidad Op" value={utilidadOp} color={utilidadOp >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+                    <KpiCard label="Margen Op" value={margenOp} color={margenOp >= 0 ? 'text-emerald-400' : 'text-red-400'} percent />
+                </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-xl p-5">
+                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
+                <div className="space-y-1">
+                    <WaterfallBar label="Ingresos" value={ingTotal} maxValue={ingTotal} color="#34d399" />
+                    <WaterfallBar label="Costos Producto" value={costoTotal} maxValue={ingTotal} color="#f87171" />
+                    <WaterfallBar label="Fletes" value={fletesTotal} maxValue={ingTotal} color="#fb923c" />
+                    <WaterfallBar label="Publicidad" value={vAds} maxValue={ingTotal} color="#a855f7" />
+                    <WaterfallBar label="Gastos Op" value={gastosOpSinMarketing} maxValue={ingTotal} color="#ef4444" />
+                    <WaterfallBar label="Utilidad" value={utilidadOp} maxValue={ingTotal} color={utilidadOp >= 0 ? '#34d399' : '#f87171'} />
+                </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-xl p-5">
+                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Tendencia Anual — {selectedYear}</h3>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={trendData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                            <defs>
+                                <linearGradient id="pnlIngresos" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#34d399" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                                </linearGradient>
+                                <linearGradient id="pnlUtilidad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.3} />
+                                    <stop offset="95%" stopColor="#60a5fa" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" opacity={0.3} />
+                            <XAxis dataKey="mes" tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => fmtCOP(v)} width={60} />
+                            <Tooltip
+                                contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--card-border)', borderRadius: '12px', fontSize: '12px' }}
+                                formatter={(value: any) => fmtFull(Number(value))}
+                            />
+                            <Area type="monotone" dataKey="ingresos" name="Ingresos" stroke="#34d399" fill="url(#pnlIngresos)" strokeWidth={2} />
+                            <Area type="monotone" dataKey="gastos" name="Gastos" stroke="#f87171" fill="none" strokeWidth={2} strokeDasharray="5 5" />
+                            <Area type="monotone" dataKey="utilidad" name="Utilidad" stroke="#60a5fa" fill="url(#pnlUtilidad)" strokeWidth={2} />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-xl p-5">
+                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Gastos Operativos</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-card-border/50">
+                                <th className="text-left text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Categoría</th>
+                                <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Monto</th>
+                                <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">% Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {Object.entries(categoryTotals)
+                                .sort(([, a], [, b]) => b - a)
+                                .filter(([, v]) => v > 0)
+                                .map(([cat, val]) => (
+                                    <tr key={cat} className="border-b border-card-border/20 hover:bg-hover-bg/20 transition-colors">
+                                        <td className="py-2.5 px-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getCategoryColor(cat) }} />
+                                                <span className="font-medium">{cat}</span>
+                                            </div>
+                                        </td>
+                                        <td className="text-right py-2.5 px-3 font-bold tabular-nums">{fmtFull(val)}</td>
+                                        <td className="text-right py-2.5 px-3 text-muted tabular-nums">
+                                            {totalExpenses > 0 ? ((val / totalExpenses) * 100).toFixed(1) : 0}%
+                                        </td>
+                                    </tr>
+                                ))}
+                        </tbody>
+                        <tfoot>
+                            <tr className="border-t border-card-border">
+                                <td className="py-2.5 px-3 font-black text-xs uppercase">Total</td>
+                                <td className="text-right py-2.5 px-3 font-black tabular-nums text-accent">{fmtFull(totalExpenses)}</td>
+                                <td className="text-right py-2.5 px-3 font-bold text-muted">100%</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── PnLTab Component ─────────────────────────────────────────────────────────
+
+interface PnLTabProps {
+    selectedMonth: number;
+    selectedYear: number;
+    viewMode: 'monthly' | 'annual';
+    allExpenses: Expense[];
+    monthExpenses: Expense[];
+    categoryTotals: Record<string, number>;
+    totalExpenses: number;
+    supplierKpis: SupplierKPIResults | null;
+    supplierYearKpis: SupplierKPIResults | null;
+    supplierLoading: boolean;
+    salesKpis: KPIResults | null;
+    salesByCountry: { country: string; kpis: KPIResults }[];
+    salesTrend: { mes: string; ingresos: number; costos: number; utilidad: number }[];
+    salesLoading: boolean;
+}
+
+function PnLTab({
+    selectedMonth, selectedYear, viewMode, allExpenses, monthExpenses,
+    categoryTotals, totalExpenses, supplierKpis, supplierYearKpis, supplierLoading,
+    salesKpis, salesByCountry, salesTrend, salesLoading,
+}: PnLTabProps) {
+    const [subTab, setSubTab] = useState<'operacion' | 'proveedor' | 'ventas'>('operacion');
+
+    if (supplierLoading && salesLoading) {
+        return (
+            <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-6 h-6 animate-spin text-accent mr-3" />
+                <span className="text-sm text-muted font-medium">Cargando datos...</span>
+            </div>
+        );
+    }
+
+    const periodLabel = viewMode === 'annual' ? `${selectedYear}` : `${MONTH_NAMES_FULL[selectedMonth - 1]} ${selectedYear}`;
+
+    return (
+        <div className="space-y-6">
+            {/* Sub-tab selector */}
+            <div className="flex gap-2 bg-card border border-card-border rounded-xl p-1.5">
+                {([
+                    { key: 'operacion' as const, label: 'Operación' },
+                    { key: 'proveedor' as const, label: 'Proveedor' },
+                    { key: 'ventas' as const, label: 'Ventas' },
+                ]).map(tab => (
+                    <button
+                        key={tab.key}
+                        onClick={() => setSubTab(tab.key)}
+                        className={`flex-1 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+                            subTab === tab.key
+                                ? 'bg-[#d75c33]/10 text-[#d75c33] border border-[#d75c33]/20'
+                                : 'text-muted hover:text-foreground hover:bg-hover-bg border border-transparent'
+                        }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {subTab === 'operacion' && (
+                <OperacionPnLView
+                    supplierKpis={supplierKpis}
+                    salesKpis={salesKpis}
+                    categoryTotals={categoryTotals}
+                    totalExpenses={totalExpenses}
+                    allExpenses={allExpenses}
+                    supplierYearKpis={supplierYearKpis}
+                    salesTrend={salesTrend}
+                    selectedYear={selectedYear}
+                    periodLabel={periodLabel}
+                />
+            )}
+
+            {subTab === 'proveedor' && (
+                <ProveedorPnLView supplierKpis={supplierKpis} periodLabel={periodLabel} />
+            )}
+
+            {subTab === 'ventas' && (
+                <VentasPnLView salesKpis={salesKpis} salesByCountry={salesByCountry} periodLabel={periodLabel} />
+            )}
+        </div>
     );
 }

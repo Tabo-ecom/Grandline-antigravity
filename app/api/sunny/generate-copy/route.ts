@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         const rl = checkRateLimit(`${auth.uid}:sunny-copy`, { max: 10 });
         if (!rl.success) return rateLimitResponse();
 
-        const { product, country, destinationUrl } = await request.json();
+        const { product, country, destinationUrl, instruction } = await request.json();
 
         if (!product) {
             return NextResponse.json({ error: 'Product name is required' }, { status: 400 });
@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
 PRODUCTO: ${product}
 PAÍS DESTINO: ${country || 'Colombia'}
 ${destinationUrl ? `URL DE DESTINO: ${destinationUrl}` : ''}
+${instruction ? `INSTRUCCIÓN ESPECIAL: ${instruction}` : ''}
 
 Genera: 1 título corto, 1 descripción corta, y 5 body copies con ángulos diferentes (Dolor, Directo, Curiosidad, Testimonio, Beneficios).`;
 

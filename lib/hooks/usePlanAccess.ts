@@ -28,6 +28,11 @@ export const MODULE_REQUIRED_PLAN: Record<string, string> = {
 
     // Supernova (tier 2) — with campaign limit
     sunny: 'supernova',
+
+    // Yonko (tier 3)
+    proveedor: 'yonko',
+    vega: 'supernova',
+    pipeline: 'yonko',
 };
 
 /**
@@ -57,8 +62,8 @@ export const PLAN_CAMPAIGN_LIMIT: Record<string, number> = {
 export const PLAN_MODULES: Record<string, string[]> = {
     free: [],
     rookie: ['dashboard', 'import', 'publicidad', 'log-pose'],
-    supernova: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny'],
-    yonko: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny'],
+    supernova: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny', 'vega'],
+    yonko: ['dashboard', 'import', 'publicidad', 'log-pose', 'berry', 'vega-ai', 'sunny', 'proveedor', 'vega', 'pipeline'],
 };
 
 export function usePlanAccess() {

@@ -23,6 +23,7 @@ export interface UserProfile {
     team_id?: string;
     allowed_modules?: string[];
     created_by?: string;
+    feature_flags?: string[];
 }
 
 interface AuthContextType {
@@ -34,6 +35,8 @@ interface AuthContextType {
     signOut: () => Promise<void>;
     /** Re-fetch profile from Firestore (e.g. after Stripe subscription sync). */
     refreshProfile: () => Promise<void>;
+    /** Check if the current user has a specific feature flag enabled. */
+    hasFeature: (flag: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -43,6 +46,7 @@ const AuthContext = createContext<AuthContextType>({
     effectiveUid: null,
     signOut: async () => { },
     refreshProfile: async () => { },
+    hasFeature: () => false,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -95,8 +99,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // effectiveUid: for admins = own uid, for viewers = admin's team_id
     const effectiveUid = profile?.team_id || user?.uid || null;
 
+    const hasFeature = (flag: string) => (profile?.feature_flags || []).includes(flag);
+
     return (
-        <AuthContext.Provider value={{ user, profile, loading, effectiveUid, signOut, refreshProfile }}>
+        <AuthContext.Provider value={{ user, profile, loading, effectiveUid, signOut, refreshProfile, hasFeature }}>
             {children}
         </AuthContext.Provider>
     );

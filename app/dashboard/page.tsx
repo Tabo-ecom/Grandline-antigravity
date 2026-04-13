@@ -121,7 +121,8 @@ export default function GlobalDashboard() {
         endDateCustom, setEndDateCustom,
         filteredAds,
         projectionSettings,
-        saveProjectionSettings
+        saveProjectionSettings,
+        freightAnalysis
     } = useDashboardData();
 
     const { targets: kpiTargets } = useKPITargets();
@@ -148,34 +149,58 @@ export default function GlobalDashboard() {
         return Array.from(productMap.values()).sort((a, b) => b.orderCount - a.orderCount);
     }, [metricsByCountry]);
 
-    // Product rankings per country: profitable vs losing
+    // Product rankings per country: profitable vs losing (classified by Utilidad Real)
     const { profitableProducts, losingProducts } = useMemo(() => {
         const FLAG_MAP: Record<string, string> = {
             'Colombia': 'co', 'México': 'mx', 'Perú': 'pe', 'Ecuador': 'ec',
             'Panamá': 'pa', 'Chile': 'cl', 'España': 'es', 'Guatemala': 'gt',
             'Paraguay': 'py', 'Argentina': 'ar', 'Costa Rica': 'cr',
         };
-        const all: { name: string; country: string; flag: string; orders: number; cancelRate: number; netSales: number; ads: number; projectedProfit: number; cpaDesp: number; utilPerOrder: number; roiPct: number }[] = [];
+        let totalAds = 0;
+        const all: { name: string; country: string; flag: string; orders: number; cancelRate: number; netSales: number; ads: number; profit: number; projectedProfit: number; cpaDesp: number; utilPerOrder: number; roiPct: number; adsPct: number }[] = [];
+        metricsByCountry.forEach((ctry: any) => {
+            ctry.products.forEach((p: ProductMetric) => {
+                totalAds += p.adSpend;
+            });
+        });
         metricsByCountry.forEach((ctry: any) => {
             ctry.products.forEach((p: ProductMetric) => {
                 if (p.orderCount === 0 && p.adSpend === 0) return;
                 const cancelRate = p.cancelRate;
                 const cpaDesp = p.orderCount > 0 ? p.adSpend / p.orderCount : 0;
-                const utilPerOrder = p.orderCount > 0 ? p.projectedProfit / p.orderCount : 0;
-                const roiPct = p.adSpend > 0 ? (p.projectedProfit / p.adSpend) * 100 : 0;
+                const utilPerOrder = p.orderCount > 0 ? p.profit / p.orderCount : 0;
+                const roiPct = p.adSpend > 0 ? (p.profit / p.adSpend) * 100 : 0;
+                const adsPct = totalAds > 0 ? (p.adSpend / totalAds) * 100 : 0;
                 all.push({
                     name: p.name, country: ctry.name, flag: FLAG_MAP[ctry.name] || 'un',
                     orders: p.orderCount, cancelRate, netSales: p.netSales, ads: p.adSpend,
-                    projectedProfit: p.projectedProfit, cpaDesp, utilPerOrder, roiPct,
+                    profit: p.profit, projectedProfit: p.projectedProfit, cpaDesp, utilPerOrder, roiPct, adsPct,
                 });
             });
         });
-        const profitable = all.filter(p => p.projectedProfit >= 0).sort((a, b) => b.projectedProfit - a.projectedProfit);
-        const losing = all.filter(p => p.projectedProfit < 0).sort((a, b) => a.projectedProfit - b.projectedProfit);
+        const profitable = all.filter(p => p.profit >= 0).sort((a, b) => b.profit - a.profit);
+        const losing = all.filter(p => p.profit < 0).sort((a, b) => a.profit - b.profit);
         return { profitableProducts: profitable, losingProducts: losing };
     }, [metricsByCountry]);
     const [showAllProfitable, setShowAllProfitable] = useState(false);
     const [showAllLosing, setShowAllLosing] = useState(false);
+    type SortKey = 'name' | 'netSales' | 'ads' | 'profit' | 'projectedProfit' | 'adsPct' | 'cancelRate' | 'cpaDesp';
+    const [profitableSort, setProfitableSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'profit', dir: 'desc' });
+    const [losingSort, setLosingSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'profit', dir: 'asc' });
+    const sortProducts = (products: typeof profitableProducts, sort: { key: SortKey; dir: 'asc' | 'desc' }) => {
+        return [...products].sort((a, b) => {
+            const valA = sort.key === 'name' ? a.name.toLowerCase() : (a as any)[sort.key];
+            const valB = sort.key === 'name' ? b.name.toLowerCase() : (b as any)[sort.key];
+            if (valA < valB) return sort.dir === 'asc' ? -1 : 1;
+            if (valA > valB) return sort.dir === 'asc' ? 1 : -1;
+            return 0;
+        });
+    };
+    const toggleSort = (table: 'profitable' | 'losing', key: SortKey) => {
+        const setter = table === 'profitable' ? setProfitableSort : setLosingSort;
+        const current = table === 'profitable' ? profitableSort : losingSort;
+        setter({ key, dir: current.key === key && current.dir === 'desc' ? 'asc' : 'desc' });
+    };
 
     // VEGA quick analysis
     const [vegaResponse, setVegaResponse] = useState<string | null>(null);
@@ -221,6 +246,32 @@ export default function GlobalDashboard() {
                 [ctryName]: {
                     ...(prev?.countries?.[ctryName] || {}),
                     delivery_percent: val
+                }
+            }
+        }));
+    };
+
+    const toggleReturnBuffer = (ctryName: string, enabled: boolean) => {
+        setLocalOverrides((prev: any) => ({
+            ...prev,
+            countries: {
+                ...(prev?.countries || {}),
+                [ctryName]: {
+                    ...(prev?.countries?.[ctryName] || {}),
+                    return_buffer_enabled: enabled
+                }
+            }
+        }));
+    };
+
+    const updatePendingCancelOverride = (ctryName: string, val: number) => {
+        setLocalOverrides((prev: any) => ({
+            ...prev,
+            countries: {
+                ...(prev?.countries || {}),
+                [ctryName]: {
+                    ...(prev?.countries?.[ctryName] || {}),
+                    pending_cancel_percent: val
                 }
             }
         }));
@@ -927,6 +978,26 @@ export default function GlobalDashboard() {
                             );
                         })()}
 
+                        {/* Pending Confirmation */}
+                        {logisticStats.pendientes > 0 && (() => {
+                            const totalOrders = logisticStats.entregados + logisticStats.transito + logisticStats.devoluciones + logisticStats.cancelados + logisticStats.pendientes;
+                            const pendPct = totalOrders > 0 ? (logisticStats.pendientes / totalOrders) * 100 : 0;
+                            return (
+                                <div className="relative z-10 mb-4 p-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
+                                            <span className="text-[10px] text-muted font-black uppercase tracking-widest">Pend. Confirmación</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-black font-mono text-violet-400">{logisticStats.pendientes}</span>
+                                            <span className="text-[10px] font-bold font-mono text-violet-400/60 px-1.5 py-0.5 bg-violet-500/10 rounded">{pendPct.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
                         {/* Donut Chart - Non-canceled */}
                         <div className="h-[160px] w-full relative z-10">
                             <ResponsiveContainer width="100%" height="100%">
@@ -1002,125 +1073,125 @@ export default function GlobalDashboard() {
                 </div>
 
 
-                {/* Profitable & Losing Product Rankings */}
-                {!loading && (profitableProducts.length > 0 || losingProducts.length > 0) && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:grid-rows-[1fr]">
-                        {/* Profitable products */}
-                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden flex flex-col">
-                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                                        <Trophy className="w-3.5 h-3.5 text-emerald-400" />
-                                    </div>
-                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos Rentables</h3>
-                                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">{profitableProducts.length}</span>
+                {/* Profitable & Losing Product Rankings — stacked layout */}
+                {!loading && profitableProducts.length > 0 && (
+                    <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                                    <Trophy className="w-3.5 h-3.5 text-emerald-400" />
                                 </div>
-                                {profitableProducts.length > 5 && (
-                                    <button onClick={() => setShowAllProfitable(!showAllProfitable)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
-                                        {showAllProfitable ? 'Ver menos' : `Ver todos (${profitableProducts.length})`}
-                                    </button>
-                                )}
+                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos Rentables</h3>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">{profitableProducts.length}</span>
                             </div>
-                            <div className="overflow-x-auto flex-1">
-                                <table className="w-full text-[11px]">
-                                    <thead>
-                                        <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
-                                            <th className="px-4 py-2.5 text-left">Producto</th>
-                                            <th className="px-4 py-2.5 text-right">Ventas</th>
-                                            <th className="px-4 py-2.5 text-right">CPA Desp.</th>
-                                            <th className="px-4 py-2.5 text-right">Utd. Proy.</th>
-                                            <th className="px-4 py-2.5 text-right">Utd/Orden</th>
-                                            <th className="px-4 py-2.5 text-center">% Canc.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-card-border">
-                                        {(showAllProfitable ? profitableProducts : profitableProducts.slice(0, 5)).map((p, i) => (
-                                            <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
-                                                <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] font-black text-emerald-400 w-4">{i + 1}</span>
-                                                        <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
-                                                        <span className="truncate max-w-[140px]">{p.name}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
-                                                <td className="px-4 py-2.5 text-right font-mono">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className="text-emerald-400">{formatCurrency(p.projectedProfit)}</span>
-                                                        {p.ads > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${p.roiPct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{p.roiPct >= 0 ? '+' : ''}{p.roiPct.toFixed(0)}% ROI</span>}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono">
-                                                    <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-center">
-                                                    <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            {profitableProducts.length > 5 && (
+                                <button onClick={() => setShowAllProfitable(!showAllProfitable)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
+                                    {showAllProfitable ? 'Ver menos' : `Ver todos (${profitableProducts.length})`}
+                                </button>
+                            )}
                         </div>
-
-                        {/* Losing products */}
-                        <div className="bg-card border border-card-border rounded-2xl overflow-hidden flex flex-col">
-                            <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
-                                        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                                    </div>
-                                    <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos en Pérdida</h3>
-                                    <span className="text-[10px] font-mono text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">{losingProducts.length}</span>
-                                </div>
-                                {losingProducts.length > 5 && (
-                                    <button onClick={() => setShowAllLosing(!showAllLosing)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
-                                        {showAllLosing ? 'Ver menos' : `Ver todos (${losingProducts.length})`}
-                                    </button>
-                                )}
-                            </div>
-                            <div className="overflow-x-auto flex-1">
-                                <table className="w-full text-[11px]">
-                                    <thead>
-                                        <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
-                                            <th className="px-4 py-2.5 text-left">Producto</th>
-                                            <th className="px-4 py-2.5 text-right">Ventas</th>
-                                            <th className="px-4 py-2.5 text-right">CPA Desp.</th>
-                                            <th className="px-4 py-2.5 text-right">Utd. Proy.</th>
-                                            <th className="px-4 py-2.5 text-right">Utd/Orden</th>
-                                            <th className="px-4 py-2.5 text-center">% Canc.</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-card-border">
-                                        {(showAllLosing ? losingProducts : losingProducts.slice(0, 5)).map((p, i) => (
-                                            <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
-                                                <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[10px] font-black text-red-400 w-4">{i + 1}</span>
-                                                        <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
-                                                        <span className="truncate max-w-[140px]">{p.name}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
-                                                <td className="px-4 py-2.5 text-right font-mono">
-                                                    <div className="flex flex-col items-end gap-0.5">
-                                                        <span className="text-red-400">{formatCurrency(p.projectedProfit)}</span>
-                                                        {p.ads > 0 && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{p.roiPct.toFixed(0)}% ROI</span>}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono">
-                                                    <span className={p.utilPerOrder >= 0 ? 'text-blue-400' : 'text-red-400'}>{formatCurrency(Math.round(p.utilPerOrder))}</span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-center">
-                                                    <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
-                                                </td>
-                                            </tr>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-[11px]">
+                                <thead>
+                                    <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
+                                        {([['name', 'Producto', 'text-left'] as const, ['netSales', 'Ventas', 'text-right'] as const, ['ads', 'Ads', 'text-right'] as const, ['adsPct', '% Part.', 'text-right'] as const, ['cpaDesp', 'CPA Desp.', 'text-right'] as const, ['profit', 'Utd. Real', 'text-right'] as const, ['projectedProfit', 'Utd. Proy.', 'text-right'] as const, ['cancelRate', '% Canc.', 'text-center'] as const]).map(([key, label, align]) => (
+                                            <th key={key} className={`px-4 py-2.5 ${align} cursor-pointer hover:text-foreground transition-colors select-none`} onClick={() => toggleSort('profitable', key as SortKey)}>
+                                                {label} {profitableSort.key === key ? (profitableSort.dir === 'desc' ? '↓' : '↑') : ''}
+                                            </th>
                                         ))}
-                                    </tbody>
-                                </table>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-card-border">
+                                    {(showAllProfitable ? sortProducts(profitableProducts, profitableSort) : sortProducts(profitableProducts, profitableSort).slice(0, 5)).map((p, i) => (
+                                        <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
+                                            <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-black text-emerald-400 w-4">{i + 1}</span>
+                                                    <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
+                                                    <span className="truncate max-w-[200px]">{p.name}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.ads)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-muted">{p.adsPct.toFixed(1)}%</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono">
+                                                <span className={p.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.profit)}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-mono">
+                                                <div className="flex flex-col items-end gap-0.5">
+                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                    {p.ads > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${p.roiPct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{p.roiPct >= 0 ? '+' : ''}{p.roiPct.toFixed(0)}% ROI</span>}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-center">
+                                                <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {!loading && losingProducts.length > 0 && (
+                    <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-card-border">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center">
+                                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                </div>
+                                <h3 className="text-[11px] font-black uppercase tracking-widest text-foreground">Productos en Pérdida</h3>
+                                <span className="text-[10px] font-mono text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">{losingProducts.length}</span>
                             </div>
+                            {losingProducts.length > 5 && (
+                                <button onClick={() => setShowAllLosing(!showAllLosing)} className="text-[10px] font-bold text-muted hover:text-foreground transition-colors">
+                                    {showAllLosing ? 'Ver menos' : `Ver todos (${losingProducts.length})`}
+                                </button>
+                            )}
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-[11px]">
+                                <thead>
+                                    <tr className="text-muted font-black uppercase tracking-wider border-b border-card-border">
+                                        {([['name', 'Producto', 'text-left'] as const, ['netSales', 'Ventas', 'text-right'] as const, ['ads', 'Ads', 'text-right'] as const, ['adsPct', '% Part.', 'text-right'] as const, ['cpaDesp', 'CPA Desp.', 'text-right'] as const, ['profit', 'Utd. Real', 'text-right'] as const, ['projectedProfit', 'Utd. Proy.', 'text-right'] as const, ['cancelRate', '% Canc.', 'text-center'] as const]).map(([key, label, align]) => (
+                                            <th key={key} className={`px-4 py-2.5 ${align} cursor-pointer hover:text-foreground transition-colors select-none`} onClick={() => toggleSort('losing', key as SortKey)}>
+                                                {label} {losingSort.key === key ? (losingSort.dir === 'desc' ? '↓' : '↑') : ''}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-card-border">
+                                    {(showAllLosing ? sortProducts(losingProducts, losingSort) : sortProducts(losingProducts, losingSort).slice(0, 5)).map((p, i) => (
+                                        <tr key={`${p.name}-${p.country}`} className="hover:bg-hover-bg transition-colors">
+                                            <td className="px-4 py-2.5 font-medium text-foreground" title={`${p.name} — ${p.country}`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-black text-red-400 w-4">{i + 1}</span>
+                                                    <img src={`https://flagcdn.com/w20/${p.flag}.png`} alt={p.country} className="w-4 h-3 rounded-sm object-cover shrink-0" />
+                                                    <span className="truncate max-w-[200px]">{p.name}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-foreground">{formatCurrency(p.netSales)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.ads)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-muted">{p.adsPct.toFixed(1)}%</td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-purple-400">{formatCurrency(p.cpaDesp)}</td>
+                                            <td className="px-4 py-2.5 text-right font-mono">
+                                                <span className="text-red-400">{formatCurrency(p.profit)}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-mono">
+                                                <div className="flex flex-col items-end gap-0.5">
+                                                    <span className={p.projectedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(p.projectedProfit)}</span>
+                                                    {p.ads > 0 && <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${p.roiPct >= 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>{p.roiPct >= 0 ? '+' : ''}{p.roiPct.toFixed(0)}% ROI</span>}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-center">
+                                                <span className={`font-mono font-bold ${p.cancelRate > 30 ? 'text-red-400' : p.cancelRate > 20 ? 'text-amber-400' : 'text-foreground/70'}`}>{p.cancelRate.toFixed(1)}%</span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 )}
@@ -1132,6 +1203,9 @@ export default function GlobalDashboard() {
                     localOverrides={localOverrides}
                     updateCountryOverride={updateCountryOverride}
                     updateProductOverride={updateProductOverride}
+                    toggleReturnBuffer={toggleReturnBuffer}
+                    updatePendingCancelOverride={updatePendingCancelOverride}
+                    freightAnalysis={freightAnalysis}
                     handleSaveProjections={handleSaveProjections}
                     isSavingProjections={isSavingProjections}
                     saveSuccess={saveSuccess}

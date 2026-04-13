@@ -24,6 +24,7 @@ import {
     Minus,
 } from 'lucide-react';
 import { isEntregado, isDevolucion } from '@/lib/utils/status';
+import { getEffectiveProductId, getProductGroup } from '@/lib/services/productGroups';
 import {
     BarChart,
     Bar,
@@ -85,6 +86,7 @@ export default function CountryPLPage() {
     const {
         loading, rawOrders, exchangeRates: rates,
         filteredAds, kpis: dashboardKpis,
+        productGroups, adsByCountryProduct,
     } = useDashboardData();
 
     const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
@@ -118,19 +120,38 @@ export default function CountryPLPage() {
             });
 
         if (selectedProduct && selectedProduct !== 'Todos') {
-            orders = orders.filter(o => o.PRODUCTO === selectedProduct);
+            const groups = productGroups || [];
+            orders = orders.filter(o => {
+                const group = getProductGroup(o.PRODUCTO || '', groups);
+                const displayName = group ? group.name : o.PRODUCTO;
+                return displayName === selectedProduct;
+            });
         }
         return orders;
-    }, [countryOrders, dateRange, startDateCustom, endDateCustom, selectedProduct]);
+    }, [countryOrders, dateRange, startDateCustom, endDateCustom, selectedProduct, productGroups]);
 
     const availableProducts = useMemo(() => {
-        const products = new Set<string>();
-        countryOrders.forEach(o => { if (o.PRODUCTO) products.add(o.PRODUCTO); });
-        return ['Todos', ...Array.from(products).sort()];
-    }, [countryOrders]);
+        const groups = productGroups || [];
+        const names = new Set<string>();
+        countryOrders.forEach(o => {
+            if (!o.PRODUCTO) return;
+            const group = getProductGroup(o.PRODUCTO, groups);
+            names.add(group ? group.name : o.PRODUCTO);
+        });
+        return ['Todos', ...Array.from(names).sort()];
+    }, [countryOrders, productGroups]);
 
-    // Use dashboard's pre-computed ad spend (already split by country/product)
-    const calculatedAdSpend = dashboardKpis?.g_ads || 0;
+    // Use per-country ad spend from the dashboard's adsByCountryProduct map
+    const calculatedAdSpend = useMemo(() => {
+        const countryAds = adsByCountryProduct?.[countryName] || {};
+        if (selectedProduct && selectedProduct !== 'Todos') {
+            // selectedProduct is a display name — resolve to group ID for ads lookup
+            const groups = productGroups || [];
+            const effectiveId = getEffectiveProductId(selectedProduct, groups);
+            return countryAds[effectiveId] || 0;
+        }
+        return Object.values(countryAds).reduce((sum, v) => sum + v, 0);
+    }, [adsByCountryProduct, countryName, selectedProduct, productGroups]);
 
     const kpis = useMemo(() => {
         if (filteredOrders.length === 0 || !rates) return null;
@@ -207,29 +228,35 @@ export default function CountryPLPage() {
         return kpis.cpr + kpis.fl_ent + kpis.fl_dev + kpis.fl_tra + kpis.g_ads;
     }, [kpis]);
 
-    // Product metrics computation
+    // Product metrics computation — grouped by product groups
     const productMetrics = useMemo(() => {
-        const products: Record<string, DropiOrder[]> = {};
+        const groups = productGroups || [];
+        const products: Record<string, { name: string; orders: DropiOrder[] }> = {};
         filteredOrders.forEach(o => {
-            const p = o.PRODUCTO || 'Desconocido';
-            if (!products[p]) products[p] = [];
-            products[p].push(o);
+            const effectiveId = getEffectiveProductId(o.PRODUCTO || '', groups);
+            const group = getProductGroup(o.PRODUCTO || '', groups);
+            const displayName = group ? group.name : o.PRODUCTO || effectiveId;
+            if (!products[effectiveId]) products[effectiveId] = { name: displayName, orders: [] };
+            products[effectiveId].orders.push(o);
         });
 
+        const countryAds = adsByCountryProduct?.[countryName] || {};
+
         return Object.entries(products)
-            .map(([name, orders]) => {
+            .map(([id, { name, orders }]) => {
                 const entOrders = orders.filter(o => isEntregado(o.ESTATUS));
                 const income = entOrders.reduce((s, o) => s + (o["TOTAL DE LA ORDEN"] || 0), 0);
                 const cost = entOrders.reduce((s, o) => s + (o["PRECIO PROVEEDOR X CANTIDAD"] || 0), 0);
                 const flete = entOrders.reduce((s, o) => s + (o["PRECIO FLETE"] || 0), 0);
                 const devOrders = orders.filter(o => isDevolucion(o.ESTATUS));
                 const fleteDev = devOrders.reduce((s, o) => s + (o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0), 0);
-                const profit = income - cost - flete - fleteDev;
+                const ads = countryAds[id] || 0;
+                const profit = income - cost - flete - fleteDev - ads;
                 const margin = income > 0 ? (profit / income) * 100 : 0;
-                return { name, margin, profit, count: orders.length, income };
+                return { name, margin, profit, count: orders.length, income, ads };
             })
             .filter(p => p.income > 0);
-    }, [filteredOrders]);
+    }, [filteredOrders, productGroups, adsByCountryProduct, countryName]);
 
     const topProducts = useMemo(() =>
         [...productMetrics].sort((a, b) => b.margin - a.margin).slice(0, 5),
@@ -518,7 +545,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">ROAS Real</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    ROAS Real <InfoTooltip text="Return on Ad Spend real. Cuánto ingreso entregado generas por cada peso en publicidad. Verde >= 3x, Amarillo >= 1.5x." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <TrendingUp className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -536,7 +565,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">CPA</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    CPA <InfoTooltip text="Costo por Adquisición. Cuánto gastas en publicidad por cada orden generada. Verde <= $20K, Amarillo <= $35K." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <Target className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -554,7 +585,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">CPE</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    CPE <InfoTooltip text="Costo por Entrega. Cuánto gastas en publicidad por cada orden efectivamente entregada. Verde <= $30K, Amarillo <= $50K." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <Target className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -572,7 +605,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">% Ads/Rev</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    % Ads/Rev <InfoTooltip text="Porcentaje de la facturación que se gasta en publicidad. Verde <= 20%, Amarillo <= 30%. Menor es mejor." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <Percent className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -590,7 +625,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Util/Ent.</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    Util/Ent. <InfoTooltip text="Utilidad neta promedio por cada orden entregada. Incluye todos los costos. Verde > $10K." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <CircleDollarSign className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -608,7 +645,9 @@ export default function CountryPLPage() {
                     return (
                         <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black text-muted uppercase tracking-widest">Cost Dev/Ord</span>
+                                <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">
+                                    Cost Dev/Ord <InfoTooltip text="Costo promedio de devolución por orden total. Incluye fletes de devolución distribuidos entre todas las órdenes." />
+                                </span>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                     <RotateCcw className={`w-3.5 h-3.5 text-${color}-400`} />
                                 </div>
@@ -626,7 +665,7 @@ export default function CountryPLPage() {
                     {/* AOV (Average Order Value) */}
                     <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">AOV</span>
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">AOV <InfoTooltip text="Average Order Value. Valor promedio por orden entregada. Ingreso real dividido entre entregas." /></span>
                             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-blue-500/10">
                                 <Receipt className="w-3.5 h-3.5 text-blue-400" />
                             </div>
@@ -638,7 +677,7 @@ export default function CountryPLPage() {
                     {/* Avg Product Cost */}
                     <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Costo Prom.</span>
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">Costo Prom. <InfoTooltip text="Costo promedio de producto por entrega. COGS total dividido entre entregas." /></span>
                             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-red-500/10">
                                 <Minus className="w-3.5 h-3.5 text-red-400" />
                             </div>
@@ -650,7 +689,7 @@ export default function CountryPLPage() {
                     {/* Avg Freight (Entrega) */}
                     <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Flete Ent.</span>
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">Flete Ent. <InfoTooltip text="Costo promedio de flete de entrega por orden entregada." /></span>
                             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-cyan-500/10">
                                 <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
                             </div>
@@ -662,7 +701,7 @@ export default function CountryPLPage() {
                     {/* Avg Freight (Devolución) */}
                     <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Flete Dev.</span>
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">Flete Dev. <InfoTooltip text="Costo promedio de flete por devolución. Solo aplica a órdenes devueltas." /></span>
                             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-orange-500/10">
                                 <RotateCcw className="w-3.5 h-3.5 text-orange-400" />
                             </div>
@@ -678,7 +717,7 @@ export default function CountryPLPage() {
                         return (
                             <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
-                                    <span className="text-[10px] font-black text-muted uppercase tracking-widest">Margen Bruto</span>
+                                    <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">Margen Bruto <InfoTooltip text="Ganancia bruta por entrega antes de fletes y publicidad. (AOV - Costo Producto) / Entregas." /></span>
                                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-${color}-500/10`}>
                                         <TrendingUp className={`w-3.5 h-3.5 text-${color}-400`} />
                                     </div>
@@ -692,7 +731,7 @@ export default function CountryPLPage() {
                     {/* Facturación Neta / Orden */}
                     <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black text-muted uppercase tracking-widest">Fact/Orden</span>
+                            <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1">Fact/Orden <InfoTooltip text="Facturación neta promedio por orden no cancelada." /></span>
                             <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-violet-500/10">
                                 <Receipt className="w-3.5 h-3.5 text-violet-400" />
                             </div>

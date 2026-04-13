@@ -8,6 +8,7 @@ export const STATUS_DEVOLUCION = [
     "EN DEVOLUCIÓN",
 ];
 export const STATUS_NOVEDAD = ["NOVEDAD", "CON NOVEDAD"];
+export const STATUS_PENDIENTE = ["PENDIENTE CONFIRMACION", "PENDIENTE CONFIRMACIÓN", "PENDIENTE DE CONFIRMACION", "PENDIENTE DE CONFIRMACIÓN"];
 export const ALL_COUNTRIES_MASTER = ["Colombia", "Ecuador", "Panamá", "Guatemala"];
 
 // Status classification functions
@@ -30,6 +31,10 @@ export function isDevolucion(status: string): boolean {
 
 export function isNovedad(status: string): boolean {
     return matchesStatus(status, STATUS_NOVEDAD);
+}
+
+export function isPendienteConfirmacion(status: string): boolean {
+    return matchesStatus(status, STATUS_PENDIENTE);
 }
 
 export function isTransit(status: string): boolean {

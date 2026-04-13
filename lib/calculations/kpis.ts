@@ -3,6 +3,7 @@ import {
     isCancelado,
     isDevolucion,
     isTransit,
+    isPendienteConfirmacion,
 } from '../utils/status';
 
 // Dropi order interface
@@ -67,6 +68,10 @@ export interface KPIResults {
     utilidad_por_entrega: number; // Utilidad Real / Entregados - "Utilidad Real por Órden Entregada"
     roas: number;           // Alias for backward compatibility (roas_bruto)
 
+    // Pending confirmation
+    n_pend: number;         // Pendiente Confirmación count
+    perc_pend: number;      // % of total orders that are pending
+
     // New additions for GlobalSummary
     fact_despachada: number;
     utilidad_proyectada?: number;
@@ -84,7 +89,8 @@ export function calculateKPIs(
         can: new Set<string>(),
         dev: new Set<string>(),
         tra: new Set<string>(),
-        nc: new Set<string>()
+        nc: new Set<string>(),
+        pend: new Set<string>(),
     };
 
     // Financial accumulations
@@ -108,7 +114,8 @@ export function calculateKPIs(
         const isEnt = isEntregado(status);
         const isCan = isCancelado(status);
         const isDev = isDevolucion(status);
-        const isTra = isTransit(status);
+        const isPend = isPendienteConfirmacion(status);
+        const isTra = !isEnt && !isCan && !isDev && !isPend; // Transit = everything else
 
         // 1. Counts (deduplicated by ID)
         if (id) {
@@ -116,6 +123,7 @@ export function calculateKPIs(
             if (isEnt) uniqueIds.ent.add(id);
             if (isCan) uniqueIds.can.add(id);
             if (isDev) uniqueIds.dev.add(id);
+            if (isPend) uniqueIds.pend.add(id);
             if (isTra) uniqueIds.tra.add(id);
             if (!isCan) uniqueIds.nc.add(id);
         }
@@ -158,6 +166,7 @@ export function calculateKPIs(
     const n_dev = uniqueIds.dev.size;
     const n_tra = uniqueIds.tra.size;
     const n_nc = uniqueIds.nc.size;
+    const n_pend = uniqueIds.pend.size;
     const n_dispatched = n_ent + n_dev; // Approximate for return rate base
 
     // Conversion rates
@@ -207,6 +216,8 @@ export function calculateKPIs(
         perc_ads_revenue,
         costo_dev_orden,
         utilidad_por_entrega,
+        n_pend,
+        perc_pend: n_ord > 0 ? (n_pend / n_ord) * 100 : 0,
         fact_despachada,
         roas: roas_bruto, // Alias for backward compatibility
     };
@@ -227,12 +238,14 @@ export interface ProjectionResult {
 }
 
 // Calculate projection for products
+// pendingCancelPercent: % of "Pendiente Confirmación" orders expected to cancel (0-100)
 export function calculateProjection(
     orders: DropiOrder[],
     idField: 'PRODUCTO_ID' | 'GRUPO_PRODUCTO' | 'PRODUCTO' = 'PRODUCTO_ID',
     percentDelivery: Record<string, number>, // Product ID -> % delivery
     bufferMultiplier: number,
-    adsPerProduct: Record<string, number> // Product ID -> Ads
+    adsPerProduct: Record<string, number>, // Product ID -> Ads
+    pendingCancelPercent: Record<string, number> = {} // Product ID -> % cancel of pending
 ): ProjectionResult[] {
     // Group orders by product ID
     const productGroups = new Map<string, DropiOrder[]>();
@@ -298,7 +311,19 @@ export function calculateProjection(
             : 0;
 
         // Calculate projection
-        const nonCanceledCount = new Set(productOrders.filter(o => !isCancelado(o.ESTATUS)).map(o => o.ID)).size;
+        // Step 1: Count non-canceled orders and separate pending ones
+        const nonCanceledIds = new Set(productOrders.filter(o => !isCancelado(o.ESTATUS)).map(o => o.ID));
+        const pendingIds = new Set(productOrders.filter(o => isPendienteConfirmacion(o.ESTATUS)).map(o => o.ID));
+        const confirmedCount = nonCanceledIds.size - pendingIds.size; // Already dispatched/in process
+        const pendingCount = pendingIds.size;
+
+        // Step 2: Apply pending cancel % — remove projected cancels from pending
+        const pendCancelPct = pendingCancelPercent[productId] ?? pendingCancelPercent[productName] ?? 0;
+        const pendingCanceled = pendingCount * (pendCancelPct / 100);
+        const pendingSurviving = pendingCount - pendingCanceled;
+
+        // Step 3: Effective non-canceled = confirmed + surviving pending
+        const nonCanceledCount = confirmedCount + pendingSurviving;
         const percentEnt = percentDelivery[productId] || percentDelivery[productName] || 80;
 
         const projectedDeliveredCount = nonCanceledCount * (percentEnt / 100);
@@ -338,6 +363,116 @@ export function calculateProjection(
                 utilidad,
             });
         }
+    });
+
+    return results;
+}
+
+// Freight analysis: compare outbound (delivered) vs return shipping by country/carrier
+export interface FreightAnalysisCarrier {
+    carrier: string;
+    avgOutbound: number;
+    avgReturn: number;
+    diffPercent: number; // (return - outbound) / outbound * 100
+    sampleSize: number;
+}
+
+export interface FreightAnalysisResult {
+    country: string;
+    carriers: FreightAnalysisCarrier[];
+    hasIncrease: boolean;      // any carrier shows >5% increase
+    avgDiffPercent: number;    // weighted avg across carriers
+    recommendedBuffer: number; // suggested multiplier (1.0 if no increase, else 1 + avg%)
+    summary: string;           // human-readable recommendation
+}
+
+export function analyzeFreightByCountry(orders: DropiOrder[]): Record<string, FreightAnalysisResult> {
+    // Group orders by country
+    const byCountry = new Map<string, DropiOrder[]>();
+    orders.forEach(o => {
+        const country = (o as any).country || o.PAIS || 'Desconocido';
+        if (!byCountry.has(country)) byCountry.set(country, []);
+        byCountry.get(country)!.push(o);
+    });
+
+    const results: Record<string, FreightAnalysisResult> = {};
+
+    byCountry.forEach((cOrders, country) => {
+        // Group by carrier
+        const carrierOutbound = new Map<string, number[]>();
+        const carrierReturn = new Map<string, number[]>();
+
+        // Outbound = delivered orders, use PRECIO FLETE
+        cOrders.filter(o => isEntregado(o.ESTATUS)).forEach(o => {
+            const carrier = (o as any).TRANSPORTADORA || 'Desconocida';
+            const flete = o["PRECIO FLETE"] || 0;
+            if (flete > 0) {
+                if (!carrierOutbound.has(carrier)) carrierOutbound.set(carrier, []);
+                carrierOutbound.get(carrier)!.push(flete);
+            }
+        });
+
+        // Return = devolucion orders, use COSTO DEVOLUCION FLETE or PRECIO FLETE
+        cOrders.filter(o => isDevolucion(o.ESTATUS)).forEach(o => {
+            const carrier = (o as any).TRANSPORTADORA || 'Desconocida';
+            const flete = o["COSTO DEVOLUCION FLETE"] || o["PRECIO FLETE"] || 0;
+            if (flete > 0) {
+                if (!carrierReturn.has(carrier)) carrierReturn.set(carrier, []);
+                carrierReturn.get(carrier)!.push(flete);
+            }
+        });
+
+        const allCarriers = new Set([...carrierOutbound.keys(), ...carrierReturn.keys()]);
+        const carriersAnalysis: FreightAnalysisCarrier[] = [];
+
+        allCarriers.forEach(carrier => {
+            const outboundValues = carrierOutbound.get(carrier) || [];
+            const returnValues = carrierReturn.get(carrier) || [];
+            if (outboundValues.length === 0 || returnValues.length === 0) return;
+
+            const avgOut = outboundValues.reduce((a, b) => a + b, 0) / outboundValues.length;
+            const avgRet = returnValues.reduce((a, b) => a + b, 0) / returnValues.length;
+            const diff = avgOut > 0 ? ((avgRet - avgOut) / avgOut) * 100 : 0;
+
+            carriersAnalysis.push({
+                carrier,
+                avgOutbound: Math.round(avgOut),
+                avgReturn: Math.round(avgRet),
+                diffPercent: Math.round(diff),
+                sampleSize: outboundValues.length + returnValues.length,
+            });
+        });
+
+        // Weighted average diff
+        const totalSamples = carriersAnalysis.reduce((s, c) => s + c.sampleSize, 0);
+        const weightedDiff = totalSamples > 0
+            ? carriersAnalysis.reduce((s, c) => s + c.diffPercent * c.sampleSize, 0) / totalSamples
+            : 0;
+
+        const hasIncrease = carriersAnalysis.some(c => c.diffPercent > 5);
+        const recommendedBuffer = hasIncrease ? 1 + Math.max(weightedDiff, 0) / 100 : 1.0;
+
+        let summary: string;
+        if (carriersAnalysis.length === 0) {
+            summary = `Sin datos suficientes para analizar fletes en ${country}.`;
+        } else if (hasIncrease) {
+            const top = carriersAnalysis.filter(c => c.diffPercent > 5)
+                .sort((a, b) => b.diffPercent - a.diffPercent);
+            const details = top.map(c => `${c.carrier}: +${c.diffPercent}%`).join(', ');
+            summary = `Aumento detectado en devoluciones: ${details}. Buffer recomendado: ${(recommendedBuffer).toFixed(2)}x`;
+        } else {
+            const names = carriersAnalysis.map(c => c.carrier).join(', ');
+            summary = `Las transportadoras (${names}) no aumentan el flete en devoluciones.`;
+        }
+
+        results[country] = {
+            country,
+            carriers: carriersAnalysis.sort((a, b) => b.diffPercent - a.diffPercent),
+            hasIncrease,
+            avgDiffPercent: Math.round(weightedDiff),
+            recommendedBuffer: parseFloat(recommendedBuffer.toFixed(2)),
+            summary,
+        };
     });
 
     return results;

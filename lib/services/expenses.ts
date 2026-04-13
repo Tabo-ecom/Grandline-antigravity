@@ -13,6 +13,8 @@ export const DEFAULT_CATEGORIES = [
     'Inversiones',
     'Impuestos',
     'Marketing',
+    'Costos Bodega',
+    'Garantías',
     'Pendiente',
 ] as string[];
 
@@ -130,6 +132,8 @@ export const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
     'Inversiones': '#ec4899',
     'Impuestos': '#d75c33',
     'Marketing': '#f97316',
+    'Costos Bodega': '#0ea5e9',
+    'Garantías': '#a855f7',
     'Pendiente': '#94a3b8',
 };
 
