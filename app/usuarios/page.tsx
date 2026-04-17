@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Users, UserPlus, Shield, Loader2, Trash2, Pencil, X, Check, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/lib/context/AuthContext';
 import { auth } from '@/lib/firebase/config';
-import { ALL_MODULES } from '@/lib/constants/modules';
+import { ALL_MODULES, MODULE_CATEGORIES } from '@/lib/constants/modules';
 
 interface TeamUser {
     user_id: string;
@@ -288,11 +288,15 @@ export default function UsuariosPage() {
                                         <div className="flex flex-wrap gap-1.5 mt-3 ml-14">
                                             {u.allowed_modules.map(moduleId => {
                                                 const mod = ALL_MODULES.find(m => m.id === moduleId);
-                                                return mod ? (
-                                                    <span key={moduleId} className="text-[9px] font-bold text-muted bg-hover-bg border border-card-border px-2 py-0.5 rounded-lg">
+                                                if (!mod) return null;
+                                                const catColors: Record<string, string> = { Finanzas: '#3b82f6', Operaciones: '#f59e0b', Workspace: '#06b6d4', Utilidades: '#64748b' };
+                                                const color = catColors[mod.category] || '#888';
+                                                return (
+                                                    <span key={moduleId} className="text-[9px] font-bold px-2 py-0.5 rounded-lg"
+                                                        style={{ background: `${color}15`, color, border: `1px solid ${color}25` }}>
                                                         {mod.name}
                                                     </span>
-                                                ) : null;
+                                                );
                                             })}
                                         </div>
                                     )}
@@ -327,20 +331,22 @@ export default function UsuariosPage() {
                                             {editRole === 'viewer' && (
                                                 <div>
                                                     <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Módulos Permitidos</label>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {ALL_MODULES.map(mod => (
-                                                            <label key={mod.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-xs ${editModules.includes(mod.id) ? 'bg-accent/10 border border-accent/20 text-accent font-bold' : 'bg-hover-bg border border-card-border text-muted hover:text-foreground'}`}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={editModules.includes(mod.id)}
-                                                                    onChange={() => toggleModule(mod.id, editModules, setEditModules)}
-                                                                    className="w-3.5 h-3.5 accent-[#d75c33]"
-                                                                />
-                                                                {mod.name}
-                                                            </label>
+                                                    <div className="space-y-3">
+                                                        {MODULE_CATEGORIES.map(cat => (
+                                                            <div key={cat}>
+                                                                <div className="text-[9px] font-bold text-muted/50 uppercase tracking-widest mb-1.5">{cat}</div>
+                                                                <div className="grid grid-cols-2 gap-1.5">
+                                                                    {ALL_MODULES.filter(m => m.category === cat).map(mod => (
+                                                                        <label key={mod.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-xs ${editModules.includes(mod.id) ? 'bg-accent/10 border border-accent/20 text-accent font-bold' : 'bg-hover-bg border border-card-border text-muted hover:text-foreground'}`}>
+                                                                            <input type="checkbox" checked={editModules.includes(mod.id)} onChange={() => toggleModule(mod.id, editModules, setEditModules)} className="w-3.5 h-3.5 accent-[#d75c33]" />
+                                                                            {mod.name}
+                                                                        </label>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
                                                         ))}
                                                     </div>
-                                                    <p className="text-[9px] text-muted mt-1 italic">Si no seleccionas ninguno, el usuario tendrá acceso a todos los módulos.</p>
+                                                    <p className="text-[9px] text-muted mt-2 italic">Si no seleccionas ninguno, el usuario tendrá acceso a todos los módulos.</p>
                                                 </div>
                                             )}
                                             <div className="flex gap-2">
@@ -443,17 +449,19 @@ export default function UsuariosPage() {
                         {newRole === 'viewer' && (
                             <div>
                                 <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2 block">Módulos Permitidos</label>
-                                <div className="grid grid-cols-1 gap-2">
-                                    {ALL_MODULES.map(mod => (
-                                        <label key={mod.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all text-xs ${newModules.includes(mod.id) ? 'bg-accent/10 border border-accent/20 text-accent font-bold' : 'bg-hover-bg border border-card-border text-muted hover:text-foreground'}`}>
-                                            <input
-                                                type="checkbox"
-                                                checked={newModules.includes(mod.id)}
-                                                onChange={() => toggleModule(mod.id, newModules, setNewModules)}
-                                                className="w-4 h-4 accent-[#d75c33]"
-                                            />
-                                            {mod.name}
-                                        </label>
+                                <div className="space-y-4">
+                                    {MODULE_CATEGORIES.map(cat => (
+                                        <div key={cat}>
+                                            <div className="text-[9px] font-bold text-muted/50 uppercase tracking-widest mb-1.5">{cat}</div>
+                                            <div className="grid grid-cols-1 gap-1.5">
+                                                {ALL_MODULES.filter(m => m.category === cat).map(mod => (
+                                                    <label key={mod.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all text-xs ${newModules.includes(mod.id) ? 'bg-accent/10 border border-accent/20 text-accent font-bold' : 'bg-hover-bg border border-card-border text-muted hover:text-foreground'}`}>
+                                                        <input type="checkbox" checked={newModules.includes(mod.id)} onChange={() => toggleModule(mod.id, newModules, setNewModules)} className="w-4 h-4 accent-[#d75c33]" />
+                                                        {mod.name}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
                                     ))}
                                 </div>
                                 <p className="text-[9px] text-muted mt-2 italic leading-relaxed">

@@ -1,0 +1,27 @@
+{
+  "name": "Grand Line — Command Center",
+  "short_name": "Grand Line",
+  "description": "All-in-One E-Commerce Operating System",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0A0A0F",
+  "theme_color": "#d75c33",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logos/grandline-isotipo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logos/grandline-isotipo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "es",
+  "dir": "ltr"
+}

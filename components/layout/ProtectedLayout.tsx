@@ -106,7 +106,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         if (!user && !isPublicPage) {
             router.push('/login');
         } else if (user && pathname === '/') {
-            router.push('/dashboard');
+            // Redirect viewers to their first allowed module instead of /dashboard
+            if (profile?.role !== 'admin' && profile?.allowed_modules?.length) {
+                const firstModule = profile.allowed_modules[0];
+                const route = firstModule === 'dashboard' ? '/dashboard' : `/${firstModule}`;
+                router.push(route);
+            } else {
+                router.push('/dashboard');
+            }
         }
     }, [user, loading, pathname, isPublicPage, router, isLandingDomain]);
 

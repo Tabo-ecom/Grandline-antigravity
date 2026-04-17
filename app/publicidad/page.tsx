@@ -89,6 +89,8 @@ const CampaignAnalysis = dynamic(() => import('@/components/publicidad/CampaignA
 const ProductSpend = dynamic(() => import('@/components/publicidad/ProductSpend').then(m => ({ default: m.ProductSpend })));
 const CountryAnalysis = dynamic(() => import('@/components/publicidad/CountryAnalysis').then(m => ({ default: m.CountryAnalysis })));
 const TimeTrends = dynamic(() => import('@/components/publicidad/TimeTrends').then(m => ({ default: m.TimeTrends })));
+const FunnelAnalysis = dynamic(() => import('@/components/publicidad/FunnelAnalysis').then(m => ({ default: m.FunnelAnalysis })));
+const MetricsAIAlerts = dynamic(() => import('@/components/publicidad/MetricsAIAlerts').then(m => ({ default: m.MetricsAIAlerts })));
 const CreativesGallery = dynamic(() => import('@/components/publicidad/CreativesGallery').then(m => ({ default: m.CreativesGallery })));
 
 // Lazy-loaded modals (only loaded when opened)
@@ -114,6 +116,7 @@ export default function AdvertisingPage() {
     const {
         selectedCountry, setSelectedCountry,
         selectedProduct, setSelectedProduct,
+        selectedBrand,
         dateRange, setDateRange,
         startDateCustom, setStartDateCustom,
         endDateCustom, setEndDateCustom
@@ -180,6 +183,8 @@ export default function AdvertisingPage() {
     // Data State
     const [history, setHistory] = useState<AdSpendHistory[]>([]);
     const [mappings, setMappings] = useState<CampaignMapping[]>([]);
+    const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+    const [catalogBrands, setCatalogBrands] = useState<any[]>([]);
     const [orders, setOrders] = useState<any[]>([]);
     const [rawOrders, setRawOrders] = useState<any[]>([]);
     const [adSettings, setAdSettings] = useState<AdSettings | null>(null);
@@ -243,10 +248,14 @@ export default function AdvertisingPage() {
                 const s = await getAdSettings(effectiveUid || '');
                 const g = await getProductGroups(effectiveUid || '');
                 const ai = await getAISuggestions(effectiveUid || '');
+                let cat: any = null;
+                try { const { getCatalog } = await import('@/lib/services/productCatalog'); cat = await getCatalog(effectiveUid || ''); } catch {}
 
                 setHistory(h || []);
                 setMappings(m || []);
                 setAdSettings(s);
+                setCatalogProducts(cat?.products || []);
+                setCatalogBrands(cat?.brands || []);
                 setProductGroups(g || []);
                 setAiSuggestions(ai || []);
 
@@ -1323,6 +1332,7 @@ export default function AdvertisingPage() {
             <FilterHeader
                 availableCountries={['Todos', ...ALL_COUNTRIES_MASTER]}
                 availableProducts={selectableProducts}
+                availableBrands={catalogBrands.map((b: any) => ({ id: b.id, name: b.name, color: b.color || '#6b7280' }))}
                 title="Central de Anuncios"
                 icon={Target}
             >
@@ -1345,11 +1355,9 @@ export default function AdvertisingPage() {
                             prevKpis={prevKpis as any}
                         />
 
+                        {/* TimeTrends oculto — CPA movido a Wheel */}
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            <div className="lg:col-span-8">
-                                <TimeTrends data={combinedChartData as any} />
-                            </div>
-                            <div className="lg:col-span-4">
+                            <div className="lg:col-span-12">
                                 <ProductSpend
                                     data={spendByProductChartData as any}
                                     tableData={productBreakdown as any}
@@ -1368,6 +1376,18 @@ export default function AdvertisingPage() {
                                 })}
                             />
 
+                            {/* VEGA AI Alerts */}
+                            <MetricsAIAlerts history={history as any} selectedProduct={selectedProduct} />
+
+                            {/* Funnel Analysis */}
+                            <FunnelAnalysis
+                                history={history as any}
+                                startDate={startDate}
+                                endDate={endDate}
+                                selectedProduct={selectedProduct}
+                            />
+
+                            {/* CampaignAnalysis — oculto temporalmente para futura actualizacion
                             <CampaignAnalysis
                                 rawHistory={history as any}
                                 mappings={mappings}
@@ -1379,16 +1399,13 @@ export default function AdvertisingPage() {
                                 fbToken={adSettings?.fb_token || null}
                                 fbAccountIds={(adSettings?.fb_account_ids || []).map((a: any) => a.id)}
                             />
+                            */}
                         </div>
 
-                        {/* Top Creativos — coming soon */}
-                        <div className="bg-card border border-card-border rounded-2xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="text-[11px] font-black text-muted uppercase tracking-widest">Top Creativos por Producto</h3>
-                                <span className="px-3 py-1 rounded-lg bg-accent/10 text-accent text-[9px] font-black uppercase tracking-widest border border-accent/20">Próximamente</span>
-                            </div>
-                            <p className="text-xs text-muted">Visualización de los mejores anuncios con miniaturas y métricas detalladas. Disponible pronto.</p>
-                        </div>
+                        {/* Top Creativos por Producto */}
+                        {topCreatives.length > 0 && (
+                            <CreativesGallery data={topCreatives} />
+                        )}
                     </div>
                 )}
 

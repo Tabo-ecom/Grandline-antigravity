@@ -56,8 +56,9 @@ export default function OnboardingFlow() {
         setShowIntro(false);
     };
 
-    // Don't show onboarding on the plans page — let users pick a plan first
+    // Don't show onboarding on plans page or for non-admin users (viewers)
     if (loading || pathname === '/planes') return null;
+    if (profile?.role && profile.role !== 'admin') return null;
 
     return (
         <>

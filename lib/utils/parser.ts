@@ -193,25 +193,67 @@ export const parseDropiFile = async (file: File): Promise<ParseResult> => {
                         const sku = row.SKU || row.sku || row['Referencia'] || '';
                         const productId = row['PRODUCTO ID'] || row['producto_id'] || row['Producto ID'] || '';
 
+                        // Helper to get string/number from multiple possible column names
+                        const str = (...keys: string[]) => { for (const k of keys) { const v = row[k]; if (v !== undefined && v !== null && v !== '') return String(v); } return ''; };
+                        const num = (...keys: string[]) => { for (const k of keys) { const v = Number(row[k]); if (v && isFinite(v)) return v; } return 0; };
+
                         return {
-                            ID: String(row.ID || row['ID Orden'] || row['ID ORDEN'] || row['NÚMERO DE ORDEN'] || row['Numero de orden'] || index),
-                            ESTATUS: String(row.ESTATUS || row.Estado || row['ESTADO'] || 'DESCONOCIDO'),
-                            "TOTAL DE LA ORDEN": Number(row['TOTAL DE LA ORDEN'] || row.Total || row['Total orden'] || row['TOTAL'] || 0),
+                            // Core identifiers
+                            ID: str('ID', 'ID Orden', 'ID ORDEN', 'NÚMERO DE ORDEN', 'Numero de orden') || String(index),
+                            ESTATUS: str('ESTATUS', 'Estado', 'ESTADO') || 'DESCONOCIDO',
                             PRODUCTO: productName,
                             SKU: sku,
                             PRODUCTO_ID: productId,
-                            CANTIDAD: Number(row.CANTIDAD || row.Cantidad || row['Cant.'] || 1),
-                            CIUDAD: String(row.CIUDAD || row.Ciudad || row['CIUDAD DESTINO'] || row.Municipio || row.Departamento || row['Población'] || ''),
-                            "CIUDAD DESTINO": String(row['CIUDAD DESTINO'] || row.CIUDAD || row.Ciudad || row.Municipio || row.Departamento || row['Población'] || ''),
-                            FECHA: String(row.FECHA || row.Fecha || row['FECHA DE CREACIÓN'] || ''),
-                            "PRECIO FLETE": Number(row['PRECIO FLETE'] || row.Flete || row['Costo envío'] || row['VALOR FLETE'] || 0),
-                            "COSTO DEVOLUCION FLETE": Number(row['COSTO DEVOLUCION FLETE'] || row['COSTO DEVOLUCIÓN FLETE'] || row['Costo devolucion flete'] || row['Costo devolución flete'] || 0),
-                            "PRECIO PROVEEDOR": Number(row['PRECIO PROVEEDOR'] || row['Precio proveedor'] || 0),
-                            "PRECIO PROVEEDOR X CANTIDAD": Number(row['PRECIO PROVEEDOR X CANTIDAD'] || row['Costo producto'] || 0),
-                            PAIS: String(row.PAIS || row.Pais || row['PAÍS'] || row['País'] || row['pais'] || row.Country || row['COUNTRY'] || row['PAIS DE ENTREGA'] || row['País de destino'] || row['PAIS DESTINO'] || ''),
-                            TRANSPORTADORA: String(row.TRANSPORTADORA || row.Transportadora || row['TRANSPORTADOR'] || row['Transportador'] || row['EMPRESA DE ENVIO'] || row['Empresa de envio'] || row['COURIER'] || ''),
-                            GANANCIA: Number(row.GANANCIA || row.Ganancia || row['GANANCIA TOTAL'] || 0),
-                            RECAUDO: String(row.RECAUDO || row.Recaudo || row['TIPO DE RECAUDO'] || row['Tipo recaudo'] || row['TIPO RECAUDO'] || row['Tipo de recaudo'] || row['COD'] || ''),
+                            CANTIDAD: num('CANTIDAD', 'Cantidad', 'Cant.') || 1,
+                            VARIANTE: str('VARIACION', 'VARIACIÓN', 'Variacion', 'Variación', 'VARIANTE', 'Variante'),
+
+                            // Financials (from Dropi report columns)
+                            "TOTAL DE LA ORDEN": num('TOTAL DE LA ORDEN', 'Total', 'Total orden', 'TOTAL', 'VALOR TOTAL'),
+                            "PRECIO FLETE": num('PRECIO FLETE', 'Flete', 'Costo envío', 'VALOR FLETE', 'COSTO FLETE'),
+                            "COSTO DEVOLUCION FLETE": num('COSTO DEVOLUCION FLETE', 'COSTO DEVOLUCIÓN FLETE', 'Costo devolucion flete', 'Costo devolución flete'),
+                            "PRECIO PROVEEDOR": num('PRECIO PROVEEDOR', 'Precio proveedor', 'COSTO PROVEEDOR'),
+                            "PRECIO PROVEEDOR X CANTIDAD": num('PRECIO PROVEEDOR X CANTIDAD', 'Costo producto', 'COSTO PRODUCTO'),
+                            GANANCIA: num('GANANCIA', 'Ganancia', 'GANANCIA TOTAL', 'UTILIDAD'),
+                            COMISION: num('COMISION', 'COMISIÓN', 'Comision', 'Comisión', 'COMISION DROPI'),
+                            COMISION_PASARELA: num('% COMISION DE LA PLATAFORMMA', 'COMISION PASARELA', 'COMISIÓN PASARELA'),
+
+                            // Location
+                            CIUDAD: str('CIUDAD', 'Ciudad', 'CIUDAD DESTINO', 'Municipio', 'Población'),
+                            "CIUDAD DESTINO": str('CIUDAD DESTINO', 'CIUDAD', 'Ciudad', 'Municipio', 'Población'),
+                            DEPARTAMENTO: str('DEPARTAMENTO DESTINO', 'DEPARTAMENTO', 'Departamento', 'Provincia', 'PROVINCIA'),
+                            PAIS: str('PAIS', 'Pais', 'PAÍS', 'País', 'pais', 'Country', 'COUNTRY', 'PAIS DE ENTREGA', 'País de destino', 'PAIS DESTINO'),
+                            DIRECCION: str('DIRECCION', 'DIRECCIÓN', 'Direccion', 'Dirección'),
+
+                            // Client info
+                            NOMBRE_CLIENTE: str('NOMBRE CLIENTE', 'Nombre cliente', 'NOMBRE', 'Nombre', 'CLIENTE'),
+                            TELEFONO_CLIENTE: str('TELÉFONO', 'TELEFONO', 'Telefono', 'Teléfono', 'CELULAR', 'Celular'),
+
+                            // Dates
+                            FECHA: str('FECHA', 'Fecha', 'FECHA DE CREACIÓN', 'FECHA DE CREACION'),
+                            FECHA_ENTREGA: str('FECHA ENTREGA', 'FECHA DE ENTREGA', 'Fecha entrega'),
+                            FECHA_DESPACHO: str('FECHA GUIA GENERADA', 'FECHA DESPACHO', 'FECHA DE DESPACHO'),
+                            FECHA_DEVOLUCION: str('FECHA DEVOLUCION', 'FECHA DEVOLUCIÓN', 'FECHA DE DEVOLUCION', 'FECHA DE DEVOLUCIÓN'),
+
+                            // Logistics
+                            TRANSPORTADORA: str('TRANSPORTADORA', 'Transportadora', 'TRANSPORTADOR', 'Transportador', 'EMPRESA DE ENVIO', 'COURIER'),
+                            GUIA: str('NÚMERO GUIA', 'NUMERO GUIA', 'NÚMERO GUÍA', 'Numero guia', 'GUIA', 'GUÍA'),
+                            NUMERO_GUIA: str('NÚMERO GUIA', 'NUMERO GUIA', 'NÚMERO GUÍA'),
+                            RECAUDO: str('TIPO DE ENVIO', 'RECAUDO', 'Recaudo', 'TIPO DE RECAUDO', 'TIPO RECAUDO', 'COD'),
+                            OBSERVACIONES: str('NOTAS', 'OBSERVACIÓN', 'Observaciones', 'OBSERVACIONES', 'Notas', 'COMENTARIOS'),
+
+                            // Novelty tracking
+                            SUBESTATUS: str('NOVEDAD', 'SUBESTATUS', 'SUB ESTATUS'),
+
+                            // Classification & Tags
+                            TAGS: str('TAGS', 'Tags', 'tags', 'ETIQUETAS', 'Etiquetas', 'MOTIVO CANCELACIÓN', 'Motivo cancelación', 'MOTIVO CANCELACION'),
+
+                            // Sales channel info
+                            TIENDA: str('TIENDA', 'Tienda', 'NOMBRE TIENDA'),
+                            VENDEDOR: str('VENDEDOR', 'Vendedor', 'ASESOR'),
+                            BODEGA: str('BODEGA', 'Bodega', 'ALMACEN'),
+
+                            // Store complete raw row for future features
+                            _raw: { ...row },
                         };
                     });
 

@@ -107,6 +107,10 @@ export function getStartDateForRange(range: string): Date {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
+    if (range === 'Todos') {
+        return new Date(2020, 0, 1, 0, 0, 0, 0);
+    }
+
     if (range === 'Hoy') {
         return start;
     }
@@ -130,7 +134,7 @@ export function getStartDateForRange(range: string): Date {
         'Últimos 30 Días': 30
     };
 
-    const days = daysMap[range] ?? 30; // Default to 30 if unknown
+    const days = daysMap[range] ?? 30;
     start.setDate(start.getDate() - days);
     return start;
 }

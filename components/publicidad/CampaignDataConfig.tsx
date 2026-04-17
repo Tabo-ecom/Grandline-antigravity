@@ -54,6 +54,7 @@ import {
     type AISuggestion
 } from '@/lib/services/marketing';
 import { fetchMetaAdSpend, fetchAccountCurrency, MetaTokenExpiredError } from '@/lib/services/meta';
+import { authFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/context/AuthContext';
 import { resolveProductName } from '@/lib/services/productResolution';
 import {
@@ -108,6 +109,8 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [syncingAPI, setSyncingAPI] = useState(false);
     const [syncStatus, setSyncStatus] = useState<string>('');
+    const [syncingTT, setSyncingTT] = useState(false);
+    const [syncTTStatus, setSyncTTStatus] = useState<string>('');
     const [mappingMode, setMappingMode] = useState<'manual' | 'ai'>('manual');
     const [importingCSV, setImportingCSV] = useState(false);
     const [isClearing, setIsClearing] = useState(false);
@@ -606,6 +609,50 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
         }
     };
 
+    const handleSyncTikTok = async () => {
+        setSyncingTT(true);
+        setSyncTTStatus('Conectando con TikTok...');
+        try {
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            let syncStart = '2026-01-01';
+            if (dateRange === 'Personalizado' && startDateCustom) {
+                syncStart = startDateCustom;
+            } else if (dateRange === 'Mes Pasado') {
+                syncStart = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().split('T')[0];
+            } else if (dateRange === 'Este Mes') {
+                syncStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+            } else if (dateRange === 'Últimos 30 Días') {
+                syncStart = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+            } else if (dateRange === 'Últimos 7 Días') {
+                syncStart = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+            }
+            const syncEnd = (dateRange === 'Personalizado' && endDateCustom) ? endDateCustom
+                : (dateRange === 'Mes Pasado') ? new Date(today.getFullYear(), today.getMonth(), 0).toISOString().split('T')[0]
+                : todayStr;
+
+            setSyncTTStatus(`Sincronizando TikTok (${syncStart} → ${syncEnd})...`);
+
+            const res = await authFetch('/api/sunny/tiktok-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ startDate: syncStart, endDate: syncEnd }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || 'Error sincronizando TikTok');
+
+            const h = await getAdSpendHistory(effectiveUid || '');
+            setHistory(h);
+            alert(`✅ TikTok: ${data.saved} registros sincronizados.`);
+        } catch (error: any) {
+            alert('❌ Error TikTok: ' + (error?.message || 'Error desconocido'));
+        } finally {
+            setSyncingTT(false);
+            setSyncTTStatus('');
+        }
+    };
+
     const handleClearAndResync = async () => {
         if (!confirm('⚠️ Esto eliminará TODOS los datos de publicidad y volverá a sincronizar desde Facebook.\n\nLos mapeos de campañas NO se pierden.\n\n¿Continuar?')) return;
         setSyncingAPI(true);
@@ -1021,6 +1068,23 @@ export default function CampaignDataConfig({ defaultSection = 'mapeo' }: Campaig
                                     <>
                                         <RefreshCw className="w-4 h-4 shrink-0" />
                                         Sincronizar FB
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={handleSyncTikTok}
+                                disabled={syncingTT}
+                                className="flex items-center gap-2 px-6 py-4 bg-pink-600/10 border border-pink-500/30 hover:bg-pink-600/20 text-pink-300 disabled:opacity-60 disabled:cursor-not-allowed rounded-2xl transition-all text-[10px] font-black uppercase tracking-[0.2em] min-w-[140px]"
+                            >
+                                {syncingTT ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                        <span className="truncate max-w-[160px]">{syncTTStatus || 'Sincronizando...'}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <RefreshCw className="w-4 h-4 shrink-0" />
+                                        Sincronizar TT
                                     </>
                                 )}
                             </button>

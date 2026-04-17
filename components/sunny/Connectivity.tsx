@@ -21,7 +21,7 @@ import {
 import { useSunny, StoreProfile, ExclusionList } from '@/lib/context/SunnyContext';
 import { getAdSettings } from '@/lib/services/marketing';
 import { fetchMetaAdAccounts, fetchMetaPixels, fetchMetaPages, MetaTokenExpiredError } from '@/lib/services/meta';
-import { buildTikTokOAuthUrl, getTikTokStatus, disconnectTikTok, initTikTokVideoUpload, checkTikTokPublishStatus } from '@/lib/services/tiktok';
+import { getTikTokStatus, disconnectTikTok, initTikTokVideoUpload, checkTikTokPublishStatus } from '@/lib/services/tiktok';
 import { useAuth } from '@/lib/context/AuthContext';
 import { authFetch } from '@/lib/api/client';
 
@@ -44,6 +44,7 @@ export const Connectivity: React.FC = () => {
         country: 'Colombia',
         pixelId: '',
         pageId: '',
+        ttPixelId: '',
         currency: 'COP',
         defaultAccountId: ''
     });
@@ -95,9 +96,12 @@ export const Connectivity: React.FC = () => {
         setTiktokLoading(false);
     };
 
-    const handleConnectTikTok = () => {
-        const url = buildTikTokOAuthUrl(effectiveUid || '');
-        window.location.href = url;
+    const handleConnectTikTok = async () => {
+        try {
+            const res = await authFetch('/api/auth/tiktok/url');
+            const data = await res.json();
+            if (data.url) window.location.href = data.url;
+        } catch (e) { console.error('Error getting TikTok OAuth URL:', e); }
     };
 
     const handleDisconnectTikTok = async () => {
@@ -200,13 +204,13 @@ export const Connectivity: React.FC = () => {
     }, [selectedAdAccountId]);
 
     const handleAddStore = async () => {
-        if (!newProfile.name || !newProfile.pixelId) return;
+        if (!newProfile.name) return;
         await addStoreProfile({
             ...newProfile,
             defaultAccountId: selectedAdAccountId
         } as Omit<StoreProfile, 'id'>);
         setIsAddingProfile(false);
-        setNewProfile({ name: '', country: 'Colombia', pixelId: '', pageId: '', currency: 'COP', defaultAccountId: '' });
+        setNewProfile({ name: '', country: 'Colombia', pixelId: '', pageId: '', ttPixelId: '', currency: 'COP', defaultAccountId: '' });
         setSelectedAdAccountId('');
         setFbPixels([]);
     };
@@ -263,6 +267,10 @@ export const Connectivity: React.FC = () => {
                                 <div className="flex justify-between text-[10px] font-mono">
                                     <span className="text-muted uppercase">Page ID</span>
                                     <span className="text-foreground font-bold">{profile.pageId || '—'}</span>
+                                </div>
+                                <div className="flex justify-between text-[10px] font-mono">
+                                    <span className="text-muted uppercase">TT Pixel</span>
+                                    <span className="text-pink-400 font-bold">{profile.ttPixelId || '—'}</span>
                                 </div>
                                 <div className="flex justify-between text-[10px] font-mono">
                                     <span className="text-muted uppercase">Default Acc</span>
@@ -359,6 +367,17 @@ export const Connectivity: React.FC = () => {
                                         ))}
                                     </select>
                                 </div>
+
+                                <div className="border-t border-card-border pt-3 mt-3">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-pink-400 ml-1 mb-2 block">TikTok Pixel ID</label>
+                                    <input
+                                        placeholder="TikTok Pixel ID (opcional)"
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-pink-500/50 outline-none"
+                                        value={newProfile.ttPixelId || ''}
+                                        onChange={e => setNewProfile({ ...newProfile, ttPixelId: e.target.value })}
+                                    />
+                                </div>
+
                                 <div className="flex gap-2 pt-3">
                                     <button
                                         onClick={handleAddStore}

@@ -213,7 +213,119 @@ export async function GET(req: NextRequest) {
                     }
                 }
 
-                if (batchCount > 0) await batch.commit();
+                if (batchCount > 0) {
+                    await batch.commit();
+                    batchCount = 0;
+                }
+
+                // ─── TikTok Ad Spend Sync ───────────────────
+                const ttToken = settings.tt_token;
+                const ttAccounts = settings.tt_account_ids || [];
+                if (ttToken && ttAccounts.length > 0) {
+                    const ttBatch = adminDb.batch();
+                    let ttBatchCount = 0;
+
+                    for (const ttAccount of ttAccounts) {
+                        try {
+                            const advertiserId = ttAccount.id || ttAccount.advertiser_id;
+                            if (!advertiserId) continue;
+
+                            // Step 1: Get campaign names map (campaign_id → campaign_name)
+                            const campaignNameMap = new Map<string, string>();
+                            const campaignsRes = await fetch(
+                                `https://business-api.tiktok.com/open_api/v1.3/campaign/get/?advertiser_id=${advertiserId}&page_size=1000`,
+                                { headers: { 'Access-Token': ttToken } }
+                            );
+                            const campaignsData = await campaignsRes.json();
+                            if (campaignsData.code === 0 && campaignsData.data?.list) {
+                                campaignsData.data.list.forEach((c: any) => {
+                                    campaignNameMap.set(String(c.campaign_id), c.campaign_name || '');
+                                });
+                            }
+
+                            // Step 2: Get report data (campaign_name is NOT a valid dimension)
+                            const ttParams = new URLSearchParams({
+                                advertiser_id: advertiserId,
+                                report_type: 'BASIC',
+                                data_level: 'AUCTION_CAMPAIGN',
+                                dimensions: JSON.stringify(['campaign_id', 'stat_time_day']),
+                                metrics: JSON.stringify(['spend', 'impressions', 'clicks', 'conversion']),
+                                start_date: syncStart,
+                                end_date: syncEnd,
+                                page_size: '1000',
+                            });
+
+                            const ttRes = await fetch(`https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/?${ttParams.toString()}`, {
+                                headers: { 'Access-Token': ttToken },
+                            });
+                            const ttData = await ttRes.json();
+
+                            if (ttData.code !== 0 || !ttData.data?.list) continue;
+
+                            for (const item of ttData.data.list) {
+                                const metrics = item.metrics || {};
+                                const dims = item.dimensions || {};
+                                const spend = parseFloat(metrics.spend || 0);
+                                if (spend <= 0) continue;
+
+                                const campaignId = String(dims.campaign_id || '');
+                                const cleanName = campaignNameMap.get(campaignId) || `Campaign ${campaignId}`;
+                                let country = 'Desconocido';
+
+                                const mapping = mappings.find(m =>
+                                    m.campaignName.trim().toLowerCase() === cleanName.toLowerCase() &&
+                                    m.platform === 'tiktok'
+                                );
+                                if (mapping) {
+                                    const productCountry = productCountryMap.get(mapping.productId);
+                                    if (productCountry && productCountry !== 'Todos') country = productCountry;
+                                }
+                                if (country === 'Desconocido') {
+                                    country = detectCountryFromCampaign(cleanName) || 'Desconocido';
+                                }
+
+                                const normalizedDate = dims.stat_time_day?.split(' ')[0] || todayStr;
+                                const sanitizedCampaign = (cleanName || 'global').replace(/\W/g, '');
+                                const deterministicId = `${userId}_${normalizedDate}_tiktok_${sanitizedCampaign}`;
+
+                                ttBatch.set(adminDb.doc(`marketing_history/${deterministicId}`), {
+                                    amount: spend,
+                                    currency: settings.tt_currency || 'COP',
+                                    source: 'api',
+                                    platform: 'tiktok',
+                                    updatedAt: Date.now(),
+                                    productId: 'global',
+                                    date: normalizedDate,
+                                    country,
+                                    campaignName: cleanName,
+                                    creator: 'cron',
+                                    userId,
+                                    id: deterministicId,
+                                    timestamp: new Date(),
+                                    impressions: parseInt(metrics.impressions || 0),
+                                    clicks: parseInt(metrics.clicks || 0),
+                                    ctr: 0,
+                                    cpc: 0,
+                                    conversions: parseInt(metrics.conversion || 0),
+                                    revenue_attributed: 0,
+                                }, { merge: true });
+
+                                ttBatchCount++;
+                                userSaved++;
+
+                                if (ttBatchCount >= 450) {
+                                    await ttBatch.commit();
+                                    ttBatchCount = 0;
+                                }
+                            }
+                        } catch (ttErr: any) {
+                            console.error(`[Cron] TikTok error for ${ttAccount.id}:`, ttErr.message);
+                        }
+                    }
+
+                    if (ttBatchCount > 0) await ttBatch.commit();
+                }
+
                 results.push({ userId, saved: userSaved });
             } catch (userErr: any) {
                 console.error(`[Cron] Error processing user ${userId}:`, userErr.message);

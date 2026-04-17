@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useDashboardData } from '@/lib/hooks/useDashboardData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
@@ -9,6 +9,8 @@ import { formatCurrency, formatDualCurrency, isMatchingCountry, getCurrencyForCo
 import { DropiOrder, calculateKPIs } from '@/lib/calculations/kpis';
 import { parseDropiDate, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
 import InfoTooltip from '@/components/common/InfoTooltip';
+import { getCatalog, CatalogBrand } from '@/lib/services/productCatalog';
+import { useAuth } from '@/lib/context/AuthContext';
 import {
     CircleDollarSign,
     TrendingUp,
@@ -78,15 +80,18 @@ function WaterfallTooltip({ active, payload }: any) {
 
 export default function CountryPLPage() {
     const { country } = useParams();
+    const { effectiveUid } = useAuth();
     const decodedCountry = decodeURIComponent(country as string);
     const countryName = decodedCountry.charAt(0).toUpperCase() + decodedCountry.slice(1);
     const localCurrency = getCurrencyForCountry(countryName);
+    const [brands, setBrands] = useState<CatalogBrand[]>([]);
+    useEffect(() => { if (effectiveUid) getCatalog(effectiveUid).then(c => setBrands(c.brands)); }, [effectiveUid]);
 
     // Use the SAME data hook as the dashboard for guaranteed consistency
     const {
         loading, rawOrders, exchangeRates: rates,
         filteredAds, kpis: dashboardKpis,
-        productGroups, adsByCountryProduct,
+        productGroups, adsByCountryProduct, brandProductIds, catalogProducts,
     } = useDashboardData();
 
     const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
@@ -97,10 +102,19 @@ export default function CountryPLPage() {
         setSelectedProduct('Todos');
     }, [countryName]);
 
-    // All orders for this country (unfiltered by date)
+    // All orders for this country (unfiltered by date, filtered by brand if set)
     const countryOrders = useMemo(() => {
-        return rawOrders.filter(o => isMatchingCountry((o as any).country || '', decodedCountry));
-    }, [rawOrders, decodedCountry]);
+        return rawOrders.filter(o => {
+            if (!isMatchingCountry((o as any).country || '', decodedCountry)) return false;
+            if (brandProductIds) {
+                const pid = o.PRODUCTO_ID?.toString() || '';
+                const origPid = (o as any).ORIGINAL_PRODUCTO_ID || '';
+                const pname = (o.PRODUCTO || '').toLowerCase().trim();
+                if (!brandProductIds.has(pid) && !brandProductIds.has(origPid) && !brandProductIds.has(pname)) return false;
+            }
+            return true;
+        });
+    }, [rawOrders, decodedCountry, brandProductIds]);
 
     // Apply global filters using parseDropiDate (same as dashboard)
     const filteredOrders = useMemo(() => {
@@ -286,6 +300,7 @@ export default function CountryPLPage() {
             <FilterHeader
                 availableProducts={availableProducts}
                 availableCountries={[countryName]}
+                availableBrands={brands.map(b => ({ id: b.id, name: b.name, color: b.color }))}
                 title={`${countryName} — P&L`}
                 icon={BarChart3}
             />

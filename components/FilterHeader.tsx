@@ -9,6 +9,7 @@ import {
     ArrowRight,
     ChevronLeft,
     ChevronRight,
+    Tag,
 } from 'lucide-react';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import {
@@ -33,9 +34,16 @@ interface ProductOption {
     label: string;
 }
 
+interface BrandOption {
+    id: string;
+    name: string;
+    color: string;
+}
+
 interface FilterHeaderProps {
     availableCountries?: string[];
     availableProducts?: (string | ProductOption)[];
+    availableBrands?: BrandOption[];
     title?: string;
     icon?: React.ElementType;
     logo?: string;
@@ -45,6 +53,7 @@ interface FilterHeaderProps {
 const FilterHeader = ({
     availableCountries = ['Todos'],
     availableProducts = ['Todos'],
+    availableBrands = [],
     title = 'Grand Line',
     icon: Icon = Globe,
     logo,
@@ -55,13 +64,14 @@ const FilterHeader = ({
         startDateCustom, setStartDateCustom,
         endDateCustom, setEndDateCustom,
         selectedCountry, setSelectedCountry,
-        selectedProduct, setSelectedProduct
+        selectedProduct, setSelectedProduct,
+        selectedBrand, setSelectedBrand
     } = useGlobalFilters();
     const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
     const [viewDate, setViewDate] = React.useState(new Date());
     const calendarRef = React.useRef<HTMLDivElement>(null);
 
-    // Handle clicks outside
+    // Handle clicks outside calendar
     React.useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
@@ -177,7 +187,7 @@ const FilterHeader = ({
     };
 
     return (
-        <header className="sticky top-4 z-[100] bg-[#0a0a0f]/80 backdrop-blur-xl border border-white/[0.08] py-3 px-6 -mx-4 md:-mx-6 mb-8 shadow-2xl shadow-black/40 rounded-2xl mx-0 md:mx-0">
+        <header className="sticky top-0 md:top-4 z-[100] bg-[#0a0a0f]/80 backdrop-blur-xl border border-white/[0.08] py-2 md:py-3 px-3 md:px-6 -mx-3 md:-mx-6 mb-4 md:mb-8 shadow-2xl shadow-black/40 rounded-none md:rounded-2xl">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 {/* Brand / Page Title */}
                 <div className="flex items-center gap-3">
@@ -197,7 +207,7 @@ const FilterHeader = ({
                 </div>
 
                 {/* Filters Group */}
-                <div className="flex flex-wrap items-center gap-2 md:gap-3 bg-white/[0.03] p-2 rounded-2xl border border-white/[0.05]">
+                <div className="flex flex-wrap items-center gap-1.5 md:gap-3 bg-white/[0.03] p-1.5 md:p-2 rounded-xl md:rounded-2xl border border-white/[0.05]">
 
                     {/* Country Selector */}
                     <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group">
@@ -213,6 +223,25 @@ const FilterHeader = ({
                         </select>
                         <ChevronDown className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
                     </div>
+
+                    {/* Brand Selector */}
+                    {availableBrands.length > 0 && <>
+                        <div className="w-px h-5 bg-white/10" />
+                        <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer group">
+                            <Tag className="w-4 h-4 text-indigo-400" />
+                            <select
+                                value={selectedBrand}
+                                onChange={(e) => setSelectedBrand(e.target.value)}
+                                className="bg-transparent text-sm font-bold text-gray-300 outline-none cursor-pointer appearance-none"
+                            >
+                                <option value="Todos" className="bg-[#0a0c10] text-gray-300">Marca: Todas</option>
+                                {availableBrands.map(b => (
+                                    <option key={b.id} value={b.id} className="bg-[#0a0c10] text-gray-300">{b.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
+                        </div>
+                    </>}
 
                     <div className="w-px h-5 bg-white/10" />
 
@@ -265,7 +294,7 @@ const FilterHeader = ({
 
                         {/* Calendar Popover */}
                         {isCalendarOpen && (
-                            <div className="absolute top-full right-0 mt-3 bg-[#0c0f16] border border-gray-800 rounded-[2.5rem] shadow-2xl z-[100] w-[320px] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                            <div className="fixed md:absolute inset-x-2 md:inset-x-auto bottom-2 md:bottom-auto top-auto md:top-full md:right-0 md:mt-3 bg-[#0c0f16] border border-gray-800 rounded-2xl md:rounded-[2.5rem] shadow-2xl z-[100] md:w-[320px] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                                 {/* Presets inside calendar */}
                                 <div className="grid grid-cols-2 gap-1 p-2 border-b border-white/5 bg-black/20">
                                     {['Hoy', 'Ayer', 'Últimos 7 Días', 'Últimos 30 Días', 'Este Mes', 'Mes Pasado', 'Todos'].map(preset => (

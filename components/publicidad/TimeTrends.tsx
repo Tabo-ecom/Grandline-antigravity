@@ -37,7 +37,7 @@ const LINE_CONFIG: Record<LineKey, { label: string; color: string; gradient: str
 };
 
 export const TimeTrends: React.FC<TimeTrendsProps> = ({ data }) => {
-    const [view, setView] = useState<'profit' | 'cpa'>('profit');
+    const view = 'profit' as const; // CPA view removed — moved to Wheel
     const [visibleLines, setVisibleLines] = useState<Record<LineKey, boolean>>({
         revenue: true,
         spend: true,
@@ -58,28 +58,13 @@ export const TimeTrends: React.FC<TimeTrendsProps> = ({ data }) => {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
                 <div>
                     <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
-                        {view === 'profit' ? 'Facturado vs Ads vs Utilidad' : 'Tendencia de CPA MKT'}
-                        <InfoTooltip text={view === 'profit' ? 'Comparativa diaria de facturación despachada, inversión en ads y utilidad proyectada.' : 'Evolución del costo por compra (CPA) de Facebook en el tiempo.'} />
+                        Facturado vs Ads vs Utilidad
+                        <InfoTooltip text="Comparativa diaria de facturación despachada, inversión en ads y utilidad proyectada." />
                     </h3>
-                    <p className="text-xs text-muted mt-1">
-                        {view === 'profit' ? 'Comparativa de facturación, inversión y rentabilidad.' : 'Evolución del costo por compra en el tiempo.'}
-                    </p>
+                    <p className="text-xs text-muted mt-1">Comparativa de facturación, inversión y rentabilidad.</p>
                 </div>
 
-                <div className="flex bg-hover-bg border border-card-border p-1 rounded-xl shrink-0">
-                    <button
-                        onClick={() => setView('profit')}
-                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'profit' ? 'bg-accent text-white' : 'text-muted hover:text-foreground'}`}
-                    >
-                        Utilidad
-                    </button>
-                    <button
-                        onClick={() => setView('cpa')}
-                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'cpa' ? 'bg-emerald-500 text-white' : 'text-muted hover:text-foreground'}`}
-                    >
-                        CPA Trend
-                    </button>
-                </div>
+                {/* CPA Trend view removed — metric moved to Wheel dashboard */}
             </div>
 
             {view === 'profit' && (

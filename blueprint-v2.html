@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grand Line v2 — Blueprint Arquitectura</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg: #0A0A0F;
+    --bg-card: #111118;
+    --bg-hover: #1a1a24;
+    --bg-surface: #16161f;
+    --accent: #d75c33;
+    --accent-glow: rgba(215,92,51,0.15);
+    --text: #e8e8ed;
+    --text-dim: #6b6b7b;
+    --text-muted: #44445a;
+    --border: #1e1e2e;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --indigo: #6366f1;
+    --pink: #ec4899;
+    --cyan: #06b6d4;
+    --teal: #14b8a6;
+    --radius: 12px;
+    --radius-lg: 16px;
+  }
+  body {
+    font-family: 'Space Grotesk', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  /* ─── HEADER ─── */
+  .blueprint-header {
+    text-align: center;
+    padding: 60px 20px 40px;
+    position: relative;
+  }
+  .blueprint-header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .blueprint-header h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), #ff8a65);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .blueprint-header p {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .version-badge {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 16px;
+  }
+
+  /* ─── TABS ─── */
+  .tabs-container {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 20px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .tab-btn.active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  /* ─── SECTIONS ─── */
+  .section { display: none; padding: 0 40px 60px; max-width: 1400px; margin: 0 auto; }
+  .section.active { display: block; }
+  .section-title {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .section-subtitle {
+    color: var(--text-dim);
+    margin-bottom: 32px;
+    font-size: 0.95rem;
+  }
+
+  /* ─── CARDS ─── */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    transition: all 0.2s;
+  }
+  .card:hover {
+    border-color: #2a2a3a;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p { color: var(--text-dim); font-size: 0.85rem; line-height: 1.6; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-purple { background: rgba(139,92,246,0.15); color: var(--purple); }
+  .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-accent { background: var(--accent-glow); color: var(--accent); }
+  .badge-pink { background: rgba(236,72,153,0.15); color: var(--pink); }
+  .badge-cyan { background: rgba(6,182,212,0.15); color: var(--cyan); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  /* ─── NAVIGATION PREVIEW ─── */
+  .nav-preview {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .nav-preview-header {
+    background: var(--bg-surface);
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .nav-preview-header .dots {
+    display: flex; gap: 6px;
+  }
+  .nav-preview-header .dots span {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  .nav-preview-body {
+    display: flex;
+    min-height: 500px;
+  }
+
+  /* Sidebar preview */
+  .preview-sidebar {
+    width: 260px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    flex-shrink: 0;
+  }
+  .preview-sidebar .sidebar-section {
+    padding: 0 12px;
+    margin-bottom: 20px;
+  }
+  .preview-sidebar .sidebar-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding: 0 12px;
+    margin-bottom: 8px;
+  }
+  .preview-sidebar .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preview-sidebar .sidebar-item:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .preview-sidebar .sidebar-item.active {
+    background: var(--accent-glow);
+    color: var(--accent);
+  }
+  .preview-sidebar .sidebar-item .icon {
+    width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+  }
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 12px 12px;
+  }
+
+  /* Main content preview */
+  .preview-main {
+    flex: 1;
+    padding: 24px;
+    position: relative;
+  }
+
+  /* ─── MODULE MOCKUPS ─── */
+  .mockup-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .mockup-toolbar {
+    background: var(--bg-surface);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  .mockup-toolbar .tool-btn {
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all 0.15s;
+  }
+  .mockup-toolbar .tool-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .mockup-body {
+    padding: 24px;
+    min-height: 350px;
+  }
+
+  /* ─── SEARCH OVERLAY ─── */
+  .search-overlay-demo {
+    background: rgba(0,0,0,0.6);
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 400px;
+    margin-bottom: 32px;
+  }
+  .search-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%;
+    max-width: 640px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .search-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .search-input-wrapper .search-icon { color: var(--text-dim); font-size: 1.2rem; }
+  .search-input-wrapper input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1rem;
+  }
+  .search-input-wrapper .kbd {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+  }
+  .search-results {
+    max-height: 350px;
+    overflow-y: auto;
+  }
+  .search-result-group {
+    padding: 8px 12px;
+  }
+  .search-result-group .group-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+  }
+  .search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .search-result-item:hover { background: var(--bg-hover); }
+  .search-result-item .result-icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-surface);
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .search-result-item .result-text {
+    flex: 1;
+  }
+  .search-result-item .result-text .title { font-size: 0.85rem; }
+  .search-result-item .result-text .subtitle { font-size: 0.7rem; color: var(--text-muted); }
+
+  /* ─── CHAT PREVIEW ─── */
+  .chat-layout {
+    display: flex;
+    min-height: 450px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .chat-channels {
+    width: 240px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    flex-shrink: 0;
+  }
+  .channel-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .channel-item:hover { background: var(--bg-hover); color: var(--text); }
+  .channel-item.active { background: var(--accent-glow); color: var(--accent); }
+  .channel-item .hash { font-weight: 700; opacity: 0.5; }
+  .channel-item .unread {
+    margin-left: auto;
+    background: var(--accent);
+    color: white;
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .chat-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-header-bar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .chat-header-bar h4 { font-size: 0.9rem; font-weight: 600; }
+  .chat-messages {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .chat-msg {
+    display: flex;
+    gap: 12px;
+  }
+  .chat-avatar {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--bg-surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+  .chat-msg-content .msg-header {
+    display: flex; align-items: baseline; gap: 8px;
+    margin-bottom: 4px;
+  }
+  .chat-msg-content .msg-author { font-size: 0.82rem; font-weight: 600; }
+  .chat-msg-content .msg-time { font-size: 0.65rem; color: var(--text-muted); }
+  .chat-msg-content .msg-body { font-size: 0.82rem; color: var(--text-dim); line-height: 1.5; }
+  .chat-input-bar {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .chat-input-bar input {
+    flex: 1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.82rem;
+    outline: none;
+  }
+  .chat-input-bar input:focus { border-color: var(--accent); }
+
+  /* ─── DOCS PREVIEW ─── */
+  .docs-layout {
+    display: flex;
+    min-height: 450px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .docs-tree {
+    width: 240px;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    flex-shrink: 0;
+  }
+  .tree-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tree-item:hover { background: var(--bg-hover); color: var(--text); }
+  .tree-item.active { background: var(--accent-glow); color: var(--accent); }
+  .tree-item.nested { padding-left: 36px; }
+  .tree-item .arrow { font-size: 0.6rem; color: var(--text-muted); }
+
+  .docs-editor {
+    flex: 1;
+    padding: 32px 48px;
+  }
+  .docs-editor h1.doc-title {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    outline: none;
+  }
+  .docs-editor .doc-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+  .doc-block {
+    padding: 8px 0;
+    font-size: 0.88rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    border-left: 2px solid transparent;
+    padding-left: 12px;
+    transition: border-color 0.15s;
+  }
+  .doc-block:hover {
+    border-left-color: var(--accent);
+  }
+  .doc-block.heading {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 16px;
+  }
+  .doc-block .drag-handle {
+    opacity: 0;
+    transition: opacity 0.15s;
+    color: var(--text-muted);
+    cursor: grab;
+    font-size: 0.7rem;
+    margin-right: 8px;
+  }
+  .doc-block:hover .drag-handle { opacity: 1; }
+
+  /* ─── CALENDAR ─── */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .cal-header {
+    background: var(--bg-surface);
+    padding: 10px;
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .cal-day {
+    background: var(--bg-card);
+    padding: 8px;
+    min-height: 90px;
+    position: relative;
+  }
+  .cal-day .day-num {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .cal-day.today .day-num {
+    background: var(--accent);
+    color: white;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    font-weight: 600;
+  }
+  .cal-event {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cal-event.blue { background: rgba(59,130,246,0.2); color: var(--blue); }
+  .cal-event.green { background: rgba(34,197,94,0.2); color: var(--green); }
+  .cal-event.accent { background: var(--accent-glow); color: var(--accent); }
+  .cal-event.purple { background: rgba(139,92,246,0.2); color: var(--purple); }
+
+  /* ─── ARCHITECTURE DIAGRAM ─── */
+  .arch-diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    margin-bottom: 32px;
+    position: relative;
+  }
+  .arch-layer {
+    margin-bottom: 24px;
+  }
+  .arch-layer-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    padding-left: 4px;
+  }
+  .arch-nodes {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .arch-node {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 20px;
+    font-size: 0.8rem;
+    cursor: default;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+  }
+  .arch-node:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .arch-node .node-icon { font-size: 1rem; }
+  .arch-connector {
+    text-align: center;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+  }
+
+  /* ─── TABLE ─── */
+  .info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 32px;
+  }
+  .info-table th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+  }
+  .info-table td {
+    padding: 12px 16px;
+    font-size: 0.82rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .info-table tr:hover td { background: var(--bg-hover); }
+
+  /* ─── FLOW ─── */
+  .flow-steps {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .flow-step {
+    flex: 1;
+    min-width: 180px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    border-radius: var(--radius);
+  }
+  .flow-step .step-num {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+    opacity: 0.3;
+    margin-bottom: 8px;
+  }
+  .flow-step h4 {
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+  }
+  .flow-step p {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    padding: 0 8px;
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 768px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .section { padding: 0 16px 40px; }
+    .blueprint-header h1 { font-size: 2rem; }
+    .preview-sidebar, .chat-channels, .docs-tree { display: none; }
+    .flow-arrow { display: none; }
+    .flow-steps { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ HEADER ═══════════════════════════════════════ -->
+<div class="blueprint-header">
+  <div class="version-badge">Blueprint v2.0</div>
+  <h1>Grand Line v2</h1>
+  <p>All-in-One E-Commerce Operating System. Una plataforma, todo tu negocio.</p>
+</div>
+
+<!-- ═══════════════════════════════════════ TABS ═══════════════════════════════════════ -->
+<div class="tabs-container">
+  <button class="tab-btn active" onclick="showTab('overview')">Vision General</button>
+  <button class="tab-btn" onclick="showTab('navigation')">Navegacion</button>
+  <button class="tab-btn" onclick="showTab('docs')">Docs / Wiki</button>
+  <button class="tab-btn" onclick="showTab('chat')">Chat</button>
+  <button class="tab-btn" onclick="showTab('calendar')">Calendario</button>
+  <button class="tab-btn" onclick="showTab('search')">Busqueda Global</button>
+  <button class="tab-btn" onclick="showTab('architecture')">Arquitectura Tecnica</button>
+  <button class="tab-btn" onclick="showTab('roadmap')">Roadmap</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: VISION GENERAL -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-overview" class="section active">
+  <h2 class="section-title">Vision General</h2>
+  <p class="section-subtitle">De herramienta de analytics a sistema operativo completo para e-commerce</p>
+
+  <!-- Current vs Future -->
+  <div class="grid-2">
+    <div class="card">
+      <h3><span class="dot" style="background:var(--text-muted)"></span> Grand Line v1 (Actual)</h3>
+      <p>Analytics, lanzamiento de campanas, P&L, IA. Excelente para datos y publicidad, pero el equipo todavia depende de Slack, Notion, Google Calendar y ClickUp para comunicarse, documentar y organizarse.</p>
+      <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge badge-blue">Wheel</span>
+        <span class="badge badge-purple">Berry</span>
+        <span class="badge badge-yellow">Sunny</span>
+        <span class="badge badge-accent">Publicidad</span>
+        <span class="badge badge-green">VEGA AI</span>
+        <span class="badge badge-cyan">Tareas</span>
+        <span class="badge badge-pink">Pipeline</span>
+      </div>
+    </div>
+    <div class="card" style="border-color: var(--accent); box-shadow: 0 0 30px var(--accent-glow);">
+      <h3><span class="dot" style="background:var(--accent)"></span> Grand Line v2 (Futuro)</h3>
+      <p>Todo lo anterior + comunicacion interna (Chat), documentacion (Docs), planificacion (Calendario), y busqueda universal. Un solo login, un solo lugar, cero SaaS externos.</p>
+      <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+        <span class="badge badge-blue">Wheel</span>
+        <span class="badge badge-purple">Berry</span>
+        <span class="badge badge-yellow">Sunny</span>
+        <span class="badge badge-accent">Publicidad</span>
+        <span class="badge badge-green">VEGA AI</span>
+        <span class="badge badge-cyan">Tareas</span>
+        <span class="badge badge-pink">Pipeline</span>
+        <span class="badge" style="background:rgba(6,182,212,0.15);color:var(--cyan);">Chat</span>
+        <span class="badge" style="background:rgba(20,184,166,0.15);color:var(--teal);">Docs</span>
+        <span class="badge" style="background:rgba(236,72,153,0.15);color:var(--pink);">Calendario</span>
+        <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--indigo);">Busqueda</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SaaS Replaced -->
+  <h3 style="margin-bottom:16px; font-size:1rem;">SaaS que reemplaza</h3>
+  <div class="grid-4">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; margin-bottom:8px;">💬</div>
+      <h3 style="justify-content:center;">Slack</h3>
+      <p>~$1,000/ano</p>
+      <div style="margin-top:8px;"><span class="badge badge-cyan">Chat Module</span></div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; margin-bottom:8px;">📝</div>
+      <h3 style="justify-content:center;">Notion</h3>
+      <p>~$1,300/ano</p>
+      <div style="margin-top:8px;"><span class="badge" style="background:rgba(20,184,166,0.15);color:var(--teal);">Docs Module</span></div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; margin-bottom:8px;">📅</div>
+      <h3 style="justify-content:center;">Google Cal</h3>
+      <p>Incluido en Workspace</p>
+      <div style="margin-top:8px;"><span class="badge badge-pink">Calendar Module</span></div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:2rem; margin-bottom:8px;">✅</div>
+      <h3 style="justify-content:center;">ClickUp</h3>
+      <p>~$700/ano</p>
+      <div style="margin-top:8px;"><span class="badge badge-cyan">Tareas (Ya existe)</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color: var(--green); background: rgba(34,197,94,0.03);">
+    <h3 style="color:var(--green);">Ahorro estimado: $3,000+ / ano</h3>
+    <p>Sin contar el valor de tener todo integrado: datos de ventas al lado del chat del equipo, documentos linkados a tareas, calendario con deadlines automaticos.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: NAVEGACION -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-navigation" class="section">
+  <h2 class="section-title">Sistema de Navegacion</h2>
+  <p class="section-subtitle">Sidebar reorganizado con categorias logicas para 12+ modulos</p>
+
+  <!-- Live Preview -->
+  <div class="nav-preview">
+    <div class="nav-preview-header">
+      <div class="dots">
+        <span style="background:#ff5f57"></span>
+        <span style="background:#ffbd2e"></span>
+        <span style="background:#28c840"></span>
+      </div>
+      <span style="color:var(--text-dim);font-size:0.8rem;">app.grandline.com.co</span>
+    </div>
+    <div class="nav-preview-body">
+      <div class="preview-sidebar">
+        <!-- Workspace -->
+        <div class="sidebar-section">
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 12px;margin-bottom:12px;">
+            <div style="width:28px;height:28px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:white;">GL</div>
+            <div>
+              <div style="font-size:0.8rem;font-weight:600;">Grand Line</div>
+              <div style="font-size:0.6rem;color:var(--text-muted);">Tabo E-com</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="sidebar-section">
+          <div class="sidebar-item" style="background:var(--bg-hover);border-radius:8px;color:var(--text-dim);padding:8px 12px;gap:8px;font-size:0.78rem;">
+            <span class="icon">🔍</span> Buscar...
+            <span style="margin-left:auto;font-size:0.6rem;background:var(--bg-surface);padding:1px 6px;border-radius:3px;border:1px solid var(--border);">⌘K</span>
+          </div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Analytics -->
+        <div class="sidebar-section">
+          <div class="sidebar-label">Analytics</div>
+          <div class="sidebar-item active"><span class="icon">📊</span> Wheel</div>
+          <div class="sidebar-item"><span class="icon">💰</span> Berry</div>
+          <div class="sidebar-item"><span class="icon">📈</span> Publicidad</div>
+          <div class="sidebar-item"><span class="icon">🧭</span> Log Pose</div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Operations -->
+        <div class="sidebar-section">
+          <div class="sidebar-label">Operaciones</div>
+          <div class="sidebar-item"><span class="icon">🚀</span> Sunny</div>
+          <div class="sidebar-item"><span class="icon">🤖</span> VEGA AI</div>
+          <div class="sidebar-item"><span class="icon">📦</span> Proveedor</div>
+          <div class="sidebar-item"><span class="icon">🔗</span> Pipeline</div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Workspace -->
+        <div class="sidebar-section">
+          <div class="sidebar-label">Workspace</div>
+          <div class="sidebar-item"><span class="icon">💬</span> Chat <span class="unread" style="margin-left:auto;background:var(--accent);color:white;font-size:0.6rem;padding:1px 6px;border-radius:10px;">5</span></div>
+          <div class="sidebar-item"><span class="icon">📝</span> Docs</div>
+          <div class="sidebar-item"><span class="icon">✅</span> Tareas</div>
+          <div class="sidebar-item"><span class="icon">📅</span> Calendario</div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Countries (collapsed) -->
+        <div class="sidebar-section">
+          <div class="sidebar-label">Territorios</div>
+          <div class="sidebar-item"><span class="icon">🇨🇴</span> Colombia</div>
+          <div class="sidebar-item"><span class="icon">🇪🇨</span> Ecuador</div>
+          <div class="sidebar-item" style="color:var(--text-muted);font-size:0.75rem;"><span class="icon">+</span> 3 mas...</div>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="preview-main">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+          <div>
+            <h2 style="font-size:1.4rem;font-weight:700;">Dashboard - Wheel</h2>
+            <p style="font-size:0.8rem;color:var(--text-muted);">Vista general de KPIs y metricas</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div style="width:8px;height:8px;background:var(--green);border-radius:50%;"></div>
+            <span style="font-size:0.75rem;color:var(--text-dim);">3 online</span>
+          </div>
+        </div>
+
+        <!-- Placeholder KPI cards -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;">
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Ventas Hoy</div>
+            <div style="font-size:1.5rem;font-weight:700;margin-top:4px;">$2,847</div>
+            <div style="font-size:0.7rem;color:var(--green);margin-top:2px;">+12.4%</div>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Pedidos</div>
+            <div style="font-size:1.5rem;font-weight:700;margin-top:4px;">43</div>
+            <div style="font-size:0.7rem;color:var(--green);margin-top:2px;">+8.2%</div>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">ROAS</div>
+            <div style="font-size:1.5rem;font-weight:700;margin-top:4px;">2.8x</div>
+            <div style="font-size:0.7rem;color:var(--accent);margin-top:2px;">-0.3</div>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:16px;">
+            <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Efectividad</div>
+            <div style="font-size:1.5rem;font-weight:700;margin-top:4px;">67%</div>
+            <div style="font-size:0.7rem;color:var(--green);margin-top:2px;">+2.1%</div>
+          </div>
+        </div>
+
+        <!-- Chart placeholder -->
+        <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:20px;height:200px;display:flex;align-items:center;justify-content:center;">
+          <div style="text-align:center;color:var(--text-muted);">
+            <div style="font-size:2rem;margin-bottom:8px;">📈</div>
+            <div style="font-size:0.8rem;">Grafico de ventas por dia</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation Logic -->
+  <h3 style="margin-bottom:16px;">Logica de organizacion</h3>
+  <div class="grid-3">
+    <div class="card">
+      <h3 style="color:var(--blue);">📊 Analytics</h3>
+      <p>Modulos de lectura y analisis de datos. El usuario viene aqui a entender que esta pasando con su negocio.</p>
+      <div style="margin-top:12px;">
+        <div style="font-size:0.8rem;color:var(--text);margin-bottom:4px;">Wheel, Berry, Publicidad, Log Pose</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--yellow);">⚡ Operaciones</h3>
+      <p>Modulos de accion. El usuario viene aqui a crear campanas, generar contenido, gestionar proveedores.</p>
+      <div style="margin-top:12px;">
+        <div style="font-size:0.8rem;color:var(--text);margin-bottom:4px;">Sunny, VEGA AI, Proveedor, Pipeline</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--cyan);">💬 Workspace</h3>
+      <p>Modulos de colaboracion y organizacion. El equipo se comunica, documenta y planifica aqui.</p>
+      <div style="margin-top:12px;">
+        <div style="font-size:0.8rem;color:var(--text);margin-bottom:4px;">Chat, Docs, Tareas, Calendario</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:32px;">
+    <h3>Principios de la navegacion</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+      <div>
+        <p><strong style="color:var(--text);">Sidebar colapsable</strong> — Se mantiene el patron actual. Hover sobre icono muestra tooltip. Click colapsa/expande.</p>
+      </div>
+      <div>
+        <p><strong style="color:var(--text);">Busqueda siempre visible</strong> — Barra de busqueda en la parte superior del sidebar con shortcut ⌘K. Busca en TODOS los modulos.</p>
+      </div>
+      <div>
+        <p><strong style="color:var(--text);">Badge de notificaciones</strong> — Chat muestra conteo de mensajes no leidos. Tareas muestra tareas vencidas.</p>
+      </div>
+      <div>
+        <p><strong style="color:var(--text);">Territorios dinamicos</strong> — Solo aparecen los paises con datos. Se mantiene el sistema actual.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: DOCS -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-docs" class="section">
+  <h2 class="section-title">Docs / Wiki</h2>
+  <p class="section-subtitle">Reemplazo de Notion: documentos con bloques arrastrables, bases de datos, y jerarquia de paginas</p>
+
+  <!-- Docs UI Preview -->
+  <div class="docs-layout">
+    <div class="docs-tree">
+      <div style="padding:8px 16px;margin-bottom:8px;">
+        <div style="font-size:0.85rem;font-weight:600;">Workspace</div>
+      </div>
+      <div class="tree-item"><span class="arrow">▾</span> 📋 Procesos</div>
+      <div class="tree-item nested active">📄 SOP Servicio al Cliente</div>
+      <div class="tree-item nested">📄 SOP Envios</div>
+      <div class="tree-item nested">📄 SOP Garantias</div>
+      <div class="tree-item"><span class="arrow">▾</span> 🎯 Estrategia</div>
+      <div class="tree-item nested">📄 Vision 2025</div>
+      <div class="tree-item nested">📄 Buyer Personas</div>
+      <div class="tree-item"><span class="arrow">▸</span> 📦 Productos</div>
+      <div class="tree-item"><span class="arrow">▸</span> 🏪 Tiendas</div>
+      <div class="tree-item"><span class="arrow">▸</span> 📊 Reportes</div>
+      <div style="padding:12px 16px;">
+        <div class="tree-item" style="color:var(--accent);">+ Nueva pagina</div>
+      </div>
+    </div>
+
+    <div class="docs-editor">
+      <h1 class="doc-title">SOP Servicio al Cliente</h1>
+      <div class="doc-meta">Ultima edicion: hace 2 horas por Alejandra &bull; 3 colaboradores</div>
+
+      <div class="doc-block heading">
+        <span class="drag-handle">⠿</span>
+        1. Recepcion del caso
+      </div>
+      <div class="doc-block">
+        <span class="drag-handle">⠿</span>
+        Cuando un cliente contacta por WhatsApp, el agente debe verificar el numero de pedido en Dropi y confirmar el estado actual del envio antes de responder.
+      </div>
+      <div class="doc-block">
+        <span class="drag-handle">⠿</span>
+        <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:4px;">
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:8px;">📎 Tabla de tiempos de respuesta</div>
+          <table style="width:100%;font-size:0.75rem;border-collapse:collapse;">
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px;">Canal</td>
+              <td style="padding:6px;">Tiempo max</td>
+              <td style="padding:6px;">Prioridad</td>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px;">WhatsApp</td>
+              <td style="padding:6px;">30 min</td>
+              <td style="padding:6px;"><span class="badge badge-accent">Alta</span></td>
+            </tr>
+            <tr>
+              <td style="padding:6px;">Instagram DM</td>
+              <td style="padding:6px;">2 horas</td>
+              <td style="padding:6px;"><span class="badge badge-blue">Media</span></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      <div class="doc-block heading">
+        <span class="drag-handle">⠿</span>
+        2. Clasificacion
+      </div>
+      <div class="doc-block">
+        <span class="drag-handle">⠿</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <span class="badge badge-accent">Garantia</span>
+          <span class="badge badge-blue">Devolucion</span>
+          <span class="badge badge-green">Seguimiento</span>
+          <span class="badge badge-purple">Queja</span>
+          <span class="badge badge-yellow">Cambio</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <h3 style="margin-bottom:16px;">Funcionalidades clave</h3>
+  <div class="grid-3">
+    <div class="card">
+      <h3>📝 Bloques arrastrables</h3>
+      <p>Texto, encabezados, listas, tablas, imagenes, archivos, embeds. Cada bloque se puede arrastrar para reordenar. Slash commands (/) para insertar bloques rapidamente.</p>
+    </div>
+    <div class="card">
+      <h3>📂 Jerarquia de paginas</h3>
+      <p>Paginas dentro de paginas, estilo Notion. Arbol de navegacion en sidebar izquierdo. Drag & drop para reorganizar la estructura.</p>
+    </div>
+    <div class="card">
+      <h3>🗃️ Bases de datos</h3>
+      <p>Tablas con propiedades tipadas (texto, numero, fecha, select, multi-select, persona). Vistas: tabla, kanban, galeria, lista.</p>
+    </div>
+    <div class="card">
+      <h3>👥 Colaboracion</h3>
+      <p>Multiples editores simultaneos. Indicador de quien esta viendo/editando. Historial de cambios para revertir.</p>
+    </div>
+    <div class="card">
+      <h3>🔗 Links cruzados</h3>
+      <p>Mencionar @pagina, @tarea, @persona. Las menciones se actualizan si la pagina cambia de nombre. Backlinks automaticos.</p>
+    </div>
+    <div class="card">
+      <h3>📤 Plantillas</h3>
+      <p>Plantillas predefinidas: SOP, Meeting Notes, Product Brief, Weekly Report. El usuario puede crear plantillas propias.</p>
+    </div>
+  </div>
+
+  <!-- Tech approach -->
+  <div class="card">
+    <h3>Enfoque tecnico</h3>
+    <p style="margin-top:8px;">
+      <strong style="color:var(--text);">Editor:</strong> TipTap (basado en ProseMirror) — el mismo motor que usan Notion, GitBook, y Linear. Soporta bloques custom, drag & drop, collaborative editing con Y.js.<br><br>
+      <strong style="color:var(--text);">Almacenamiento:</strong> Firestore — cada documento es un doc con campo `content` (JSON del editor), `title`, `parent_id`, `created_by`, `updated_at`, `permissions`.<br><br>
+      <strong style="color:var(--text);">Real-time:</strong> Y.js + WebSocket para edicion colaborativa. Firestore listeners para cambios de estructura (nuevo doc, renombrar, mover).<br><br>
+      <strong style="color:var(--text);">Referencia open source:</strong> AFFiNE (bloque editor), Outline (wiki con jerarquia). No copiar — entender patrones UX.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: CHAT -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-chat" class="section">
+  <h2 class="section-title">Chat</h2>
+  <p class="section-subtitle">Reemplazo de Slack: canales, DMs, archivos, audio, notificaciones web</p>
+
+  <!-- Chat UI Preview -->
+  <div class="chat-layout">
+    <div class="chat-channels">
+      <div style="padding:8px 16px;margin-bottom:4px;">
+        <div style="font-size:0.85rem;font-weight:600;">Canales</div>
+      </div>
+      <div class="channel-item active"><span class="hash">#</span> equipo <span class="unread">3</span></div>
+      <div class="channel-item"><span class="hash">#</span> anuncios</div>
+      <div class="channel-item"><span class="hash">#</span> servicio-al-cliente <span class="unread">12</span></div>
+      <div class="channel-item"><span class="hash">#</span> publicidad</div>
+      <div class="channel-item"><span class="hash">#</span> creativos</div>
+      <div class="channel-item"><span class="hash">#</span> garantias</div>
+      <div class="channel-item"><span class="hash">#</span> ideas-videos</div>
+      <div class="channel-item"><span class="hash">#</span> reportes</div>
+      <div class="channel-item"><span class="hash">#</span> tienda-lucent</div>
+      <div class="channel-item"><span class="hash">#</span> tienda-naturalskin</div>
+
+      <div style="padding:12px 16px 4px;">
+        <div style="font-size:0.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:2px;">Mensajes directos</div>
+      </div>
+      <div class="channel-item"><div class="dot" style="background:var(--green);width:6px;height:6px;"></div> Alejandra</div>
+      <div class="channel-item"><div class="dot" style="background:var(--green);width:6px;height:6px;"></div> Aurora</div>
+      <div class="channel-item"><div class="dot" style="background:var(--text-muted);width:6px;height:6px;"></div> Luisa</div>
+      <div class="channel-item"><div class="dot" style="background:var(--text-muted);width:6px;height:6px;"></div> Andres</div>
+    </div>
+
+    <div class="chat-main">
+      <div class="chat-header-bar">
+        <span style="font-size:1rem;opacity:0.5;">#</span>
+        <h4>equipo</h4>
+        <span style="font-size:0.7rem;color:var(--text-muted);">6 miembros</span>
+        <div style="margin-left:auto;display:flex;gap:12px;">
+          <span style="font-size:0.8rem;cursor:pointer;color:var(--text-dim);" title="Buscar">🔍</span>
+          <span style="font-size:0.8rem;cursor:pointer;color:var(--text-dim);" title="Fijar">📌</span>
+          <span style="font-size:0.8rem;cursor:pointer;color:var(--text-dim);" title="Miembros">👥</span>
+        </div>
+      </div>
+
+      <div class="chat-messages">
+        <div class="chat-msg">
+          <div class="chat-avatar" style="background:var(--accent);color:white;">AG</div>
+          <div class="chat-msg-content">
+            <div class="msg-header">
+              <span class="msg-author">Alejandra</span>
+              <span class="msg-time">10:32 AM</span>
+            </div>
+            <div class="msg-body">Ya subi el reporte de garantias de esta semana. 3 casos pendientes de Lucent, todos por dano en transporte 📦</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar" style="background:var(--purple);color:white;">AU</div>
+          <div class="chat-msg-content">
+            <div class="msg-header">
+              <span class="msg-author">Aurora</span>
+              <span class="msg-time">10:45 AM</span>
+            </div>
+            <div class="msg-body">Perfecto! Ya le pedi al proveedor las reposiciones. Llegan el jueves. @Luisa puedes programar los envios para el viernes?</div>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar" style="background:var(--blue);color:white;">TB</div>
+          <div class="chat-msg-content">
+            <div class="msg-header">
+              <span class="msg-author">Tabo</span>
+              <span class="msg-time">11:02 AM</span>
+            </div>
+            <div class="msg-body">
+              Revisen las metricas de hoy en <span style="color:var(--accent);cursor:pointer;">#publicidad</span> — el ROAS de Ecuador subio a 3.2x 🔥
+              <div style="margin-top:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;align-items:center;gap:10px;">
+                <span>📊</span>
+                <div>
+                  <div style="font-size:0.8rem;font-weight:500;">Dashboard Publicidad</div>
+                  <div style="font-size:0.7rem;color:var(--text-muted);">app.grandline.com.co/publicidad</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-input-bar">
+        <span style="cursor:pointer;font-size:1rem;" title="Adjuntar archivo">📎</span>
+        <input type="text" placeholder="Escribe un mensaje en #equipo..." readonly>
+        <span style="cursor:pointer;font-size:1rem;" title="Nota de voz">🎤</span>
+        <span style="cursor:pointer;font-size:1rem;" title="Enviar">📤</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <h3 style="margin-bottom:16px;">Funcionalidades clave</h3>
+  <div class="grid-3">
+    <div class="card">
+      <h3>💬 Canales con permisos</h3>
+      <p>Canales publicos y privados. Admin controla quien puede ver/escribir. Canales por tienda, area, o tema. Threads para mantener orden.</p>
+    </div>
+    <div class="card">
+      <h3>📩 Mensajes directos</h3>
+      <p>DMs 1:1 y grupales. Indicador de presencia (online/offline). Estado personalizado. Read receipts opcionales.</p>
+    </div>
+    <div class="card">
+      <h3>🎤 Notas de voz</h3>
+      <p>Grabar audio inline en el chat. Reproductor con waveform. Duracion maxima 5 min. Almacenamiento en Firebase Storage.</p>
+    </div>
+    <div class="card">
+      <h3>📎 Archivos y previews</h3>
+      <p>Drag & drop archivos. Preview de imagenes, PDFs, links. Previews enriquecidos de links internos (docs, tareas, dashboards).</p>
+    </div>
+    <div class="card">
+      <h3>🔔 Notificaciones Web</h3>
+      <p>Web Push Notifications API. El usuario recibe notificacion aunque tenga la pestana cerrada. Configuracion por canal (todo, solo menciones, silenciar).</p>
+    </div>
+    <div class="card">
+      <h3>🔗 Integraciones internas</h3>
+      <p>Mencionar @vega para que la IA responda en el canal. Compartir links de Docs, Tareas, Dashboard con previews automaticos.</p>
+    </div>
+  </div>
+
+  <!-- Channels structure -->
+  <div class="card">
+    <h3>Estructura de canales sugerida (basada en tu Slack actual)</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+      <div>
+        <p style="color:var(--text);font-weight:500;margin-bottom:8px;">Generales</p>
+        <p>#anuncios, #equipo, #ideas-videos</p>
+      </div>
+      <div>
+        <p style="color:var(--text);font-weight:500;margin-bottom:8px;">Por area</p>
+        <p>#servicio-al-cliente, #publicidad, #creativos, #garantias</p>
+      </div>
+      <div>
+        <p style="color:var(--text);font-weight:500;margin-bottom:8px;">Por tienda</p>
+        <p>#tienda-lucent, #tienda-naturalskin, #tabo-accesorios</p>
+      </div>
+      <div>
+        <p style="color:var(--text);font-weight:500;margin-bottom:8px;">Reportes</p>
+        <p>#reportes (auto-feed desde Berry/Wheel)</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tech approach -->
+  <div class="card" style="margin-top:20px;">
+    <h3>Enfoque tecnico</h3>
+    <p style="margin-top:8px;">
+      <strong style="color:var(--text);">Real-time:</strong> WebSocket nativo (ws) o Socket.io. Cada canal es un "room". Reconexion automatica.<br><br>
+      <strong style="color:var(--text);">Almacenamiento:</strong> Firestore para persistencia de mensajes. Coleccion `channels/{channelId}/messages`. Index por `timestamp`.<br><br>
+      <strong style="color:var(--text);">Notificaciones:</strong> Web Push Notifications API + Service Worker. Firebase Cloud Messaging (FCM) como proveedor.<br><br>
+      <strong style="color:var(--text);">Audio:</strong> MediaRecorder API del browser. Upload a Firebase Storage. Almacenar URL en el mensaje.<br><br>
+      <strong style="color:var(--text);">Server:</strong> Next.js API routes para REST (crear canal, listar mensajes). WebSocket server separado en Railway o como custom server de Next.js.<br><br>
+      <strong style="color:var(--text);">Referencia:</strong> Mattermost (channels + threads UX), Rocket.Chat (open source Slack).
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: CALENDAR -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-calendar" class="section">
+  <h2 class="section-title">Calendario</h2>
+  <p class="section-subtitle">Planificacion del equipo con integracion a Google Calendar y Google Meet</p>
+
+  <!-- Calendar Preview -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <h3 style="font-size:1.2rem;">Abril 2026</h3>
+      <div style="display:flex;gap:4px;">
+        <button style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">‹</button>
+        <button style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.8rem;">›</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:4px;">
+      <button style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.75rem;">Dia</button>
+      <button style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-dim);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.75rem;">Semana</button>
+      <button style="background:var(--accent);border:1px solid var(--accent);color:white;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.75rem;">Mes</button>
+    </div>
+  </div>
+
+  <div class="calendar-grid">
+    <div class="cal-header">Lun</div>
+    <div class="cal-header">Mar</div>
+    <div class="cal-header">Mie</div>
+    <div class="cal-header">Jue</div>
+    <div class="cal-header">Vie</div>
+    <div class="cal-header">Sab</div>
+    <div class="cal-header">Dom</div>
+
+    <!-- Week 1 -->
+    <div class="cal-day" style="opacity:0.4;"><div class="day-num">30</div></div>
+    <div class="cal-day" style="opacity:0.4;"><div class="day-num">31</div></div>
+    <div class="cal-day"><div class="day-num">1</div></div>
+    <div class="cal-day"><div class="day-num">2</div></div>
+    <div class="cal-day"><div class="day-num">3</div></div>
+    <div class="cal-day"><div class="day-num">4</div></div>
+    <div class="cal-day"><div class="day-num">5</div></div>
+
+    <!-- Week 2 -->
+    <div class="cal-day"><div class="day-num">6</div>
+      <div class="cal-event blue">Reunion equipo</div>
+    </div>
+    <div class="cal-day"><div class="day-num">7</div></div>
+    <div class="cal-day"><div class="day-num">8</div>
+      <div class="cal-event accent">Review campanas</div>
+    </div>
+    <div class="cal-day"><div class="day-num">9</div></div>
+    <div class="cal-day"><div class="day-num">10</div>
+      <div class="cal-event green">Lanzar promos</div>
+    </div>
+    <div class="cal-day"><div class="day-num">11</div></div>
+    <div class="cal-day"><div class="day-num">12</div></div>
+
+    <!-- Week 3 (current) -->
+    <div class="cal-day"><div class="day-num">13</div>
+      <div class="cal-event blue">Call proveedor</div>
+    </div>
+    <div class="cal-day today"><div class="day-num">14</div>
+      <div class="cal-event accent">Sprint planning</div>
+      <div class="cal-event purple">1:1 con Aurora</div>
+    </div>
+    <div class="cal-day"><div class="day-num">15</div>
+      <div class="cal-event green">Deadline creativos</div>
+    </div>
+    <div class="cal-day"><div class="day-num">16</div></div>
+    <div class="cal-day"><div class="day-num">17</div>
+      <div class="cal-event blue">Weekly review</div>
+    </div>
+    <div class="cal-day"><div class="day-num">18</div></div>
+    <div class="cal-day"><div class="day-num">19</div></div>
+
+    <!-- Week 4 -->
+    <div class="cal-day"><div class="day-num">20</div>
+      <div class="cal-event accent">Reunión equipo</div>
+    </div>
+    <div class="cal-day"><div class="day-num">21</div></div>
+    <div class="cal-day"><div class="day-num">22</div>
+      <div class="cal-event purple">Review ventas</div>
+    </div>
+    <div class="cal-day"><div class="day-num">23</div></div>
+    <div class="cal-day"><div class="day-num">24</div>
+      <div class="cal-event green">Cierre mes</div>
+    </div>
+    <div class="cal-day"><div class="day-num">25</div></div>
+    <div class="cal-day"><div class="day-num">26</div></div>
+
+    <!-- Week 5 -->
+    <div class="cal-day"><div class="day-num">27</div></div>
+    <div class="cal-day"><div class="day-num">28</div>
+      <div class="cal-event blue">Inicio mayo</div>
+    </div>
+    <div class="cal-day"><div class="day-num">29</div></div>
+    <div class="cal-day"><div class="day-num">30</div></div>
+    <div class="cal-day" style="opacity:0.4;"><div class="day-num">1</div></div>
+    <div class="cal-day" style="opacity:0.4;"><div class="day-num">2</div></div>
+    <div class="cal-day" style="opacity:0.4;"><div class="day-num">3</div></div>
+  </div>
+
+  <!-- Features -->
+  <h3 style="margin-bottom:16px;">Funcionalidades clave</h3>
+  <div class="grid-3">
+    <div class="card">
+      <h3>📅 Vistas multiples</h3>
+      <p>Dia, Semana, Mes. Vista de agenda (lista). Drag & drop para mover eventos entre dias/horas.</p>
+    </div>
+    <div class="card">
+      <h3>🎥 Google Meet</h3>
+      <p>Crear evento con link de Google Meet automatico. Integracion via Google Calendar API. Un click para unirse.</p>
+    </div>
+    <div class="card">
+      <h3>🔗 Tareas vinculadas</h3>
+      <p>Los deadlines de Tareas aparecen automaticamente. Crear tarea desde el calendario. Colores por tipo (reunion, deadline, evento).</p>
+    </div>
+    <div class="card">
+      <h3>👥 Calendario de equipo</h3>
+      <p>Ver disponibilidad del equipo. Filtrar por persona. Calendarios superpuestos para encontrar huecos.</p>
+    </div>
+    <div class="card">
+      <h3>🔔 Recordatorios</h3>
+      <p>Notificacion web 15 min antes. Configurable por evento. Integrado con el sistema de notificaciones del Chat.</p>
+    </div>
+    <div class="card">
+      <h3>🔄 Sync bidireccional</h3>
+      <p>Eventos de Google Calendar se muestran en Grand Line y viceversa. El usuario no tiene que duplicar info.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Enfoque tecnico</h3>
+    <p style="margin-top:8px;">
+      <strong style="color:var(--text);">API:</strong> Google Calendar API v3. OAuth2 ya configurado en Grand Line (Firebase Auth con Google). Scopes: `calendar.events`, `calendar.readonly`.<br><br>
+      <strong style="color:var(--text);">Almacenamiento:</strong> Firestore para eventos internos (no de Google). Merge con eventos de Google en el frontend.<br><br>
+      <strong style="color:var(--text);">UI:</strong> FullCalendar.js o construccion custom con CSS Grid. La vista de mes es un grid 7 columnas, semana es 7 columnas con filas de horas.<br><br>
+      <strong style="color:var(--text);">Google Meet:</strong> Al crear evento con tipo "videollamada", se usa `conferenceDataVersion: 1` en la API para generar link automatico.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: SEARCH -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-search" class="section">
+  <h2 class="section-title">Busqueda Global</h2>
+  <p class="section-subtitle">⌘K para buscar en todo: tareas, docs, chat, archivos, modulos, personas</p>
+
+  <!-- Search Preview -->
+  <div class="search-overlay-demo">
+    <div class="search-modal">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input type="text" value="garantias lucent" readonly>
+        <span class="kbd">ESC</span>
+      </div>
+      <div class="search-results">
+        <div class="search-result-group">
+          <div class="group-label">Documentos</div>
+          <div class="search-result-item">
+            <div class="result-icon">📄</div>
+            <div class="result-text">
+              <div class="title">SOP <strong>Garantias</strong></div>
+              <div class="subtitle">Procesos > SOP Garantias — editado hace 2 dias</div>
+            </div>
+          </div>
+        </div>
+        <div class="search-result-group">
+          <div class="group-label">Chat</div>
+          <div class="search-result-item">
+            <div class="result-icon">💬</div>
+            <div class="result-text">
+              <div class="title">"3 casos pendientes de <strong>Lucent</strong>, todos por dano..."</div>
+              <div class="subtitle">#equipo — Alejandra, hace 2 horas</div>
+            </div>
+          </div>
+          <div class="search-result-item">
+            <div class="result-icon">💬</div>
+            <div class="result-text">
+              <div class="title">"Reposiciones de <strong>garantias</strong> llegan jueves"</div>
+              <div class="subtitle">#equipo — Aurora, hace 1 hora</div>
+            </div>
+          </div>
+        </div>
+        <div class="search-result-group">
+          <div class="group-label">Tareas</div>
+          <div class="search-result-item">
+            <div class="result-icon">✅</div>
+            <div class="result-text">
+              <div class="title">Procesar <strong>garantias</strong> semana 15 — <strong>Lucent</strong></div>
+              <div class="subtitle">En progreso — asignado a Alejandra</div>
+            </div>
+          </div>
+        </div>
+        <div class="search-result-group">
+          <div class="group-label">Modulos</div>
+          <div class="search-result-item">
+            <div class="result-icon">📊</div>
+            <div class="result-text">
+              <div class="title">Dashboard <strong>Lucent</strong> — Colombia</div>
+              <div class="subtitle">Wheel > Colombia > Lucent</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <h3 style="margin-bottom:16px;">Como funciona</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h3>⌨️ Activacion</h3>
+      <p>
+        <strong style="color:var(--text);">⌘K (Mac) / Ctrl+K (Windows)</strong> — abre el modal de busqueda global en cualquier parte de la app.<br><br>
+        Tambien hay un icono de busqueda en el sidebar que abre el mismo modal. Siempre accesible, sin importar en que modulo estes.
+      </p>
+    </div>
+    <div class="card">
+      <h3>🔍 Alcance de busqueda</h3>
+      <p>
+        Busca en paralelo en todas las fuentes:<br>
+        • <strong style="color:var(--text);">Docs</strong> — titulo y contenido<br>
+        • <strong style="color:var(--text);">Chat</strong> — mensajes y archivos<br>
+        • <strong style="color:var(--text);">Tareas</strong> — titulo, descripcion, comentarios<br>
+        • <strong style="color:var(--text);">Modulos</strong> — navegar a cualquier seccion<br>
+        • <strong style="color:var(--text);">Personas</strong> — buscar por nombre de equipo
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>Enfoque tecnico</h3>
+    <p style="margin-top:8px;">
+      <strong style="color:var(--text);">Indexado:</strong> Firestore full-text search tiene limitaciones. Dos opciones:<br>
+      &nbsp;&nbsp;1. <strong>Algolia</strong> — search-as-a-service, rapido, faceted search. Sync con Cloud Functions.<br>
+      &nbsp;&nbsp;2. <strong>Typesense</strong> — open source, self-hosted en Railway. Sin costo de licencia.<br><br>
+      <strong style="color:var(--text);">Recomendacion:</strong> Empezar con busqueda basica (Firestore queries + client-side filter). Migrar a Typesense cuando el volumen crezca.<br><br>
+      <strong style="color:var(--text);">UX:</strong> Resultados agrupados por tipo (como en el mockup). Navegacion con flechas del teclado. Enter para ir al resultado. Busqueda debounced (300ms).
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: ARCHITECTURE -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-architecture" class="section">
+  <h2 class="section-title">Arquitectura Tecnica</h2>
+  <p class="section-subtitle">Stack, base de datos, real-time, y como todo se conecta</p>
+
+  <!-- Architecture Layers -->
+  <div class="arch-diagram">
+    <div class="arch-layer">
+      <div class="arch-layer-label">Frontend (Next.js 16 + React 19)</div>
+      <div class="arch-nodes">
+        <div class="arch-node" style="border-color:var(--blue);"><span class="node-icon">📊</span> Analytics Modules</div>
+        <div class="arch-node" style="border-color:var(--yellow);"><span class="node-icon">⚡</span> Operation Modules</div>
+        <div class="arch-node" style="border-color:var(--cyan);"><span class="node-icon">💬</span> Workspace Modules</div>
+        <div class="arch-node" style="border-color:var(--indigo);"><span class="node-icon">🔍</span> Global Search</div>
+      </div>
+    </div>
+
+    <div class="arch-connector">↕</div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-label">API Layer</div>
+      <div class="arch-nodes">
+        <div class="arch-node"><span class="node-icon">🌐</span> Next.js API Routes (REST)</div>
+        <div class="arch-node"><span class="node-icon">🔌</span> WebSocket Server (Chat real-time)</div>
+        <div class="arch-node"><span class="node-icon">🔄</span> Y.js Server (Docs collab)</div>
+        <div class="arch-node"><span class="node-icon">🔔</span> FCM Push Notifications</div>
+      </div>
+    </div>
+
+    <div class="arch-connector">↕</div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-label">Data Layer</div>
+      <div class="arch-nodes">
+        <div class="arch-node" style="border-color:var(--yellow);"><span class="node-icon">🔥</span> Firestore (Primary DB)</div>
+        <div class="arch-node" style="border-color:var(--green);"><span class="node-icon">📁</span> Firebase Storage (Files)</div>
+        <div class="arch-node" style="border-color:var(--purple);"><span class="node-icon">🔐</span> Firebase Auth</div>
+        <div class="arch-node" style="border-color:var(--cyan);"><span class="node-icon">🔎</span> Typesense (Search Index)</div>
+      </div>
+    </div>
+
+    <div class="arch-connector">↕</div>
+
+    <div class="arch-layer">
+      <div class="arch-layer-label">External Services</div>
+      <div class="arch-nodes">
+        <div class="arch-node"><span class="node-icon">📘</span> Meta Graph API</div>
+        <div class="arch-node"><span class="node-icon">🛍️</span> Shopify API</div>
+        <div class="arch-node"><span class="node-icon">📅</span> Google Calendar API</div>
+        <div class="arch-node"><span class="node-icon">💳</span> Stripe</div>
+        <div class="arch-node"><span class="node-icon">🤖</span> AI APIs (Gemini/OpenAI/Claude)</div>
+        <div class="arch-node"><span class="node-icon">🚂</span> Railway (Pipeline API)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database Schema -->
+  <h3 style="margin-bottom:16px;">Esquema de Firestore (nuevas colecciones)</h3>
+  <table class="info-table">
+    <thead>
+      <tr>
+        <th>Coleccion</th>
+        <th>Documento</th>
+        <th>Campos clave</th>
+        <th>Modulo</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code style="color:var(--cyan);">channels/{channelId}</code></td>
+        <td>Canal de chat</td>
+        <td>name, type (public/private/dm), members[], team_id, created_at</td>
+        <td><span class="badge badge-cyan">Chat</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--cyan);">channels/{id}/messages/{msgId}</code></td>
+        <td>Mensaje</td>
+        <td>text, author_uid, timestamp, attachments[], thread_id, reactions{}</td>
+        <td><span class="badge badge-cyan">Chat</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--teal);">docs/{docId}</code></td>
+        <td>Documento</td>
+        <td>title, content (TipTap JSON), parent_id, team_id, created_by, icon, cover</td>
+        <td><span class="badge" style="background:rgba(20,184,166,0.15);color:var(--teal);">Docs</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--teal);">docs/{id}/versions/{vId}</code></td>
+        <td>Version</td>
+        <td>content, edited_by, timestamp</td>
+        <td><span class="badge" style="background:rgba(20,184,166,0.15);color:var(--teal);">Docs</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--pink);">events/{eventId}</code></td>
+        <td>Evento</td>
+        <td>title, start, end, all_day, attendees[], google_event_id, meet_link, team_id</td>
+        <td><span class="badge badge-pink">Calendar</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--indigo);">search_index/{id}</code></td>
+        <td>Indice</td>
+        <td>type (doc/msg/task), title, body_preview, source_id, team_id, updated_at</td>
+        <td><span class="badge" style="background:rgba(99,102,241,0.15);color:var(--indigo);">Search</span></td>
+      </tr>
+      <tr>
+        <td><code style="color:var(--blue);">notifications/{uid}/items/{nId}</code></td>
+        <td>Notificacion</td>
+        <td>type, title, body, source_url, read, timestamp</td>
+        <td>Global</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Multi-tenant -->
+  <div class="card" style="margin-bottom:32px;">
+    <h3>Multi-tenant (sin cambios)</h3>
+    <p style="margin-top:8px;">
+      Todas las nuevas colecciones usan <code style="color:var(--accent);">team_id</code> como campo de scope. El patron <code style="color:var(--accent);">effectiveUid = profile?.team_id || user?.uid</code> se mantiene identico.<br><br>
+      Security Rules de Firestore validan que el usuario pertenezca al team antes de leer/escribir. Channels privados validan membership adicional.
+    </p>
+  </div>
+
+  <!-- WebSocket Architecture -->
+  <h3 style="margin-bottom:16px;">WebSocket para Chat en tiempo real</h3>
+  <div class="grid-2">
+    <div class="card">
+      <h3>Opcion A: Server dedicado en Railway</h3>
+      <p>
+        Node.js + Socket.io corriendo en Railway (~$5/mes). Ventajas: sin limites de Vercel (serverless no soporta WS persistentes). Desventaja: otro servicio que mantener.<br><br>
+        <span class="badge badge-green">Recomendado</span>
+      </p>
+    </div>
+    <div class="card">
+      <h3>Opcion B: Firestore real-time listeners</h3>
+      <p>
+        Sin WebSocket server. Cada cliente escucha <code>onSnapshot</code> en la coleccion de mensajes. Ventajas: cero infra adicional. Desventaja: mas reads de Firestore, mayor latencia (~500ms vs ~50ms).
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>Recomendacion: Enfoque hibrido</h3>
+    <p style="margin-top:8px;">
+      <strong style="color:var(--text);">Fase 1 (MVP):</strong> Firestore real-time listeners. Sin WebSocket. Funciona perfecto para equipos pequenos (&lt;20 personas). Zero infra adicional. Listo en 1 semana.<br><br>
+      <strong style="color:var(--text);">Fase 2 (Scale):</strong> Migrar a WebSocket cuando el volumen de mensajes justifique. El frontend no cambia mucho — solo el hook de conexion.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<!-- TAB: ROADMAP -->
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-roadmap" class="section">
+  <h2 class="section-title">Roadmap de Implementacion</h2>
+  <p class="section-subtitle">De la arquitectura al producto funcional, fase por fase</p>
+
+  <!-- Phase 1 -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--accent);color:white;padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;">FASE 1</div>
+      <h3>Busqueda Global + Navegacion</h3>
+      <span class="badge badge-green">Rapido — 2-3 dias</span>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <h3>⌘K Modal</h3>
+        <p>Componente global de busqueda. Se monta en el layout raiz. Escucha ⌘K / Ctrl+K. Busca en navegacion y modulos primero (statico).</p>
+      </div>
+      <div class="card">
+        <h3>Sidebar reorganizado</h3>
+        <p>Reorganizar NAV_ITEMS en 3 categorias: Analytics, Operaciones, Workspace. Agregar labels de seccion. Badge de notificaciones.</p>
+      </div>
+      <div class="card">
+        <h3>Icono busqueda + shortcut</h3>
+        <p>Agregar barra de busqueda visual en el sidebar. El shortcut abre el mismo modal. Feedback visual inmediato.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 2 -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--purple);color:white;padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;">FASE 2</div>
+      <h3>Docs / Wiki</h3>
+      <span class="badge badge-yellow">Medio — 1-2 semanas</span>
+    </div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">01</div>
+        <h4>Instalar TipTap</h4>
+        <p>@tiptap/react, @tiptap/starter-kit, extensiones de bloques. Configurar editor basico.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">02</div>
+        <h4>CRUD de documentos</h4>
+        <p>Crear, leer, editar, eliminar docs en Firestore. Jerarquia con parent_id. Tree view en sidebar.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">03</div>
+        <h4>Bloques custom</h4>
+        <p>Tablas, callouts, listas de tareas, embeds de imagenes/archivos. Slash commands (/).</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">04</div>
+        <h4>Drag & drop + templates</h4>
+        <p>Reordenar bloques. Plantillas predefinidas (SOP, meeting notes). Compartir docs.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 3 -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--cyan);color:white;padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;">FASE 3</div>
+      <h3>Chat</h3>
+      <span class="badge badge-yellow">Medio — 1-2 semanas</span>
+    </div>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">01</div>
+        <h4>Canales + mensajes</h4>
+        <p>CRUD canales. Enviar/recibir mensajes via Firestore onSnapshot. UI basica de chat.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">02</div>
+        <h4>DMs + presencia</h4>
+        <p>Mensajes directos. Indicador online/offline via Firestore presence. Unread counts.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">03</div>
+        <h4>Archivos + audio</h4>
+        <p>Upload a Firebase Storage. Preview inline. Grabacion de voz con MediaRecorder API.</p>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">
+        <div class="step-num">04</div>
+        <h4>Notificaciones push</h4>
+        <p>Firebase Cloud Messaging. Service Worker. Config por canal (all/mentions/mute).</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 4 -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--pink);color:white;padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;">FASE 4</div>
+      <h3>Calendario</h3>
+      <span class="badge badge-green">Rapido — 3-5 dias</span>
+    </div>
+    <div class="grid-3">
+      <div class="card">
+        <h3>Vista mes/semana/dia</h3>
+        <p>CSS Grid calendario. Crear/editar/eliminar eventos. Drag & drop entre dias. Color por tipo.</p>
+      </div>
+      <div class="card">
+        <h3>Google Calendar sync</h3>
+        <p>OAuth2 + Google Calendar API. Leer eventos existentes. Crear eventos con Meet link. Sync bidireccional.</p>
+      </div>
+      <div class="card">
+        <h3>Integraciones</h3>
+        <p>Deadlines de Tareas en calendario. Notificaciones de recordatorio. Calendario de equipo superpuesto.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 5 -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--text-muted);color:white;padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;">FASE 5</div>
+      <h3>Integraciones cruzadas + Search completo</h3>
+      <span class="badge badge-purple">Medio — 1 semana</span>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Busqueda full-text</h3>
+        <p>Indexar docs, mensajes, tareas en Typesense. Resultados agrupados por tipo. Faceted search. Ranking por relevancia.</p>
+      </div>
+      <div class="card">
+        <h3>Links cruzados</h3>
+        <p>Mencionar @doc, @tarea, @canal desde cualquier modulo. Previews enriquecidos. Notificaciones por mencion. VEGA AI respondiendo en canales.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Future -->
+  <div style="margin-bottom:40px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <div style="background:var(--bg-hover);color:var(--text-dim);padding:4px 14px;border-radius:8px;font-size:0.75rem;font-weight:600;border:1px solid var(--border);">FUTURO</div>
+      <h3>CRM + WhatsApp + Banking</h3>
+    </div>
+    <div class="grid-3">
+      <div class="card" style="opacity:0.7;">
+        <h3>CRM + WhatsApp</h3>
+        <p>WhatsApp Business API. Agentes de VEGA AI respondiendo automaticamente por marca. Pipeline de ventas.</p>
+      </div>
+      <div class="card" style="opacity:0.7;">
+        <h3>Banking</h3>
+        <p>Conexion a Bancolombia/Mercury APIs. Saldo en tiempo real. Reconciliacion automatica con Berry.</p>
+      </div>
+      <div class="card" style="opacity:0.7;">
+        <h3>SaaS Marketplace</h3>
+        <p>Empaquetar Grand Line como producto SaaS para otros dropshippers. Multi-workspace. Onboarding automatico.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="card" style="border-color:var(--accent);box-shadow:0 0 30px var(--accent-glow);">
+    <h3 style="color:var(--accent);">Resumen de tiempos estimados</h3>
+    <table class="info-table" style="margin-top:12px;margin-bottom:0;">
+      <thead>
+        <tr>
+          <th>Fase</th>
+          <th>Modulo</th>
+          <th>Tiempo</th>
+          <th>Dependencias</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-accent">1</span></td>
+          <td>Busqueda Global + Nav</td>
+          <td>2-3 dias</td>
+          <td>Ninguna</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-purple">2</span></td>
+          <td>Docs / Wiki</td>
+          <td>1-2 semanas</td>
+          <td>Fase 1</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-cyan">3</span></td>
+          <td>Chat</td>
+          <td>1-2 semanas</td>
+          <td>Fase 1</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-pink">4</span></td>
+          <td>Calendario</td>
+          <td>3-5 dias</td>
+          <td>Google OAuth</td>
+        </tr>
+        <tr>
+          <td><span class="badge" style="background:var(--bg-hover);color:var(--text-dim);">5</span></td>
+          <td>Integraciones + Search full</td>
+          <td>1 semana</td>
+          <td>Fases 2-4</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════════════════ -->
+
+<script>
+function showTab(tabId) {
+  // Hide all sections
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  // Deactivate all tabs
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  // Show selected
+  document.getElementById('tab-' + tabId).classList.add('active');
+  // Activate button
+  event.target.classList.add('active');
+  // Scroll to top
+  window.scrollTo({ top: 200, behavior: 'smooth' });
+}
+</script>
+
+</body>
+</html>

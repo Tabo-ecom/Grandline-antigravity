@@ -5,6 +5,7 @@ import { getAllOrderFiles, getAppData, setAppData } from '@/lib/firebase/firesto
 import { fetchExchangeRates, ExchangeRates, DEFAULT_RATES, toCOP, isMatchingCountry, getCurrencyForCountry, normalizeCountry, getOfficialCountryName } from '@/lib/utils/currency';
 import { getAdSettings, AdSpend, listAllAdSpends, getCampaignMappings, CampaignMapping, deduplicateAdSpends } from '@/lib/services/marketing';
 import { DropiOrder, calculateKPIs, KPIResults, calculateProjection, ProjectionResult, analyzeFreightByCountry, FreightAnalysisResult } from '@/lib/calculations/kpis';
+import { getCatalog, CatalogProduct } from '@/lib/services/productCatalog';
 import { parseDropiDate, getLocalDateKey, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
 import { isEntregado, isCancelado, isTransit, isDevolucion, isPendienteConfirmacion } from '@/lib/utils/status';
 import { getProductGroups, ProductGroup, getEffectiveProductId, getProductGroup } from '@/lib/services/productGroups';
@@ -101,6 +102,9 @@ export interface DashboardDataHook {
     adsByCountryProduct: Record<string, Record<string, number>>;
     // Freight Analysis
     freightAnalysis: Record<string, FreightAnalysisResult>;
+    // Brand filter
+    brandProductIds: Set<string> | null;
+    catalogProducts: CatalogProduct[];
 }
 
 export function useDashboardData(): DashboardDataHook {
@@ -113,6 +117,7 @@ export function useDashboardData(): DashboardDataHook {
     const [adSpends, setAdSpends] = useState<AdSpend[]>([]);
     const [campaignMappings, setCampaignMappings] = useState<CampaignMapping[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+    const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
     const [projectionSettings, setProjectionSettings] = useState<any>(null);
     const [savingProjection, setSavingProjection] = useState(false);
     const [priceCorrections, setPriceCorrections] = useState<PriceCorrection[]>([]);
@@ -123,7 +128,8 @@ export function useDashboardData(): DashboardDataHook {
         startDateCustom, setStartDateCustom,
         endDateCustom, setEndDateCustom,
         selectedCountry: country, setSelectedCountry: setCountry,
-        selectedProduct: product, setSelectedProduct: setProduct
+        selectedProduct: product, setSelectedProduct: setProduct,
+        selectedBrand: brand,
     } = useGlobalFilters();
 
     // Load Initial Data (with session cache)
@@ -149,14 +155,15 @@ export function useDashboardData(): DashboardDataHook {
             setLoading(true);
             try {
                 // Parallel fetch — uses effectiveUid (team_id) so team members share data
-                const [ordersData, rates, ads, mappings, groups, savedSettings, corrections] = await Promise.all([
+                const [ordersData, rates, ads, mappings, groups, savedSettings, corrections, catalogData] = await Promise.all([
                     getAllOrderFiles(uid),
                     fetchExchangeRates(),
                     listAllAdSpends(uid),
                     getCampaignMappings(uid),
                     getProductGroups(uid),
                     getAppData('projection_settings', uid),
-                    getPriceCorrections(uid)
+                    getPriceCorrections(uid),
+                    getCatalog(uid)
                 ]);
 
                 // Flatten orders and attach country from each file
@@ -322,6 +329,7 @@ export function useDashboardData(): DashboardDataHook {
                 setProductGroups(groups);
                 setProjectionSettings(savedSettings);
                 setPriceCorrections(corrections);
+                setCatalogProducts(catalogData?.products || []);
             } catch (err: any) {
                 console.error("Error loading dashboard data:", err);
                 setError(err.message || 'Error loading dashboard data');
@@ -344,7 +352,29 @@ export function useDashboardData(): DashboardDataHook {
         return { startDate: start, endDate: end };
     }, [dateRange, startDateCustom, endDateCustom]);
 
-    // 2. Filter Orders
+    // 2. Brand product IDs — precompute ALL possible IDs that belong to the selected brand
+    //    Includes: Dropi IDs, Dropi names, catalog names, AND product group IDs that contain any of those
+    const brandProductIds = useMemo(() => {
+        if (brand === 'Todos' || !brand || catalogProducts.length === 0) return null;
+        const ids = new Set<string>();
+        catalogProducts.filter(cp => cp.brand_id === brand).forEach(cp => {
+            cp.dropiProductIds.forEach((id: string) => ids.add(id));
+            cp.dropiNames.forEach((n: string) => { ids.add(n); ids.add(n.toLowerCase().trim()); });
+            if (cp.name) { ids.add(cp.name); ids.add(cp.name.toLowerCase().trim()); }
+        });
+        // Also resolve to product group IDs — if any Dropi ID belongs to a group, add that group ID
+        productGroups.forEach(g => {
+            const hasMatch = g.productIds.some(pid => ids.has(pid) || ids.has(pid.toLowerCase().trim()));
+            if (hasMatch) {
+                ids.add(g.id);
+                ids.add(g.name);
+                ids.add(g.name.toLowerCase().trim());
+            }
+        });
+        return ids.size > 0 ? ids : null;
+    }, [brand, catalogProducts, productGroups]);
+
+    // 3. Filter Orders
     const { filteredOrders, invalidDatesCount } = useMemo(() => {
         let invalid = 0;
         const filtered = rawOrders.filter(o => {
@@ -358,6 +388,14 @@ export function useDashboardData(): DashboardDataHook {
                 if (effectiveId !== product && productGroup?.id !== product && o.PRODUCTO !== product) return false;
             }
 
+            // Brand Filter — check original Dropi ID, normalized ID, and product name
+            if (brandProductIds) {
+                const pid = o.PRODUCTO_ID?.toString() || '';
+                const origPid = (o as any).ORIGINAL_PRODUCTO_ID || '';
+                const pname = (o.PRODUCTO || '').toLowerCase().trim();
+                if (!brandProductIds.has(pid) && !brandProductIds.has(origPid) && !brandProductIds.has(pname)) return false;
+            }
+
             // Date Filter
             const d = parseDropiDate(o.FECHA);
             if (!d) {
@@ -369,7 +407,7 @@ export function useDashboardData(): DashboardDataHook {
         });
 
         return { filteredOrders: filtered, invalidDatesCount: invalid };
-    }, [rawOrders, country, product, dateLimits, productGroups]);
+    }, [rawOrders, country, product, brand, brandProductIds, dateLimits, productGroups]);
 
     // 3. Resolve Ads (dedup + campaign mapping + ID conversion - matching Log Pose)
     const resolvedAds = useMemo(() => {
@@ -455,9 +493,16 @@ export function useDashboardData(): DashboardDataHook {
             // Product Filter
             if (product !== 'Todos' && h.productId !== product) return false;
 
+            // Brand Filter — check if the ad's mapped product belongs to the brand
+            if (brandProductIds && h.productId) {
+                const pid = h.productId;
+                const pname = (h as any).productName?.toLowerCase?.().trim() || '';
+                if (!brandProductIds.has(pid) && !brandProductIds.has(pname)) return false;
+            }
+
             return true;
         });
-    }, [resolvedAds, dateLimits, country, product]);
+    }, [resolvedAds, dateLimits, country, product, brandProductIds]);
 
     // 4. Available Countries & Products
     const availableCountries = useMemo(() => {
@@ -488,6 +533,13 @@ export function useDashboardData(): DashboardDataHook {
         const products = Array.from(productMap.entries()).map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
         return [{ id: 'Todos', label: 'Todos' }, ...products];
     }, [rawOrders, productGroups, country]);
+
+    // 4.5 Safety: reset product filter if stored value doesn't match any available product
+    useEffect(() => {
+        if (product !== 'Todos' && availableProducts.length > 1 && !availableProducts.some(p => p.id === product)) {
+            setProduct('Todos');
+        }
+    }, [availableProducts, product, setProduct]);
 
     // 5. Aggregate Ads by Country and Product - ALIGNED WITH LOG POSE
     const adsByCountryProduct = useMemo(() => {
@@ -703,7 +755,7 @@ export function useDashboardData(): DashboardDataHook {
                     const returnBufferEnabled = cSettings?.return_buffer_enabled !== false; // default true
                     const pBuffer = returnBufferEnabled ? (cSettings?.buffer ?? 1.4) : 1.0;
 
-                    const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 0);
+                    const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 15);
                     const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: 0 }, { [pid]: pPendCancel }); // Ads handled at day level or split
                     totalDayProj += pproj.reduce((s, p) => s + p.utilidad, 0);
                 });
@@ -715,14 +767,15 @@ export function useDashboardData(): DashboardDataHook {
 
         const trends = Object.entries(dailyData).map(([date, data]) => {
             const [y, m, d] = date.split('-');
-            return { date, label: `${d}/${m}`, name: `${d}/${m}`, ...data };
+            const cpa = data.orders > 0 ? data.ads / data.orders : 0;
+            return { date, label: `${d}/${m}`, name: `${d}/${m}`, ...data, cpa };
         }).sort((a, b) => a.date.localeCompare(b.date));
 
         return { dailySalesData: trends };
     }, [filteredOrders, filteredAds, dateLimits, loading, exchangeRates, projectionSettings]);
 
     // 9. Metrics By Country (kept as is for the table)
-    const { metricsByCountry } = useMemo(() => {
+    const { metricsByCountry, totalProjectedProfit } = useMemo(() => {
         if (loading) return { metricsByCountry: [], totalProjectedProfit: 0 };
 
         const countriesList = availableCountries.filter(c => c !== 'Todos');
@@ -754,23 +807,36 @@ export function useDashboardData(): DashboardDataHook {
                 const returnBufferEnabled = cSettings?.return_buffer_enabled !== false; // default true
                 const pBuffer = returnBufferEnabled ? (cSettings?.buffer ?? 1.4) : 1.0;
 
-                const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 0);
+                const pPendCancel = pOverrides[`${pid}_pend_cancel`] !== undefined ? pOverrides[`${pid}_pend_cancel`] : (cSettings?.pending_cancel_percent ?? 15);
                 const pproj = calculateProjection(pOrders, 'PRODUCTO_ID', { [pid]: pDeliveryRate }, pBuffer, { [pid]: pAds }, { [pid]: pPendCancel });
                 const baseProj = pproj.reduce((s, p) => s + p.utilidad, 0);
                 // If no orders but has ads, projected profit is negative (pure loss)
                 const finalProj = pOrders.length === 0 ? -pAds : baseProj;
 
+                const pTransitCount = new Set(pOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size;
+                const pDevCount = new Set(pOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
                 return {
                     id: pid,
                     name: resolveProductName(pid, rawOrders, campaignMappings, productGroups),
                     orderCount: pkpi.n_ord,
+                    deliveredCount: pkpi.n_ent,
+                    cancelCount: pkpi.n_can,
+                    cancelReasons: pkpi.cancelReasons,
+                    transitCount: pTransitCount,
+                    returnCount: pDevCount,
                     deliveryRate: pkpi.tasa_ent,
                     cancelRate: pkpi.tasa_can,
-                    transitRate: pkpi.n_nc > 0 ? (new Set(pOrders.filter(o => isTransit(o.ESTATUS)).map(o => o.ID)).size / pkpi.n_nc) * 100 : 0,
-                    returnRate: pkpi.n_nc > 0 ? (new Set(pOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size / pkpi.n_nc) * 100 : 0,
+                    transitRate: pkpi.n_nc > 0 ? (pTransitCount / pkpi.n_nc) * 100 : 0,
+                    returnRate: pkpi.n_nc > 0 ? (pDevCount / pkpi.n_nc) * 100 : 0,
                     profit: pkpi.u_real,
                     adSpend: pkpi.g_ads,
                     netSales: pkpi.fact_neto,
+                    factDespachada: pkpi.fact_despachada,
+                    ingReal: pkpi.ing_real,
+                    cpr: pkpi.cpr,
+                    flEnt: pkpi.fl_ent,
+                    flDev: pkpi.fl_dev,
+                    flTra: pkpi.fl_tra,
                     roas: pkpi.roas,
                     cpa: pkpi.n_nc > 0 ? pkpi.g_ads / pkpi.n_nc : 0,
                     projectedProfit: finalProj,
@@ -785,15 +851,25 @@ export function useDashboardData(): DashboardDataHook {
                 name: cntryName,
                 currency: getCurrencyForCountry(cntryName),
                 orderCount: cKpis.n_ord,
+                deliveredCount: cKpis.n_ent,
+                cancelCount: cKpis.n_can,
+                cancelReasons: cKpis.cancelReasons,
+                transitCount: cKpis.n_tra,
+                returnCount: cKpis.n_dev,
                 deliveryRate: cKpis.tasa_ent,
                 cancelRate: cKpis.tasa_can,
                 transitRate: cKpis.n_tra > 0 ? (cKpis.n_tra / cKpis.n_nc) * 100 : 0,
                 returnRate: cKpis.n_dev > 0 ? (cKpis.n_dev / cKpis.n_nc) * 100 : 0,
                 pendingCount: cKpis.n_pend,
                 pendingPercent: cKpis.perc_pend,
-                pendingCancelConfig: projectionSettings?.countries?.[cntryName]?.pending_cancel_percent ?? 0,
-                cancelCount: cKpis.n_can,
+                pendingCancelConfig: projectionSettings?.countries?.[cntryName]?.pending_cancel_percent ?? 15,
                 sales: cKpis.fact_neto,
+                factDespachada: cKpis.fact_despachada,
+                ingReal: cKpis.ing_real,
+                cpr: cKpis.cpr,
+                flEnt: cKpis.fl_ent,
+                flDev: cKpis.fl_dev,
+                flTra: cKpis.fl_tra,
                 adSpend: cKpis.g_ads,
                 profit: cKpis.u_real,
                 projectedProfit: productMetrics.reduce((s, p) => s + p.projectedProfit, 0),
@@ -905,7 +981,7 @@ export function useDashboardData(): DashboardDataHook {
         adPlatformMetrics,
         dailySalesData: alignedDailySalesData,
         productPerformanceData,
-        projectedProfit: chartProjectedProfit,
+        projectedProfit: totalProjectedProfit,
         metricsByCountry,
         unmappedAdSpend: 0,
         rawDatesSample: [],
@@ -952,5 +1028,7 @@ export function useDashboardData(): DashboardDataHook {
         productGroups,
         adsByCountryProduct,
         freightAnalysis,
+        brandProductIds,
+        catalogProducts,
     };
 }

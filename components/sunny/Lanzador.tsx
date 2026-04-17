@@ -129,7 +129,7 @@ export const Lanzador: React.FC = () => {
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
     const [metaToken, setMetaToken] = useState<string | null>(null);
     const [ttToken, setTtToken] = useState<string | null>(null);
-    const [platform, setPlatform] = useState<'facebook' | 'tiktok'>('facebook');
+    const [platform, setPlatform] = useState<'facebook' | 'tiktok' | 'both'>('facebook');
     const [campaignsUsed, setCampaignsUsed] = useState(0);
 
     const userPlan = profile?.plan || 'free';
@@ -366,11 +366,14 @@ export const Lanzador: React.FC = () => {
             }
         }
 
-        if (platform === 'facebook' && !metaToken) {
+        const launchFb = platform === 'facebook' || platform === 'both';
+        const launchTt = platform === 'tiktok' || platform === 'both';
+
+        if (launchFb && !metaToken) {
             setLaunchError('No hay token de Meta configurado. Ve a Ajustes y conecta tu cuenta de Facebook.');
             return;
         }
-        if (platform === 'tiktok' && !ttToken) {
+        if (launchTt && !ttToken) {
             setLaunchError('No hay token de TikTok configurado. Ve a Ajustes y conecta tu cuenta de TikTok.');
             return;
         }
@@ -383,12 +386,16 @@ export const Lanzador: React.FC = () => {
             .map(id => adAccounts.find(a => a.id === id && a.platform === 'tiktok'))
             .filter(Boolean);
 
-        if (platform === 'facebook' && fbAccounts.length === 0) {
+        if (launchFb && fbAccounts.length === 0) {
             setLaunchError('Selecciona al menos una cuenta publicitaria de Facebook.');
             return;
         }
-        if (platform === 'tiktok' && ttAccounts.length === 0) {
+        if (launchTt && ttAccounts.length === 0) {
             setLaunchError('Selecciona al menos una cuenta publicitaria de TikTok.');
+            return;
+        }
+        if (launchTt && copy.length > 100) {
+            setLaunchError('El copy de TikTok no puede superar 100 caracteres.');
             return;
         }
 
@@ -428,8 +435,10 @@ export const Lanzador: React.FC = () => {
         setLaunchProgress('Preparando campaña...');
 
         try {
+            let combinedResults: { campaignId: string; adSetId: string; adId: string; accountName: string }[] = [];
+
             // ─── TikTok Launch Flow ─────────────────────────
-            if (platform === 'tiktok') {
+            if (launchTt) {
                 const token = ttToken!;
                 const allResults: (TikTokLaunchResult)[] = [];
 
@@ -485,14 +494,14 @@ export const Lanzador: React.FC = () => {
                         name: `${campaignName} - AdGroup`,
                         budgetMode: !isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
                         budget: !isCBO ? ttBudget : undefined,
-                        optimizationGoal: activeStore?.pixelId ? 'CONVERT' : 'CLICK',
+                        optimizationGoal: activeStore?.ttPixelId ? 'CONVERT' : 'CLICK',
                         billingEvent: 'OCPM',
                         bidType: 'BID_TYPE_NO_BID',
                         scheduleStartTime: scheduleTime,
                         locationIds: [locationId],
                         ageGroups,
                         gender: ttGender,
-                        pixelId: activeStore?.pixelId || undefined,
+                        pixelId: activeStore?.ttPixelId || undefined,
                         optimizationEvent: activeStore?.pixelId ? 'COMPLETE_PAYMENT' : undefined,
                     });
 
@@ -526,9 +535,7 @@ export const Lanzador: React.FC = () => {
                     allResults.push({ campaignId, adGroupId, adId: lastAdId, accountName: acc.name || advertiserId });
                 }
 
-                setLaunchResults(allResults.map(r => ({ campaignId: r.campaignId, adSetId: r.adGroupId, adId: r.adId, accountName: r.accountName })));
-                setLaunchProgress('');
-                setIsLaunched(true);
+                const ttLaunchResults = allResults.map(r => ({ campaignId: r.campaignId, adSetId: r.adGroupId, adId: r.adId, accountName: `[TT] ${r.accountName}` }));
 
                 if (effectiveUid) {
                     for (const result of allResults) {
@@ -541,10 +548,22 @@ export const Lanzador: React.FC = () => {
                     }
                     setCampaignsUsed(prev => prev + allResults.length);
                 }
-                return;
+
+                // If TikTok only, finish here
+                if (!launchFb) {
+                    setLaunchResults(ttLaunchResults);
+                    setLaunchProgress('');
+                    setIsLaunched(true);
+                    return;
+                }
+
+                // If both, continue to Facebook with accumulated results
+                setLaunchProgress('Continuando con Facebook...');
+                combinedResults = [...ttLaunchResults];
             }
 
             // ─── Facebook Launch Flow ───────────────────────
+            if (!launchFb) { return; } // safety — shouldn't reach here
             const token = metaToken!;
             const countryCode = getCountryCode(naming.country);
             const metaBudget = getBudgetForMeta(budget.amount, budget.currency);
@@ -871,7 +890,8 @@ export const Lanzador: React.FC = () => {
                 }
             }
 
-            setLaunchResults(allLaunchResults);
+            const fbResults = allLaunchResults.map(r => ({ ...r, accountName: launchTt ? `[FB] ${r.accountName}` : r.accountName }));
+            setLaunchResults([...combinedResults, ...fbResults]);
             setLaunchProgress('');
             setIsLaunched(true);
 
@@ -998,7 +1018,7 @@ export const Lanzador: React.FC = () => {
                     </div>
                     <h2 className="text-4xl font-black italic uppercase tracking-tighter text-foreground">¡MISIÓN LANZADA!</h2>
                     <p className="text-muted text-sm font-bold uppercase tracking-widest leading-relaxed">
-                        Tu campaña <span className="text-accent">{naming.product}</span> fue creada exitosamente en {platform === 'tiktok' ? 'TikTok Ads' : 'Meta Ads'}.
+                        Tu campaña <span className="text-accent">{naming.product}</span> fue creada exitosamente en {platform === 'tiktok' ? 'TikTok Ads' : platform === 'both' ? 'Facebook + TikTok Ads' : 'Meta Ads'}.
                     </p>
                     <div className="p-4 bg-card border border-card-border rounded-2xl font-mono text-xs text-muted">
                         {campaignName}
@@ -1043,7 +1063,7 @@ export const Lanzador: React.FC = () => {
                                 ? 'bg-blue-600/20 border-blue-500/40 text-blue-400'
                                 : 'bg-card border-card-border text-muted hover:border-blue-500/20'}`}
                         >
-                            <span className="text-sm font-black">FB</span> Facebook Ads
+                            <span className="text-sm font-black">FB</span> Facebook
                         </button>
                         <button
                             onClick={() => setPlatform('tiktok')}
@@ -1051,7 +1071,15 @@ export const Lanzador: React.FC = () => {
                                 ? 'bg-pink-600/20 border-pink-500/40 text-pink-400'
                                 : 'bg-card border-card-border text-muted hover:border-pink-500/20'}`}
                         >
-                            <span className="text-sm font-black">TT</span> TikTok Ads
+                            <span className="text-sm font-black">TT</span> TikTok
+                        </button>
+                        <button
+                            onClick={() => setPlatform('both')}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${platform === 'both'
+                                ? 'bg-accent/20 border-accent/40 text-accent'
+                                : 'bg-card border-card-border text-muted hover:border-accent/20'}`}
+                        >
+                            <span className="text-sm font-black">FB+TT</span> Ambas
                         </button>
                     </div>
 
@@ -1103,16 +1131,16 @@ export const Lanzador: React.FC = () => {
                                 value={naming.strategy}
                                 onChange={e => { const s = e.target.value as NamingVariables['strategy']; setNaming(prev => ({ ...prev, strategy: s })); }}
                             >
-                                {platform === 'facebook' ? (
-                                    <>
-                                        <option value="CBO">CBO (Campaign Budget Opt)</option>
-                                        <option value="ABO">ABO (Ad Set Budget Opt)</option>
-                                        <option value="ASC">ASC (Advantage+ Shopping)</option>
-                                    </>
-                                ) : (
+                                {platform === 'tiktok' ? (
                                     <>
                                         <option value="CBO">CBO (Campaign Budget)</option>
                                         <option value="ABO">ABO (Ad Group Budget)</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        <option value="CBO">CBO (Campaign Budget Opt)</option>
+                                        <option value="ABO">ABO (Ad Set Budget Opt)</option>
+                                        {platform === 'facebook' && <option value="ASC">ASC (Advantage+ Shopping)</option>}
                                     </>
                                 )}
                             </select>
@@ -1187,8 +1215,8 @@ export const Lanzador: React.FC = () => {
                                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
                                 <p className="text-xs font-black uppercase tracking-widest text-muted italic animate-pulse">Consultando APIs de Marketing...</p>
                             </div>
-                        ) : adAccounts.filter(a => a.platform === platform).length > 0 ? (
-                            adAccounts.filter(a => a.platform === platform).map((acc) => {
+                        ) : adAccounts.filter(a => platform === 'both' || a.platform === platform).length > 0 ? (
+                            adAccounts.filter(a => platform === 'both' || a.platform === platform).map((acc) => {
                                 const isSelected = selectedAccountIds.includes(acc.id);
                                 return (
                                     <button
@@ -1804,15 +1832,25 @@ export const Lanzador: React.FC = () => {
                         </div>
 
                         <div className="relative group mb-4">
+                            {(platform === 'tiktok' || platform === 'both') && (
+                                <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">
+                                    TikTok: máximo 100 caracteres para la descripción del anuncio
+                                </p>
+                            )}
                             <textarea
-                                placeholder="Escribe el copy principal aquí..."
-                                className="w-full bg-background border border-card-border rounded-2xl p-5 text-sm font-medium text-foreground focus:border-accent/50 outline-none transition-all placeholder:text-muted min-h-[120px] resize-none"
+                                placeholder={platform === 'tiktok' ? 'Descripción del producto (máx 100 chars)...' : 'Escribe el copy principal aquí...'}
+                                className={`w-full bg-background border rounded-2xl p-5 text-sm font-medium text-foreground focus:border-accent/50 outline-none transition-all placeholder:text-muted resize-none ${
+                                    (platform === 'tiktok' || platform === 'both') ? 'min-h-[80px]' : 'min-h-[120px]'
+                                } ${(platform === 'tiktok' || platform === 'both') && copy.length > 100 ? 'border-red-500/50' : 'border-card-border'}`}
                                 value={copy}
                                 onChange={e => setCopy(e.target.value)}
+                                maxLength={platform === 'tiktok' ? 100 : undefined}
                             />
                             <div className="absolute bottom-4 right-4 flex gap-2">
-                                <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs text-muted">
-                                    {copy.length}
+                                <div className={`flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs ${
+                                    (platform === 'tiktok' || platform === 'both') && copy.length > 100 ? 'text-red-400' : 'text-muted'
+                                }`}>
+                                    {copy.length}{(platform === 'tiktok' || platform === 'both') && '/100'}
                                 </div>
                         </div>
                         </div>

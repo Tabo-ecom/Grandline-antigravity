@@ -145,5 +145,56 @@ service cloud.firestore {
         isAdmin()
       );
     }
+
+    // ─── Docs (Wiki/Knowledge Base) ─────────────────────────
+    match /docs/{docId} {
+      allow read: if isSignedIn() && isTeamOwner(resource.data.team_id);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isTeamOwner(resource.data.team_id);
+    }
+
+    // ─── Chat Channels ─────────────────────────────────────
+    match /chat_channels/{channelId} {
+      allow read: if isSignedIn() && isTeamOwner(resource.data.team_id);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isTeamOwner(resource.data.team_id);
+    }
+
+    // ─── Chat Messages ─────────────────────────────────────
+    match /chat_messages/{msgId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        request.auth.uid == resource.data.author_uid ||
+        isAdmin()
+      );
+    }
+
+    // ─── Task Spaces ────────────────────────────────────────
+    match /task_spaces/{spaceId} {
+      allow read: if isSignedIn() && isTeamOwner(resource.data.team_id);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isTeamOwner(resource.data.team_id);
+    }
+
+    // ─── Space Tasks ─────────────────────────────────────────
+    match /space_tasks/{taskId} {
+      allow read: if isSignedIn() && isTeamOwner(resource.data.team_id);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isTeamOwner(resource.data.team_id);
+    }
+
+    // ─── FCM Tokens ─────────────────────────────────────────
+    match /fcm_tokens/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ─── Calendar Events ────────────────────────────────────
+    match /calendar_events/{eventId} {
+      allow read: if isSignedIn() && isTeamOwner(resource.data.team_id);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isTeamOwner(resource.data.team_id);
+    }
   }
 }

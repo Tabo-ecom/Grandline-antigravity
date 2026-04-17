@@ -59,13 +59,54 @@ export async function getAllOrderFiles(userId: string = '') {
         where('userId', '==', userId)
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs
-        .map(d => d.data())
-        .sort((a, b) => {
-            const ta = a.uploaded_at?.toMillis?.() || 0;
-            const tb = b.uploaded_at?.toMillis?.() || 0;
-            return tb - ta;
-        });
+    const allDocs = snapshot.docs.map(d => d.data());
+
+    // Merge chunks: group by parentId, combine orders
+    const mainDocs = new Map<string, any>();
+    const chunkDocs: any[] = [];
+
+    allDocs.forEach(d => {
+        if (d.parentId && d.chunkIndex > 0) {
+            chunkDocs.push(d);
+        } else {
+            mainDocs.set(d.id, { ...d });
+        }
+    });
+
+    // Append chunk orders to their parent
+    chunkDocs.forEach(chunk => {
+        const parent = mainDocs.get(chunk.parentId);
+        if (parent && chunk.orders) {
+            parent.orders = [...(parent.orders || []), ...chunk.orders];
+        }
+    });
+
+    return Array.from(mainDocs.values()).sort((a, b) => {
+        const ta = a.uploaded_at?.toMillis?.() || 0;
+        const tb = b.uploaded_at?.toMillis?.() || 0;
+        return tb - ta;
+    });
+}
+
+// Firestore max doc size is ~1MB. With _raw fields, orders can be large.
+// We strip _raw before saving and split into chunks if needed.
+const MAX_DOC_BYTES = 900_000; // Leave margin below 1,048,576
+
+function estimateDocSize(orders: any[]): number {
+    // Fast rough estimate: JSON.stringify a sample and extrapolate
+    if (orders.length === 0) return 0;
+    const sampleSize = Math.min(orders.length, 20);
+    const sample = orders.slice(0, sampleSize);
+    const sampleBytes = new TextEncoder().encode(JSON.stringify(sample)).length;
+    return Math.round((sampleBytes / sampleSize) * orders.length * 1.1); // 10% overhead for Firestore metadata
+}
+
+function stripRawFromOrders(orders: any[]): any[] {
+    return orders.map(o => {
+        if (!o._raw) return o;
+        const { _raw, ...rest } = o;
+        return rest;
+    });
 }
 
 export async function saveOrderFile(data: {
@@ -75,16 +116,54 @@ export async function saveOrderFile(data: {
     orderCount: number;
     orders: any[];
 }) {
+    // Strip _raw to reduce size (we already parsed all fields)
+    const cleanOrders = stripRawFromOrders(data.orders);
+
     // 1. Create a unique log entry
     const logRef = doc(collection(db, COLLECTIONS.IMPORT_LOGS));
+    const baseId = logRef.id;
 
-    // 2. Save the orders using the SAME unique ID in order_files
-    const docRef = doc(db, COLLECTIONS.ORDER_FILES, logRef.id);
-    await setDoc(docRef, {
-        ...data,
-        id: logRef.id, // Include the ID for easier management
-        uploaded_at: Timestamp.now(),
-    });
+    // 2. Check if we need to chunk
+    const estimatedSize = estimateDocSize(cleanOrders);
+
+    if (estimatedSize <= MAX_DOC_BYTES) {
+        // Single document — fits in one doc
+        const docRef = doc(db, COLLECTIONS.ORDER_FILES, baseId);
+        await setDoc(docRef, {
+            userId: data.userId,
+            fileName: data.fileName,
+            country: data.country,
+            orderCount: data.orderCount,
+            orders: cleanOrders,
+            id: baseId,
+            uploaded_at: Timestamp.now(),
+        });
+    } else {
+        // Split into chunks
+        const avgOrderBytes = estimatedSize / cleanOrders.length;
+        const ordersPerChunk = Math.max(50, Math.floor(MAX_DOC_BYTES / avgOrderBytes));
+        const chunks: any[][] = [];
+        for (let i = 0; i < cleanOrders.length; i += ordersPerChunk) {
+            chunks.push(cleanOrders.slice(i, i + ordersPerChunk));
+        }
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunkId = i === 0 ? baseId : `${baseId}_chunk_${i}`;
+            const docRef = doc(db, COLLECTIONS.ORDER_FILES, chunkId);
+            await setDoc(docRef, {
+                userId: data.userId,
+                fileName: data.fileName,
+                country: data.country,
+                orderCount: data.orderCount,
+                orders: chunks[i],
+                id: chunkId,
+                parentId: baseId,
+                chunkIndex: i,
+                totalChunks: chunks.length,
+                uploaded_at: Timestamp.now(),
+            });
+        }
+    }
 
     // 3. Save the log entry
     await setDoc(logRef, {
@@ -100,10 +179,20 @@ export async function saveOrderFile(data: {
  * Delete an import log and its associated order data
  */
 export async function deleteImportLog(logId: string) {
-    // 1. Delete the detailed order data
+    // 1. Delete the main order data doc
     await deleteDoc(doc(db, COLLECTIONS.ORDER_FILES, logId));
 
-    // 2. Delete the log entry
+    // 2. Delete any chunk documents (parentId == logId)
+    try {
+        const chunkQuery = query(
+            collection(db, COLLECTIONS.ORDER_FILES),
+            where('parentId', '==', logId)
+        );
+        const chunkSnap = await getDocs(chunkQuery);
+        await Promise.all(chunkSnap.docs.map(d => deleteDoc(d.ref)));
+    } catch { /* chunks may not exist */ }
+
+    // 3. Delete the log entry
     await deleteDoc(doc(db, COLLECTIONS.IMPORT_LOGS, logId));
 }
 

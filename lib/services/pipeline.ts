@@ -50,6 +50,7 @@ export interface PipelineParams {
     image_base64?: string | null;
     image_filename?: string | null;
     status?: 'draft' | 'active';
+    image_source?: 'scraped' | 'ai' | 'both';
     research_data?: any;
 }
 
@@ -107,7 +108,7 @@ export async function startCreatives(params: CreativesParams): Promise<JobRespon
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.error || 'Error iniciando creativos');
+        throw new Error(typeof err.detail === 'string' ? err.detail : typeof err.error === 'string' ? err.error : JSON.stringify(err.detail || err.error || 'Error iniciando creativos'));
     }
     return res.json();
 }
@@ -120,7 +121,7 @@ export async function startPipeline(params: PipelineParams): Promise<JobResponse
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.error || 'Error iniciando pipeline');
+        throw new Error(typeof err.detail === 'string' ? err.detail : typeof err.error === 'string' ? err.error : JSON.stringify(err.detail || err.error || 'Error iniciando pipeline'));
     }
     return res.json();
 }
@@ -133,7 +134,7 @@ export async function startCopy(params: CopyParams): Promise<JobResponse> {
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.error || 'Error generando copy');
+        throw new Error(typeof err.detail === 'string' ? err.detail : typeof err.error === 'string' ? err.error : JSON.stringify(err.detail || err.error || 'Error generando copy'));
     }
     return res.json();
 }
@@ -146,7 +147,7 @@ export async function startImages(params: ImagesParams): Promise<JobResponse> {
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.error || 'Error generando imágenes');
+        throw new Error(typeof err.detail === 'string' ? err.detail : typeof err.error === 'string' ? err.error : JSON.stringify(err.detail || err.error || 'Error generando imágenes'));
     }
     return res.json();
 }
@@ -159,7 +160,7 @@ export async function startAdLibrary(params: { query: string; country: string; l
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || err.error || 'Error buscando en Ad Library');
+        throw new Error(typeof err.detail === 'string' ? err.detail : typeof err.error === 'string' ? err.error : JSON.stringify(err.detail || err.error || 'Error buscando en Ad Library'));
     }
     return res.json();
 }

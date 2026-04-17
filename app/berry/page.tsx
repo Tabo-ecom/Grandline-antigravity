@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Loader2, Plus, X, Trash2, Edit3, ChevronDown, ChevronRight,
     TrendingUp, TrendingDown, DollarSign, Users, Cpu, Building,
-    Calendar, Save, AlertCircle, FileSpreadsheet, Warehouse, ShieldCheck
+    Calendar, Save, AlertCircle, FileSpreadsheet, Warehouse, ShieldCheck, Download,
+    Percent, BarChart3, CircleDollarSign, Receipt, Minus, Target
 } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend, BarChart, Bar
+    PieChart, Pie, Cell, Legend, BarChart, Bar, ReferenceLine
 } from 'recharts';
 import { useAuth } from '@/lib/context/AuthContext';
 // Berry uses effectiveUid (team_id) for all data so team members share expenses
@@ -36,6 +37,35 @@ const fmtCOP = (v: number) => {
     return `$${v.toLocaleString('es-CO')}`;
 };
 const fmtFull = (v: number) => `$${v.toLocaleString('es-CO', { maximumFractionDigits: 0 })}`;
+
+// ── Berry Waterfall Tooltip (matches country P&L style) ─────────────────────
+function BerryWaterfallTooltip({ active, payload }: any) {
+    if (!active || !payload?.[0]) return null;
+    const data = payload[0].payload;
+    return (
+        <div style={{
+            background: 'var(--card-bg)',
+            border: '1px solid var(--card-border)',
+            borderRadius: 12,
+            padding: '10px 14px',
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'var(--foreground)',
+        }}>
+            <p style={{ marginBottom: 4, color: 'var(--muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {data.name}
+            </p>
+            <p style={{ fontFamily: 'monospace', fontSize: 14, color: data.displayValue >= 0 ? '#10b981' : '#ef4444' }}>
+                {data.displayValue >= 0 ? '' : '-'}{fmtFull(Math.abs(data.displayValue))}
+            </p>
+            {data.percOfRevenue !== undefined && (
+                <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    {Math.abs(data.percOfRevenue).toFixed(1)}% del ingreso
+                </p>
+            )}
+        </div>
+    );
+}
 
 // ── Category Icons ──────────────────────────────────────────────────────────
 const CATEGORY_ICONS: Record<ExpenseCategory, React.ElementType> = {
@@ -113,6 +143,62 @@ export default function BerryPage() {
         }
         load();
     }, []);
+
+    // ── Auto-Recurring Expenses ─────────────────────────────────────────────
+    const recurringCopiedRef = useRef(false);
+    useEffect(() => {
+        if (loading || recurringCopiedRef.current || !effectiveUid || expenses.length === 0) return;
+        recurringCopiedRef.current = true;
+
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        // Previous month
+        const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+        const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+
+        const prevMonthRecurring = expenses.filter(
+            e => e.month === prevMonth && e.year === prevYear && e.recurring === true
+        );
+        if (prevMonthRecurring.length === 0) return;
+
+        const currentMonthExpenses = expenses.filter(
+            e => e.month === currentMonth && e.year === currentYear
+        );
+        const existingKeys = new Set(
+            currentMonthExpenses.map(e => `${e.category}::${e.subcategory}`)
+        );
+
+        const nowTs = Date.now();
+        const toCreate: Expense[] = [];
+        for (const re of prevMonthRecurring) {
+            const key = `${re.category}::${re.subcategory}`;
+            if (!existingKeys.has(key)) {
+                toCreate.push({
+                    id: `rec_${nowTs}_${Math.random().toString(36).slice(2, 9)}`,
+                    category: re.category,
+                    subcategory: re.subcategory,
+                    amount: re.amount,
+                    currency: re.currency,
+                    date: `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`,
+                    month: currentMonth,
+                    year: currentYear,
+                    notes: re.notes || '',
+                    recurring: true,
+                    createdAt: nowTs,
+                    updatedAt: nowTs,
+                });
+            }
+        }
+
+        if (toCreate.length === 0) return;
+
+        bulkSaveExpenses(toCreate, effectiveUid).then(() => {
+            setExpenses(prev => [...prev, ...toCreate]);
+            console.log(`[Berry] Auto-copied ${toCreate.length} recurring expenses to ${currentMonth}/${currentYear}`);
+        }).catch(err => {
+            console.error('[Berry] Failed to auto-copy recurring expenses:', err);
+        });
+    }, [loading, expenses, effectiveUid]);
 
     // ── Computed ─────────────────────────────────────────────────────────────
     // Unified Expenses (including Facebook Ads)
@@ -421,8 +507,8 @@ export default function BerryPage() {
                 date: formDate,
                 month: dateObj.getMonth() + 1,
                 year: dateObj.getFullYear(),
-                notes: formNotes.trim() || undefined,
-                recurring: formRecurring || undefined,
+                notes: formNotes.trim() || '',
+                recurring: formRecurring || false,
                 createdAt: editingExpense?.createdAt || Date.now(),
                 updatedAt: Date.now(),
             };
@@ -531,12 +617,25 @@ export default function BerryPage() {
         try {
             const reader = new FileReader();
             reader.onload = async (evt) => {
-                const bstr = evt.target?.result;
+                const buf = evt.target?.result;
                 const XLSX = await import('xlsx');
-                const wb = XLSX.read(bstr, { type: 'binary' });
+
+                // Detect CSV and handle semicolon separators + Colombian number format
+                const isCSV = file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.tsv');
+                let wb;
+                if (isCSV && buf instanceof ArrayBuffer) {
+                    const text = new TextDecoder('utf-8').decode(buf);
+                    // Replace semicolons with tabs (xlsx handles TSV natively)
+                    const normalized = text.replace(/;/g, '\t');
+                    wb = XLSX.read(normalized, { type: 'string', raw: true });
+                } else {
+                    wb = XLSX.read(buf, { type: 'array' });
+                }
+
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
-                const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                // raw: false keeps values as strings so we can parse Colombian format ($ 432.400,00)
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }) as any[][];
 
                 const importedExpenses: Expense[] = [];
 
@@ -573,9 +672,29 @@ export default function BerryPage() {
 
                     // Loop through month columns (1-12)
                     for (let m = 1; m <= 12; m++) {
-                        let amountStr = row[m]?.toString() || '0';
-                        // Clean amount string (remove $, spaces, etc)
-                        const amount = parseFloat(amountStr.replace(/[^0-9.-]+/g, ""));
+                        let amountStr = row[m]?.toString().trim() || '0';
+                        // Parse COP format: $ 432.400,00 → 432400
+                        // Remove $, spaces, dashes
+                        amountStr = amountStr.replace(/\$/g, '').replace(/-/g, '').trim();
+                        if (!amountStr || amountStr === '0') continue;
+                        let amount: number;
+                        const dotCount = (amountStr.match(/\./g) || []).length;
+                        if (amountStr.includes(',') && amountStr.includes('.')) {
+                            // Colombian: 432.400,00 → dots=thousands, comma=decimal
+                            amount = parseFloat(amountStr.replace(/\./g, '').replace(',', '.'));
+                        } else if (dotCount >= 2) {
+                            // Multiple dots without comma: 1.900.000 → dots=thousands
+                            amount = parseFloat(amountStr.replace(/\./g, ''));
+                        } else if (amountStr.includes(',') && !amountStr.includes('.')) {
+                            // Only comma: 400,00 → comma=decimal
+                            amount = parseFloat(amountStr.replace(',', '.'));
+                        } else if (dotCount === 1 && /\.\d{3}$/.test(amountStr)) {
+                            // Single dot followed by 3 digits: 1.900 → dot=thousands (not decimal)
+                            amount = parseFloat(amountStr.replace('.', ''));
+                        } else {
+                            // Standard format
+                            amount = parseFloat(amountStr.replace(/[^0-9.]+/g, ''));
+                        }
 
                         if (amount > 1) { // Ignore small noise or 0
                             importedExpenses.push({
@@ -603,10 +722,10 @@ export default function BerryPage() {
                     alert('No se encontraron montos válidos para importar en las columnas de meses (1-12).');
                 }
             };
-            reader.readAsBinaryString(file);
+            reader.readAsArrayBuffer(file);
         } catch (err) {
             console.error('Error importing Excel:', err);
-            alert('Error al procesar el archivo Excel. Verifica el formato del manual.');
+            alert('Error al procesar el archivo. Verifica que sea un Excel (.xlsx/.xls) o CSV válido.');
         } finally {
             setLoading(false);
             if (e.target) e.target.value = ''; // Reset input
@@ -656,7 +775,7 @@ export default function BerryPage() {
                         </div>
                         {activeTab === 'gastos' && (
                             <>
-                                <input type="file" accept=".xlsx, .xls" id="excel-import" className="hidden" onChange={handleImport} />
+                                <input type="file" accept=".xlsx,.xls,.csv,.tsv" id="excel-import" className="hidden" onChange={handleImport} />
                                 <button onClick={() => document.getElementById('excel-import')?.click()}
                                     className="flex items-center gap-2 px-5 py-2.5 bg-card hover:bg-hover-bg text-foreground rounded-xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 border border-card-border shadow-sm">
                                     <FileSpreadsheet className="w-4 h-4" /> Importar
@@ -857,8 +976,8 @@ export default function BerryPage() {
                             const prevTotal = prevCategoryTotals[cat] || 0;
                             const catChange = prevTotal > 0 ? ((catTotal - prevTotal) / prevTotal) * 100 : 0;
                             const isExpanded = expandedCategories.has(cat);
-                            const CatIcon = CATEGORY_ICONS[cat];
-                            const catColor = CATEGORY_COLORS[cat];
+                            const CatIcon = CATEGORY_ICONS[cat] || AlertCircle;
+                            const catColor = getCategoryColor(cat);
 
                             return (
                                 <div key={cat}>
@@ -1243,43 +1362,141 @@ function ProveedorPnLView({ supplierKpis, periodLabel }: {
 }) {
     const ing = supplierKpis?.ingreso_proveedor ?? 0;
     const costo = supplierKpis?.costo_interno ?? 0;
-    const bruta = supplierKpis?.ganancia_real ?? 0;
-    const flEnt = supplierKpis?.flete_entregados ?? 0;
-    const flDev = supplierKpis?.flete_devoluciones ?? 0;
-    const util = bruta - flEnt - flDev;
-    const margen = ing > 0 ? (util / ing) * 100 : 0;
+    const bruta = ing - costo; // Proveedor NO paga fletes
+    const margen = ing > 0 ? (bruta / ing) * 100 : 0;
+    const margenColor = margen >= 20 ? 'emerald' : margen >= 10 ? 'amber' : 'red';
+
+    // Waterfall data
+    const waterfallData = useMemo(() => {
+        if (ing === 0) return [];
+        const items = [
+            { name: 'Ingresos', value: ing, fill: '#10b981', isTotal: true },
+            { name: '-Costo Mercancía', value: -costo, fill: '#ef4444' },
+            { name: '= Ganancia', value: bruta, fill: bruta >= 0 ? '#10b981' : '#ef4444', isTotal: true },
+        ];
+        let runningTotal = 0;
+        return items.map((item, idx) => {
+            if (idx === 0) {
+                runningTotal = item.value;
+                return { name: item.name, base: 0, value: item.value, fill: item.fill, displayValue: item.value, percOfRevenue: 100 };
+            }
+            if (idx === items.length - 1) {
+                return { name: item.name, base: item.value >= 0 ? 0 : item.value, value: Math.abs(item.value), fill: item.fill, displayValue: item.value, percOfRevenue: ing > 0 ? (item.value / ing) * 100 : 0 };
+            }
+            const absVal = Math.abs(item.value);
+            const newTotal = runningTotal + item.value;
+            const entry = { name: item.name, base: newTotal, value: absVal, fill: item.fill, displayValue: item.value, percOfRevenue: ing > 0 ? (absVal / ing) * 100 : 0 };
+            runningTotal = newTotal;
+            return entry;
+        });
+    }, [ing, costo, bruta]);
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <PnLStatement
-                    title={`P&L Proveedor — ${periodLabel}`}
-                    warning={!supplierKpis ? 'Importa órdenes en el módulo Proveedor para ver datos' : undefined}
-                    rows={[
-                        { label: 'Ingresos Proveedor', value: ing, color: 'text-emerald-400', bold: true },
-                        { label: 'Costo Mercancía', value: costo, color: 'text-red-400', indent: true },
-                        { label: 'Ganancia Bruta', value: bruta, color: 'text-blue-400', bold: true, highlight: true },
-                        { label: 'Fletes Entregados', value: flEnt, color: 'text-orange-400', indent: true },
-                        { label: 'Fletes Devoluciones', value: flDev, color: 'text-orange-400', indent: true },
-                        { label: 'Utilidad Proveedor', value: util, color: util >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
-                        { label: 'Margen Proveedor', value: margen, color: margen >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
-                    ]}
-                />
-                <div className="flex flex-col gap-4">
-                    <KpiCard label="Ingresos" value={ing} color="text-emerald-400" />
-                    <KpiCard label="Utilidad" value={util} color={util >= 0 ? 'text-emerald-400' : 'text-red-400'} />
-                    <KpiCard label="Margen" value={margen} color={margen >= 0 ? 'text-emerald-400' : 'text-red-400'} percent />
+            {!supplierKpis && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-500 font-medium">Importa órdenes en el módulo Proveedor para ver datos</span>
+                </div>
+            )}
+
+            {/* Hero KPI Strip */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Ingresos Proveedor */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Ingresos Proveedor <InfoTooltip text="Total de ingresos generados por ventas del canal proveedor." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-500/10">
+                            <CircleDollarSign className="w-4 h-4 text-emerald-500" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-emerald-500 font-mono">{fmtCOP(ing)}</p>
+                </div>
+
+                {/* Ganancia */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Ganancia <InfoTooltip text="Ingresos menos costo de mercancía. Proveedor no paga fletes." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${bruta >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                            <TrendingUp className={`w-4 h-4 ${bruta >= 0 ? 'text-emerald-500' : 'text-red-400'}`} />
+                        </div>
+                    </div>
+                    <p className={`text-2xl font-black tracking-tight font-mono ${bruta >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>{fmtCOP(bruta)}</p>
+                    <p className="text-xs text-muted mt-1 font-mono">Costo: {fmtCOP(costo)}</p>
+                </div>
+
+                {/* Margen */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Margen <InfoTooltip text="Porcentaje de ganancia sobre el ingreso. Verde >= 20%, Amarillo >= 10%, Rojo < 10%." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center bg-${margenColor}-500/10`}>
+                            <Percent className={`w-4 h-4 text-${margenColor}-400`} />
+                        </div>
+                    </div>
+                    <p className={`text-3xl font-black tracking-tight font-mono text-${margenColor}-400`}>{margen.toFixed(1)}%</p>
+                    <div className="w-full h-2 bg-hover-bg rounded-full overflow-hidden mt-2">
+                        <div className={`h-full rounded-full bg-${margenColor}-500 transition-all`} style={{ width: `${Math.max(0, Math.min(100, margen))}%` }} />
+                    </div>
                 </div>
             </div>
-            <div className="bg-card border border-card-border rounded-xl p-5">
-                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
-                <div className="space-y-1">
-                    <WaterfallBar label="Ingresos" value={ing} maxValue={ing} color="#34d399" />
-                    <WaterfallBar label="Costo Mercancía" value={costo} maxValue={ing} color="#f87171" />
-                    <WaterfallBar label="Fletes" value={flEnt + flDev} maxValue={ing} color="#fb923c" />
-                    <WaterfallBar label="Utilidad" value={util} maxValue={ing} color={util >= 0 ? '#34d399' : '#f87171'} />
+
+            {/* Waterfall Chart */}
+            {waterfallData.length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-accent" />
+                        Cascada P&L Proveedor
+                        <InfoTooltip text="Del ingreso al resultado final. Proveedor no paga fletes." />
+                    </h3>
+                    <p className="text-muted text-xs mb-4">Ingresos - Costo Mercancía = Ganancia</p>
+                    <div className="h-[240px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={waterfallData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" horizontal={false} />
+                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 11, fontWeight: 700 }} width={120} />
+                                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 10 }} tickFormatter={fmtCOP} />
+                                <Tooltip content={<BerryWaterfallTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
+                                <ReferenceLine x={0} stroke="#ef4444" strokeOpacity={0.3} strokeDasharray="4 4" />
+                                <Bar dataKey="base" stackId="waterfall" fill="transparent" isAnimationActive={false} />
+                                <Bar dataKey="value" stackId="waterfall" radius={[0, 4, 4, 0]} barSize={32}>
+                                    {waterfallData.map((entry, idx) => (
+                                        <Cell key={idx} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    {/* Summary line */}
+                    <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-card-border flex-wrap">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                            <span className="text-xs text-muted">Ingresos</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(ing)}</span>
+                        </div>
+                        <span className="text-muted text-xs">-</span>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                            <span className="text-xs text-muted">Costo</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(costo)}</span>
+                        </div>
+                        <span className="text-muted text-xs">=</span>
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${bruta >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                            <span className="text-xs text-muted">Ganancia</span>
+                            <span className={`text-xs font-black font-mono ${bruta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtFull(bruta)}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border font-mono bg-${margenColor}-500/10 text-${margenColor}-400 border-${margenColor}-500/20`}>
+                                {margen.toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }
@@ -1290,6 +1507,7 @@ function VentasPnLView({ salesKpis, salesByCountry, periodLabel }: {
     periodLabel: string;
 }) {
     const ing = salesKpis?.ing_real ?? 0;
+    const factNeto = salesKpis?.fact_neto ?? 0;
     const cpr = salesKpis?.cpr ?? 0;
     const flEnt = salesKpis?.fl_ent ?? 0;
     const flDev = salesKpis?.fl_dev ?? 0;
@@ -1298,45 +1516,250 @@ function VentasPnLView({ salesKpis, salesByCountry, periodLabel }: {
     const util = salesKpis?.u_real ?? 0;
     const margen = ing > 0 ? (util / ing) * 100 : 0;
     const roas = ads > 0 ? (ing / ads) : 0;
+    const totalCosts = cpr + flEnt + flDev + flTra + ads;
+    const margenColor = margen >= 20 ? 'emerald' : margen >= 10 ? 'amber' : 'red';
+
+    // Waterfall data
+    const waterfallData = useMemo(() => {
+        if (ing === 0) return [];
+        const items = [
+            { name: 'Ingreso', value: ing, fill: '#10b981', isTotal: true },
+            { name: '-COGS', value: -cpr, fill: '#ef4444' },
+            { name: '-Flete Ent.', value: -flEnt, fill: '#3b82f6' },
+            { name: '-Flete Dev.', value: -flDev, fill: '#f97316' },
+            { name: '-Flete Trán.', value: -flTra, fill: '#06b6d4' },
+            { name: '-Ads', value: -ads, fill: '#a855f7' },
+            { name: '= Utilidad', value: util, fill: util >= 0 ? '#10b981' : '#ef4444', isTotal: true },
+        ];
+        let runningTotal = 0;
+        return items.map((item, idx) => {
+            if (idx === 0) {
+                runningTotal = item.value;
+                return { name: item.name, base: 0, value: item.value, fill: item.fill, displayValue: item.value, percOfRevenue: 100 };
+            }
+            if (idx === items.length - 1) {
+                return { name: item.name, base: item.value >= 0 ? 0 : item.value, value: Math.abs(item.value), fill: item.fill, displayValue: item.value, percOfRevenue: ing > 0 ? (item.value / ing) * 100 : 0 };
+            }
+            const absVal = Math.abs(item.value);
+            const newTotal = runningTotal + item.value;
+            const entry = { name: item.name, base: newTotal, value: absVal, fill: item.fill, displayValue: item.value, percOfRevenue: ing > 0 ? (absVal / ing) * 100 : 0 };
+            runningTotal = newTotal;
+            return entry;
+        });
+    }, [ing, cpr, flEnt, flDev, flTra, ads, util]);
+
+    // Cost breakdown donut
+    const costBreakdownData = useMemo(() => {
+        return [
+            { name: 'Costo Producto', value: cpr, color: '#ef4444' },
+            { name: 'Flete Entrega', value: flEnt, color: '#3b82f6' },
+            { name: 'Flete Devolución', value: flDev, color: '#f97316' },
+            { name: 'Flete Tránsito', value: flTra, color: '#06b6d4' },
+            { name: 'Publicidad', value: ads, color: '#a855f7' },
+        ].filter(d => d.value > 0);
+    }, [cpr, flEnt, flDev, flTra, ads]);
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <PnLStatement
-                    title={`P&L Ventas — ${periodLabel}`}
-                    warning={!salesKpis ? 'Importa órdenes en el Dashboard para ver ventas' : undefined}
-                    rows={[
-                        { label: 'Ingreso Real Entregados', value: ing, color: 'text-emerald-400', bold: true },
-                        { label: 'Costo Producto', value: cpr, color: 'text-red-400', indent: true },
-                        { label: 'Flete Entrega', value: flEnt, color: 'text-orange-400', indent: true },
-                        { label: 'Flete Devolución', value: flDev, color: 'text-orange-400', indent: true },
-                        { label: 'Flete Tránsito', value: flTra, color: 'text-orange-400', indent: true },
-                        { label: 'Publicidad', value: ads, color: 'text-purple-400', indent: true },
-                        { label: 'Utilidad Real Ventas', value: util, color: util >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
-                        { label: 'Margen Ventas', value: margen, color: margen >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
-                    ]}
-                />
-                <div className="flex flex-col gap-4">
-                    <KpiCard label="Ingresos" value={ing} color="text-emerald-400" />
-                    <KpiCard label="Utilidad" value={util} color={util >= 0 ? 'text-emerald-400' : 'text-red-400'} />
-                    <KpiCard label="ROAS" value={roas} color="text-blue-400" />
+            {!salesKpis && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-500 font-medium">Importa órdenes en el Dashboard para ver ventas</span>
+                </div>
+            )}
+
+            {/* Hero KPI Strip */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {/* Fact. Neta */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Fact. Neta <InfoTooltip text="Total facturado de órdenes no canceladas." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-500/10">
+                            <Receipt className="w-4 h-4 text-emerald-500" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-emerald-500 font-mono">{fmtCOP(factNeto)}</p>
+                </div>
+
+                {/* Ingreso Real */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Ingreso Real <InfoTooltip text="Ingresos de órdenes entregadas." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/10">
+                            <TrendingUp className="w-4 h-4 text-blue-400" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-blue-400 font-mono">{fmtCOP(ing)}</p>
+                </div>
+
+                {/* Costo Total */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Costo Total <InfoTooltip text="Suma de COGS, fletes y publicidad." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-red-500/10">
+                            <Minus className="w-4 h-4 text-red-400" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-red-400 font-mono">{fmtCOP(totalCosts)}</p>
+                    <p className="text-xs text-muted mt-1 font-mono">{ing > 0 ? ((totalCosts / ing) * 100).toFixed(1) : 0}% del ingreso</p>
+                </div>
+
+                {/* Utilidad Real */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Utilidad Real <InfoTooltip text="Ingreso entregado menos todos los costos." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${util >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                            <CircleDollarSign className={`w-4 h-4 ${util >= 0 ? 'text-emerald-500' : 'text-red-400'}`} />
+                        </div>
+                    </div>
+                    <p className={`text-2xl font-black tracking-tight font-mono ${util >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>{fmtCOP(util)}</p>
+                </div>
+
+                {/* Margen */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm col-span-2 md:col-span-1">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Margen <InfoTooltip text="Porcentaje de utilidad sobre ingreso real." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center bg-${margenColor}-500/10`}>
+                            <Percent className={`w-4 h-4 text-${margenColor}-400`} />
+                        </div>
+                    </div>
+                    <p className={`text-3xl font-black tracking-tight font-mono text-${margenColor}-400`}>{margen.toFixed(1)}%</p>
+                    <div className="w-full h-2 bg-hover-bg rounded-full overflow-hidden mt-2">
+                        <div className={`h-full rounded-full bg-${margenColor}-500 transition-all`} style={{ width: `${Math.max(0, Math.min(100, margen))}%` }} />
+                    </div>
                 </div>
             </div>
 
-            <div className="bg-card border border-card-border rounded-xl p-5">
-                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
-                <div className="space-y-1">
-                    <WaterfallBar label="Ingresos" value={ing} maxValue={ing} color="#34d399" />
-                    <WaterfallBar label="Costo Producto" value={cpr} maxValue={ing} color="#f87171" />
-                    <WaterfallBar label="Fletes" value={flEnt + flDev + flTra} maxValue={ing} color="#fb923c" />
-                    <WaterfallBar label="Publicidad" value={ads} maxValue={ing} color="#a855f7" />
-                    <WaterfallBar label="Utilidad" value={util} maxValue={ing} color={util >= 0 ? '#34d399' : '#f87171'} />
+            {/* Waterfall Chart */}
+            {waterfallData.length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-accent" />
+                        Cascada P&L Ventas
+                        <InfoTooltip text="Cómo el ingreso se distribuye entre los costos de ventas/dropshipping." />
+                    </h3>
+                    <p className="text-muted text-xs mb-4">Del ingreso bruto a la utilidad neta</p>
+                    <div className="h-[420px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={waterfallData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" horizontal={false} />
+                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 11, fontWeight: 700 }} width={90} />
+                                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 10 }} tickFormatter={fmtCOP} />
+                                <Tooltip content={<BerryWaterfallTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
+                                <ReferenceLine x={0} stroke="#ef4444" strokeOpacity={0.3} strokeDasharray="4 4" />
+                                <Bar dataKey="base" stackId="waterfall" fill="transparent" isAnimationActive={false} />
+                                <Bar dataKey="value" stackId="waterfall" radius={[0, 4, 4, 0]} barSize={32}>
+                                    {waterfallData.map((entry, idx) => (
+                                        <Cell key={idx} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    {/* Summary line */}
+                    <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-card-border flex-wrap">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                            <span className="text-xs text-muted">Ingreso</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(ing)}</span>
+                        </div>
+                        <span className="text-muted text-xs">-</span>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                            <span className="text-xs text-muted">Costos</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(totalCosts)}</span>
+                        </div>
+                        <span className="text-muted text-xs">=</span>
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${util >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                            <span className="text-xs text-muted">Utilidad</span>
+                            <span className={`text-xs font-black font-mono ${util >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtFull(util)}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border font-mono bg-${margenColor}-500/10 text-${margenColor}-400 border-${margenColor}-500/20`}>
+                                {margen.toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
 
+            {/* Cost Breakdown Donut */}
+            {costBreakdownData.length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl p-6 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <CircleDollarSign className="w-4 h-4 text-red-400" />
+                        Distribución de Costos
+                        <InfoTooltip text="Proporción de cada tipo de costo sobre el total." />
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8 items-center">
+                        <div className="h-[300px] w-full relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={costBreakdownData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={3} dataKey="value" stroke="none">
+                                        {costBreakdownData.map((entry, idx) => (
+                                            <Cell key={idx} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 12, fontWeight: 700, color: '#ededed', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+                                        itemStyle={{ color: '#ededed', padding: '2px 0' }}
+                                        labelStyle={{ color: '#888', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                                        formatter={(value: any, name: any) => [fmtFull(value as number), name]}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span className="text-[10px] text-muted font-black uppercase tracking-widest">Costo Total</span>
+                                <span className="text-xl font-black font-mono text-foreground leading-none mt-1">{fmtCOP(totalCosts)}</span>
+                                <span className="text-[10px] text-muted font-mono mt-1">{ing > 0 ? ((totalCosts / ing) * 100).toFixed(1) : 0}% del ingreso</span>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            {costBreakdownData.map((item, idx) => {
+                                const percOfRevenue = ing > 0 ? (item.value / ing) * 100 : 0;
+                                const percOfTotal = totalCosts > 0 ? (item.value / totalCosts) * 100 : 0;
+                                return (
+                                    <div key={idx} className="p-3 bg-hover-bg rounded-xl border border-card-border">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                                <span className="text-xs font-bold text-foreground uppercase tracking-wide">{item.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-sm font-black font-mono text-foreground">{fmtFull(item.value)}</span>
+                                                <span className="text-[10px] font-bold font-mono text-muted px-1.5 py-0.5 bg-card rounded border border-card-border">{percOfTotal.toFixed(0)}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1 h-2.5 bg-card rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, percOfRevenue)}%`, backgroundColor: item.color, opacity: 0.8 }} />
+                                            </div>
+                                            <span className="text-xs font-bold font-mono text-muted w-16 text-right">{percOfRevenue.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Country Breakdown Table (kept as-is) */}
             {salesByCountry.length > 0 && (
-                <div className="bg-card border border-card-border rounded-xl p-5">
-                    <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose por País</h3>
+                <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <Target className="w-4 h-4 text-accent" />
+                        Desglose por País
+                    </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
@@ -1374,7 +1797,7 @@ function VentasPnLView({ salesKpis, salesByCountry, periodLabel }: {
     );
 }
 
-function OperacionPnLView({ supplierKpis, salesKpis, categoryTotals, totalExpenses, allExpenses, supplierYearKpis, salesTrend, selectedYear, periodLabel }: {
+function OperacionPnLView({ supplierKpis, salesKpis, categoryTotals, totalExpenses, allExpenses, supplierYearKpis, salesTrend, selectedYear, selectedMonth, viewMode, periodLabel }: {
     supplierKpis: SupplierKPIResults | null;
     salesKpis: KPIResults | null;
     categoryTotals: Record<string, number>;
@@ -1383,27 +1806,49 @@ function OperacionPnLView({ supplierKpis, salesKpis, categoryTotals, totalExpens
     supplierYearKpis: SupplierKPIResults | null;
     salesTrend: { mes: string; ingresos: number; costos: number; utilidad: number }[];
     selectedYear: number;
+    selectedMonth: number;
+    viewMode: 'monthly' | 'annual';
     periodLabel: string;
 }) {
-    const sIng = supplierKpis?.ingreso_proveedor ?? 0;
-    const sCosto = supplierKpis?.costo_interno ?? 0;
-    const sFlEnt = supplierKpis?.flete_entregados ?? 0;
-    const sFlDev = supplierKpis?.flete_devoluciones ?? 0;
+    // ── Ingresos ──
+    const sIng = supplierKpis?.ingreso_proveedor ?? 0;  // Proveedor
+    const vIng = salesKpis?.ing_real ?? 0;               // Dropshipping
+    const ingTotal = sIng + vIng;
 
-    const vIng = salesKpis?.ing_real ?? 0;
-    const vCpr = salesKpis?.cpr ?? 0;
+    // ── Costos de Venta ──
+    const sCosto = supplierKpis?.costo_interno ?? 0;     // Costo mercancía proveedor
+    const vCpr = salesKpis?.cpr ?? 0;                    // Costo producto dropshipping
+    const costoTotal = sCosto + vCpr;
+    const gananciaBruta = ingTotal - costoTotal;
+
+    // ── Fletes (SOLO ventas/dropshipping — proveedor NO paga fletes) ──
     const vFlEnt = salesKpis?.fl_ent ?? 0;
     const vFlDev = salesKpis?.fl_dev ?? 0;
     const vFlTra = salesKpis?.fl_tra ?? 0;
+    const fletesTotal = vFlEnt + vFlDev + vFlTra;
+
+    // ── Publicidad ──
     const vAds = salesKpis?.g_ads ?? 0;
 
-    const ingTotal = sIng + vIng;
-    const costoTotal = sCosto + vCpr;
-    const gananciaBruta = ingTotal - costoTotal;
-    const fletesTotal = sFlEnt + sFlDev + vFlEnt + vFlDev + vFlTra;
-    const gastosOpSinMarketing = totalExpenses - (categoryTotals['Marketing'] || 0);
-    const utilidadOp = ingTotal - costoTotal - fletesTotal - vAds - gastosOpSinMarketing;
+    // ── Gastos Operativos (Nómina, Fullfilment, Envíos, Aplicaciones, Costos Bodega, Garantías) ──
+    const OPERATIONAL_CATS = ['Nómina', 'Fullfilment', 'Envíos', 'Aplicaciones', 'Costos Bodega', 'Garantías'];
+    const ADMIN_CATS = ['Servicios', 'Gastos Bancarios', 'Impuestos', 'Inversiones', 'Otros Gastos', 'Pendiente'];
+    const gastosOperativos = OPERATIONAL_CATS.reduce((s, c) => s + (categoryTotals[c] || 0), 0);
+    const gastosAdmin = ADMIN_CATS.reduce((s, c) => s + (categoryTotals[c] || 0), 0);
+    // Include custom categories not in either list (excluding Marketing)
+    const knownCats = new Set([...OPERATIONAL_CATS, ...ADMIN_CATS, 'Marketing']);
+    const gastosOtros = Object.entries(categoryTotals)
+        .filter(([cat]) => !knownCats.has(cat))
+        .reduce((s, [, v]) => s + v, 0);
+    const gastosAdminTotal = gastosAdmin + gastosOtros;
+
+    // ── Utilidad ──
+    const utilidadBruta = gananciaBruta - fletesTotal - vAds;  // Después de fletes y ads
+    const utilidadOp = utilidadBruta - gastosOperativos;       // Después de gastos operativos
+    const utilidadNeta = utilidadOp - gastosAdminTotal;        // Después de gastos administrativos
+    const margenBruto = ingTotal > 0 ? (gananciaBruta / ingTotal) * 100 : 0;
     const margenOp = ingTotal > 0 ? (utilidadOp / ingTotal) * 100 : 0;
+    const margenNeto = ingTotal > 0 ? (utilidadNeta / ingTotal) * 100 : 0;
 
     const noData = !supplierKpis && !salesKpis;
     const warningMsg = noData
@@ -1448,41 +1893,333 @@ function OperacionPnLView({ supplierKpis, salesKpis, categoryTotals, totalExpens
         });
     }, [allExpenses, selectedYear, supplierYearKpis, salesTrend]);
 
+    const opMargenColor = margenNeto >= 20 ? 'emerald' : margenNeto >= 10 ? 'amber' : 'red';
+    const roasVal = vAds > 0 ? (ingTotal / vAds) : 0;
+
+    // Waterfall chart data
+    const opWaterfallData = useMemo(() => {
+        if (ingTotal === 0) return [];
+        const items = [
+            { name: 'Ing. Proveedor', value: sIng, fill: '#10b981', isTotal: false },
+            { name: 'Ing. Dropshipping', value: vIng, fill: '#34d399', isTotal: false },
+            { name: '-COGS', value: -costoTotal, fill: '#ef4444' },
+            { name: '-Fletes (ventas)', value: -fletesTotal, fill: '#f97316' },
+            { name: '-Ads', value: -vAds, fill: '#a855f7' },
+            { name: '-Gastos Op.', value: -gastosOperativos, fill: '#dc2626' },
+            { name: '-Gastos Admin.', value: -gastosAdminTotal, fill: '#991b1b' },
+            { name: '= Util. Neta', value: utilidadNeta, fill: utilidadNeta >= 0 ? '#10b981' : '#ef4444', isTotal: true },
+        ];
+        let runningTotal = 0;
+        return items.map((item, idx) => {
+            // First two items are additive (both incomes stack)
+            if (idx === 0) {
+                runningTotal = item.value;
+                return { name: item.name, base: 0, value: item.value, fill: item.fill, displayValue: item.value, percOfRevenue: ingTotal > 0 ? (item.value / ingTotal) * 100 : 0 };
+            }
+            if (idx === 1) {
+                const base = runningTotal;
+                runningTotal += item.value;
+                return { name: item.name, base, value: item.value, fill: item.fill, displayValue: item.value, percOfRevenue: ingTotal > 0 ? (item.value / ingTotal) * 100 : 0 };
+            }
+            if (idx === items.length - 1) {
+                return { name: item.name, base: item.value >= 0 ? 0 : item.value, value: Math.abs(item.value), fill: item.fill, displayValue: item.value, percOfRevenue: ingTotal > 0 ? (item.value / ingTotal) * 100 : 0 };
+            }
+            const absVal = Math.abs(item.value);
+            const newTotal = runningTotal + item.value;
+            const entry = { name: item.name, base: newTotal, value: absVal, fill: item.fill, displayValue: item.value, percOfRevenue: ingTotal > 0 ? (absVal / ingTotal) * 100 : 0 };
+            runningTotal = newTotal;
+            return entry;
+        });
+    }, [sIng, vIng, costoTotal, fletesTotal, vAds, gastosOperativos, gastosAdminTotal, utilidadNeta, ingTotal]);
+
+    // Cost breakdown donut data
+    const opCostData = useMemo(() => {
+        return [
+            { name: 'Costo Producto', value: costoTotal, color: '#ef4444' },
+            { name: 'Fletes', value: fletesTotal, color: '#f97316' },
+            { name: 'Publicidad', value: vAds, color: '#a855f7' },
+            { name: 'Gastos Op.', value: gastosOperativos, color: '#dc2626' },
+            { name: 'Gastos Admin.', value: gastosAdminTotal, color: '#991b1b' },
+        ].filter(d => d.value > 0);
+    }, [costoTotal, fletesTotal, vAds, gastosOperativos, gastosAdminTotal]);
+
+    const opTotalCosts = costoTotal + fletesTotal + vAds + gastosOperativos + gastosAdminTotal;
+
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <PnLStatement
-                    title={`Estado de Resultados — ${periodLabel}`}
-                    warning={warningMsg}
-                    rows={[
-                        { label: 'Ingresos Totales', value: ingTotal, color: 'text-emerald-400', bold: true },
-                        { label: 'Costos Producto', value: costoTotal, color: 'text-red-400', indent: true },
-                        { label: 'Ganancia Bruta', value: gananciaBruta, color: 'text-blue-400', bold: true, highlight: true },
-                        { label: 'Fletes Totales', value: fletesTotal, color: 'text-orange-400', indent: true },
-                        { label: 'Publicidad', value: vAds, color: 'text-purple-400', indent: true },
-                        { label: 'Gastos Operativos', value: gastosOpSinMarketing, color: 'text-red-400', indent: true },
-                        { label: 'Utilidad Operacional', value: utilidadOp, color: utilidadOp >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, highlight: true },
-                        { label: 'Margen Operacional', value: margenOp, color: margenOp >= 0 ? 'text-emerald-400' : 'text-red-400', bold: true, percent: true },
-                    ]}
-                />
-                <div className="flex flex-col gap-4">
-                    <KpiCard label="Ingresos" value={ingTotal} color="text-emerald-400" />
-                    <KpiCard label="Utilidad Op" value={utilidadOp} color={utilidadOp >= 0 ? 'text-emerald-400' : 'text-red-400'} />
-                    <KpiCard label="Margen Op" value={margenOp} color={margenOp >= 0 ? 'text-emerald-400' : 'text-red-400'} percent />
+            {warningMsg && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-500 font-medium">{warningMsg}</span>
+                </div>
+            )}
+
+            {/* Hero KPI Strip */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {/* Ingresos Totales */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Ingresos Totales <InfoTooltip text="Suma de ingresos de proveedor y dropshipping." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-500/10">
+                            <CircleDollarSign className="w-4 h-4 text-emerald-500" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-emerald-500 font-mono">{fmtCOP(ingTotal)}</p>
+                    <p className="text-xs text-muted mt-1 font-mono">Prov: {fmtCOP(sIng)} | Drop: {fmtCOP(vIng)}</p>
+                </div>
+
+                {/* Ganancia Bruta */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Ganancia Bruta <InfoTooltip text="Ingresos totales menos costo de mercancía/producto." />
+                        </span>
+                        <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/10">
+                            <TrendingUp className="w-4 h-4 text-blue-400" />
+                        </div>
+                    </div>
+                    <p className="text-2xl font-black tracking-tight text-blue-400 font-mono">{fmtCOP(gananciaBruta)}</p>
+                    <p className="text-xs text-muted mt-1 font-mono">Margen bruto: {margenBruto.toFixed(1)}%</p>
+                </div>
+
+                {/* Utilidad Neta */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Utilidad Neta <InfoTooltip text="Ganancia final después de todos los costos, fletes, publicidad, gastos operativos y administrativos." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${utilidadNeta >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                            <CircleDollarSign className={`w-4 h-4 ${utilidadNeta >= 0 ? 'text-emerald-500' : 'text-red-400'}`} />
+                        </div>
+                    </div>
+                    <p className={`text-2xl font-black tracking-tight font-mono ${utilidadNeta >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>{fmtCOP(utilidadNeta)}</p>
+                </div>
+
+                {/* Margen Neto */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            Margen Neto <InfoTooltip text="Porcentaje de utilidad neta sobre ingresos totales. Verde >= 20%, Amarillo >= 10%, Rojo < 10%." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center bg-${opMargenColor}-500/10`}>
+                            <Percent className={`w-4 h-4 text-${opMargenColor}-400`} />
+                        </div>
+                    </div>
+                    <p className={`text-3xl font-black tracking-tight font-mono text-${opMargenColor}-400`}>{margenNeto.toFixed(1)}%</p>
+                    <div className="w-full h-2 bg-hover-bg rounded-full overflow-hidden mt-2">
+                        <div className={`h-full rounded-full bg-${opMargenColor}-500 transition-all`} style={{ width: `${Math.max(0, Math.min(100, margenNeto))}%` }} />
+                    </div>
+                </div>
+
+                {/* ROAS */}
+                <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm col-span-2 md:col-span-1">
+                    <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">
+                            ROAS <InfoTooltip text="Return on Ad Spend. Ingresos totales divididos entre inversión en publicidad." />
+                        </span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${roasVal >= 3 ? 'bg-emerald-500/10' : roasVal >= 1.5 ? 'bg-amber-500/10' : 'bg-red-500/10'}`}>
+                            <Target className={`w-4 h-4 ${roasVal >= 3 ? 'text-emerald-400' : roasVal >= 1.5 ? 'text-amber-400' : 'text-red-400'}`} />
+                        </div>
+                    </div>
+                    <p className={`text-2xl font-black tracking-tight font-mono ${roasVal >= 3 ? 'text-emerald-400' : roasVal >= 1.5 ? 'text-amber-400' : 'text-red-400'}`}>{roasVal.toFixed(2)}x</p>
+                    <p className="text-xs text-muted mt-1 font-mono">Ads: {fmtCOP(vAds)}</p>
                 </div>
             </div>
 
-            <div className="bg-card border border-card-border rounded-xl p-5">
-                <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Desglose Proporcional</h3>
-                <div className="space-y-1">
-                    <WaterfallBar label="Ingresos" value={ingTotal} maxValue={ingTotal} color="#34d399" />
-                    <WaterfallBar label="Costos Producto" value={costoTotal} maxValue={ingTotal} color="#f87171" />
-                    <WaterfallBar label="Fletes" value={fletesTotal} maxValue={ingTotal} color="#fb923c" />
-                    <WaterfallBar label="Publicidad" value={vAds} maxValue={ingTotal} color="#a855f7" />
-                    <WaterfallBar label="Gastos Op" value={gastosOpSinMarketing} maxValue={ingTotal} color="#ef4444" />
-                    <WaterfallBar label="Utilidad" value={utilidadOp} maxValue={ingTotal} color={utilidadOp >= 0 ? '#34d399' : '#f87171'} />
+            {/* Waterfall Chart */}
+            {opWaterfallData.length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-accent" />
+                        Cascada P&L General
+                        <InfoTooltip text="Visualización del ingreso total hasta la utilidad neta, pasando por todos los costos." />
+                    </h3>
+                    <p className="text-muted text-xs mb-4">Del ingreso bruto a la utilidad neta — {periodLabel}</p>
+                    <div className="h-[480px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={opWaterfallData} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="var(--card-border)" horizontal={false} />
+                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 11, fontWeight: 700 }} width={110} />
+                                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--muted)', fontSize: 10 }} tickFormatter={fmtCOP} />
+                                <Tooltip content={<BerryWaterfallTooltip />} cursor={{ fill: 'var(--hover-bg)' }} />
+                                <ReferenceLine x={0} stroke="#ef4444" strokeOpacity={0.3} strokeDasharray="4 4" />
+                                <Bar dataKey="base" stackId="waterfall" fill="transparent" isAnimationActive={false} />
+                                <Bar dataKey="value" stackId="waterfall" radius={[0, 4, 4, 0]} barSize={32}>
+                                    {opWaterfallData.map((entry, idx) => (
+                                        <Cell key={idx} fill={entry.fill} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    {/* Summary line */}
+                    <div className="flex items-center justify-center gap-6 mt-4 pt-4 border-t border-card-border flex-wrap">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                            <span className="text-xs text-muted">Ingresos</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(ingTotal)}</span>
+                        </div>
+                        <span className="text-muted text-xs">-</span>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+                            <span className="text-xs text-muted">Costos</span>
+                            <span className="text-xs font-black font-mono text-foreground">{fmtFull(opTotalCosts)}</span>
+                        </div>
+                        <span className="text-muted text-xs">=</span>
+                        <div className="flex items-center gap-2">
+                            <div className={`w-2.5 h-2.5 rounded-full ${utilidadNeta >= 0 ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                            <span className="text-xs text-muted">Utilidad Neta</span>
+                            <span className={`text-xs font-black font-mono ${utilidadNeta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtFull(utilidadNeta)}</span>
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border font-mono bg-${opMargenColor}-500/10 text-${opMargenColor}-400 border-${opMargenColor}-500/20`}>
+                                {margenNeto.toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* Cost Breakdown Donut */}
+            {opCostData.length > 0 && (
+                <div className="bg-card border border-card-border rounded-2xl p-6 shadow-sm">
+                    <h3 className="text-[11px] font-black text-muted uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <CircleDollarSign className="w-4 h-4 text-red-400" />
+                        Distribución de Costos
+                        <InfoTooltip text="Proporción de cada tipo de costo sobre el total de costos operativos." />
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-8 items-center">
+                        <div className="h-[300px] w-full relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={opCostData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={3} dataKey="value" stroke="none">
+                                        {opCostData.map((entry, idx) => (
+                                            <Cell key={idx} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 12, fontWeight: 700, color: '#ededed', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}
+                                        itemStyle={{ color: '#ededed', padding: '2px 0' }}
+                                        labelStyle={{ color: '#888', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}
+                                        formatter={(value: any, name: any) => [fmtFull(value as number), name]}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span className="text-[10px] text-muted font-black uppercase tracking-widest">Costo Total</span>
+                                <span className="text-xl font-black font-mono text-foreground leading-none mt-1">{fmtCOP(opTotalCosts)}</span>
+                                <span className="text-[10px] text-muted font-mono mt-1">{ingTotal > 0 ? ((opTotalCosts / ingTotal) * 100).toFixed(1) : 0}% del ingreso</span>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            {opCostData.map((item, idx) => {
+                                const percOfRevenue = ingTotal > 0 ? (item.value / ingTotal) * 100 : 0;
+                                const percOfTotal = opTotalCosts > 0 ? (item.value / opTotalCosts) * 100 : 0;
+                                return (
+                                    <div key={idx} className="p-3 bg-hover-bg rounded-xl border border-card-border">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                                                <span className="text-xs font-bold text-foreground uppercase tracking-wide">{item.name}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-sm font-black font-mono text-foreground">{fmtFull(item.value)}</span>
+                                                <span className="text-[10px] font-bold font-mono text-muted px-1.5 py-0.5 bg-card rounded border border-card-border">{percOfTotal.toFixed(0)}%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1 h-2.5 bg-card rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, percOfRevenue)}%`, backgroundColor: item.color, opacity: 0.8 }} />
+                                            </div>
+                                            <span className="text-xs font-bold font-mono text-muted w-16 text-right">{percOfRevenue.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Comparativa Mes vs Mes Anterior */}
+            {viewMode === 'monthly' && (() => {
+                const pm = selectedMonth === 1 ? 12 : selectedMonth - 1;
+                const prevIdx = pm - 1;
+                const prevTrend = salesTrend[prevIdx];
+                const currTrend = salesTrend[selectedMonth - 1];
+                const prevExpenses = allExpenses.filter(e => e.month === pm && e.year === (selectedMonth === 1 ? selectedYear - 1 : selectedYear));
+                const prevExpTotal = prevExpenses.reduce((s, e) => s + e.amount, 0);
+                const prevMktTotal = prevExpenses.filter(e => e.category === 'Marketing').reduce((s, e) => s + e.amount, 0);
+                const prevOpExp = prevExpTotal - prevMktTotal;
+
+                const prevIng = prevTrend?.ingresos ?? 0;
+                const prevCostos = prevTrend?.costos ?? 0;
+                const prevBruta = prevIng - prevCostos;
+                const prevUtil = prevTrend?.utilidad ?? 0;
+
+                const chg = (curr: number, prev: number) => {
+                    if (prev === 0) return curr > 0 ? 100 : 0;
+                    return ((curr - prev) / Math.abs(prev)) * 100;
+                };
+                const chgColor = (curr: number, prev: number, inverted = false) => {
+                    const c = chg(curr, prev);
+                    if (c === 0) return 'text-muted';
+                    return (inverted ? c < 0 : c > 0) ? 'text-emerald-400' : 'text-red-400';
+                };
+                const chgArrow = (curr: number, prev: number) => {
+                    const c = chg(curr, prev);
+                    if (c === 0) return '—';
+                    return `${c > 0 ? '+' : ''}${c.toFixed(1)}%`;
+                };
+
+                // Compute prev month admin vs operational split
+                const prevGastosOp = OPERATIONAL_CATS.reduce((s, c) => s + prevExpenses.filter(e => e.category === c).reduce((a, e) => a + e.amount, 0), 0);
+                const prevGastosAdmin = prevExpTotal - prevMktTotal - prevGastosOp;
+
+                const rows = [
+                    { label: 'Ingresos Totales', curr: ingTotal, prev: prevIng, bold: true, inverted: false },
+                    { label: 'Costos Producto', curr: costoTotal, prev: prevCostos, bold: false, inverted: true },
+                    { label: 'Ganancia Bruta', curr: gananciaBruta, prev: prevBruta, bold: true, inverted: false },
+                    { label: 'Fletes (Ventas)', curr: fletesTotal, prev: 0, bold: false, inverted: true },
+                    { label: 'Publicidad', curr: vAds, prev: prevMktTotal, bold: false, inverted: true },
+                    { label: 'Gastos Operativos', curr: gastosOperativos, prev: prevGastosOp, bold: false, inverted: true },
+                    { label: 'Utilidad Operacional', curr: utilidadOp, prev: prevUtil, bold: true, inverted: false },
+                    { label: 'Gastos Administrativos', curr: gastosAdminTotal, prev: prevGastosAdmin, bold: false, inverted: true },
+                    { label: 'Utilidad Neta', curr: utilidadNeta, prev: prevUtil - prevGastosAdmin, bold: true, inverted: false },
+                ];
+
+                return (
+                    <div className="bg-card border border-card-border rounded-xl p-5">
+                        <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">
+                            Comparativa — {MONTH_NAMES_FULL[selectedMonth - 1]} vs {MONTH_NAMES_FULL[pm - 1]}
+                        </h3>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-card-border/50">
+                                        <th className="text-left text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Concepto</th>
+                                        <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">{MONTH_NAMES[pm - 1]}</th>
+                                        <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">{MONTH_NAMES[selectedMonth - 1]}</th>
+                                        <th className="text-right text-[10px] font-black text-muted uppercase tracking-widest py-2 px-3">Cambio</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map(r => (
+                                        <tr key={r.label} className={`border-b border-card-border/20 ${r.bold ? 'bg-hover-bg/20' : ''}`}>
+                                            <td className={`py-2.5 px-3 ${r.bold ? 'font-black' : 'font-medium text-muted'}`}>{r.label}</td>
+                                            <td className="text-right py-2.5 px-3 tabular-nums text-muted">{fmtCOP(r.prev)}</td>
+                                            <td className="text-right py-2.5 px-3 tabular-nums font-bold">{fmtCOP(r.curr)}</td>
+                                            <td className={`text-right py-2.5 px-3 tabular-nums font-bold ${chgColor(r.curr, r.prev, r.inverted)}`}>
+                                                {chgArrow(r.curr, r.prev)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            })()}
 
             <div className="bg-card border border-card-border rounded-xl p-5">
                 <h3 className="text-[10px] font-black text-muted uppercase tracking-widest mb-4">Tendencia Anual — {selectedYear}</h3>
@@ -1583,6 +2320,82 @@ function PnLTab({
     salesKpis, salesByCountry, salesTrend, salesLoading,
 }: PnLTabProps) {
     const [subTab, setSubTab] = useState<'operacion' | 'proveedor' | 'ventas'>('operacion');
+    const [exporting, setExporting] = useState(false);
+
+    const handleExportPnL = async () => {
+        setExporting(true);
+        try {
+            const XLSX = await import('xlsx');
+            const wb = XLSX.utils.book_new();
+
+            const xsIng = supplierKpis?.ingreso_proveedor ?? 0;
+            const xsCosto = supplierKpis?.costo_interno ?? 0;
+            const xvIng = salesKpis?.ing_real ?? 0;
+            const xvCpr = salesKpis?.cpr ?? 0;
+            const xvFlEnt = salesKpis?.fl_ent ?? 0;
+            const xvFlDev = salesKpis?.fl_dev ?? 0;
+            const xvFlTra = salesKpis?.fl_tra ?? 0;
+            const xvAds = salesKpis?.g_ads ?? 0;
+
+            const xIngTotal = xsIng + xvIng;
+            const xCostoTotal = xsCosto + xvCpr;
+            const xGananciaBruta = xIngTotal - xCostoTotal;
+            const xFletesTotal = xvFlEnt + xvFlDev + xvFlTra; // Solo ventas
+            const OP_CATS = ['Nómina', 'Fullfilment', 'Envíos', 'Aplicaciones', 'Costos Bodega', 'Garantías'];
+            const xGastosOp = OP_CATS.reduce((s, c) => s + (categoryTotals[c] || 0), 0);
+            const xGastosAdmin = totalExpenses - (categoryTotals['Marketing'] || 0) - xGastosOp;
+            const xUtilidadOp = xGananciaBruta - xFletesTotal - xvAds - xGastosOp;
+            const xUtilidadNeta = xUtilidadOp - xGastosAdmin;
+            const xMargenNeto = xIngTotal > 0 ? (xUtilidadNeta / xIngTotal) * 100 : 0;
+
+            const pct = (v: number) => xIngTotal > 0 ? `${((v / xIngTotal) * 100).toFixed(1)}%` : '0%';
+            const period = viewMode === 'annual' ? `${selectedYear}` : `${MONTH_NAMES_FULL[selectedMonth - 1]} ${selectedYear}`;
+
+            // Sheet 1: Estado de Resultados
+            const pnlRows = [
+                [`Estado de Resultados General — ${period}`],
+                [],
+                ['', 'Monto', '%'],
+                ['  Ing. Proveedor', xsIng, pct(xsIng)],
+                ['  Ing. Dropshipping', xvIng, pct(xvIng)],
+                ['Ingresos Totales', xIngTotal, '100%'],
+                ['(-) Costo Mercancía Prov.', xsCosto, pct(xsCosto)],
+                ['(-) Costo Producto Drop.', xvCpr, pct(xvCpr)],
+                ['= Ganancia Bruta', xGananciaBruta, pct(xGananciaBruta)],
+                ['(-) Fletes (Solo Ventas)', xFletesTotal, pct(xFletesTotal)],
+                ['(-) Publicidad', xvAds, pct(xvAds)],
+                ['(-) Gastos Operativos', xGastosOp, pct(xGastosOp)],
+                ['= Utilidad Operacional', xUtilidadOp, pct(xUtilidadOp)],
+                ['(-) Gastos Administrativos', xGastosAdmin, pct(xGastosAdmin)],
+                ['= Utilidad Neta', xUtilidadNeta, pct(xUtilidadNeta)],
+                ['Margen Neto', `${xMargenNeto.toFixed(1)}%`, ''],
+            ];
+            const ws1 = XLSX.utils.aoa_to_sheet(pnlRows);
+            ws1['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 10 }];
+            XLSX.utils.book_append_sheet(wb, ws1, 'Estado de Resultados');
+
+            // Sheet 2: Gastos por Categoría
+            const catRows: (string | number)[][] = [
+                ['Categoría', 'Monto', '% del Total'],
+            ];
+            const sortedCats = Object.entries(categoryTotals).sort((a, b) => b[1] - a[1]);
+            for (const [cat, amount] of sortedCats) {
+                catRows.push([cat, amount, totalExpenses > 0 ? `${((amount / totalExpenses) * 100).toFixed(1)}%` : '0%']);
+            }
+            catRows.push([]);
+            catRows.push(['Total', totalExpenses, '100%']);
+            const ws2 = XLSX.utils.aoa_to_sheet(catRows);
+            ws2['!cols'] = [{ wch: 22 }, { wch: 18 }, { wch: 12 }];
+            XLSX.utils.book_append_sheet(wb, ws2, 'Gastos por Categoría');
+
+            const safePeriod = period.replace(/\s+/g, '_');
+            XLSX.writeFile(wb, `PnL_${safePeriod}.xlsx`);
+        } catch (err) {
+            console.error('Export P&L error:', err);
+        } finally {
+            setExporting(false);
+        }
+    };
 
     if (supplierLoading && salesLoading) {
         return (
@@ -1616,6 +2429,14 @@ function PnLTab({
                         {tab.label}
                     </button>
                 ))}
+                <button
+                    onClick={handleExportPnL}
+                    disabled={exporting}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all text-muted hover:text-foreground hover:bg-hover-bg border border-transparent"
+                >
+                    {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                    Exportar
+                </button>
             </div>
 
             {subTab === 'operacion' && (
@@ -1628,6 +2449,8 @@ function PnLTab({
                     supplierYearKpis={supplierYearKpis}
                     salesTrend={salesTrend}
                     selectedYear={selectedYear}
+                    selectedMonth={selectedMonth}
+                    viewMode={viewMode}
                     periodLabel={periodLabel}
                 />
             )}

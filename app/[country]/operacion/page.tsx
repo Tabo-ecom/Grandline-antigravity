@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useDashboardData } from '@/lib/hooks/useDashboardData';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import FilterHeader from '@/components/FilterHeader';
+import { getCatalog, CatalogBrand } from '@/lib/services/productCatalog';
+import { useAuth } from '@/lib/context/AuthContext';
 import { formatDualCurrency, formatCurrency, isMatchingCountry, getCurrencyForCountry } from '@/lib/utils/currency';
 import { DropiOrder } from '@/lib/calculations/kpis';
 import { parseDropiDate, getStartDateForRange, getEndDateForRange } from '@/lib/utils/date-parsers';
@@ -55,13 +57,16 @@ type ProdSortKey = 'name' | 'total' | 'ent' | 'percEnt' | 'can' | 'facturado';
 
 export default function CountryOperationPage() {
     const { country } = useParams();
+    const { effectiveUid } = useAuth();
     const decodedCountry = decodeURIComponent(country as string);
     const countryName = decodedCountry.charAt(0).toUpperCase() + decodedCountry.slice(1);
     const localCurrency = getCurrencyForCountry(countryName);
+    const [brands, setBrands] = useState<CatalogBrand[]>([]);
+    useEffect(() => { if (effectiveUid) getCatalog(effectiveUid).then(c => setBrands(c.brands)); }, [effectiveUid]);
 
     // Use the SAME data hook as the dashboard for guaranteed consistency
     const {
-        loading, rawOrders, exchangeRates: rates,
+        loading, rawOrders, exchangeRates: rates, brandProductIds,
     } = useDashboardData();
 
     const { dateRange, startDateCustom, endDateCustom, selectedProduct, setSelectedProduct, setSelectedCountry } = useGlobalFilters();
@@ -74,8 +79,17 @@ export default function CountryOperationPage() {
 
     // All orders for this country (unfiltered by date — for product list, etc.)
     const countryOrders = useMemo(() => {
-        return rawOrders.filter(o => isMatchingCountry((o as any).country || '', decodedCountry));
-    }, [rawOrders, decodedCountry]);
+        return rawOrders.filter(o => {
+            if (!isMatchingCountry((o as any).country || '', decodedCountry)) return false;
+            if (brandProductIds) {
+                const pid = o.PRODUCTO_ID?.toString() || '';
+                const origPid = (o as any).ORIGINAL_PRODUCTO_ID || '';
+                const pname = (o.PRODUCTO || '').toLowerCase().trim();
+                if (!brandProductIds.has(pid) && !brandProductIds.has(origPid) && !brandProductIds.has(pname)) return false;
+            }
+            return true;
+        });
+    }, [rawOrders, decodedCountry, brandProductIds]);
 
     // Map state
     const [activeMetric, setActiveMetric] = useState<MetricType>('tasaEntrega');
@@ -186,8 +200,20 @@ export default function CountryOperationPage() {
         const devoluciones = new Set(filteredOrders.filter(o => isDevolucion(o.ESTATUS)).map(o => o.ID)).size;
         const total = new Set(filteredOrders.map(o => o.ID)).size || 1;
         const noCancelados = total - cancelados || 1;
+        // Cancel reasons from TAGS
+        const tagCounts = new Map<string, Set<string>>();
+        filteredOrders.filter(o => isCancelado(o.ESTATUS)).forEach(o => {
+            const tag = ((o as any).TAGS || '').trim() || 'Sin etiqueta';
+            if (!tagCounts.has(tag)) tagCounts.set(tag, new Set());
+            tagCounts.get(tag)!.add(o.ID);
+        });
+        const cancelReasons = Array.from(tagCounts.entries())
+            .map(([tag, ids]) => ({ tag, count: ids.size, pct: cancelados > 0 ? (ids.size / cancelados) * 100 : 0 }))
+            .sort((a, b) => b.count - a.count);
+
         return {
             entregados, cancelados, transito, devoluciones, total, noCancelados,
+            cancelReasons,
             percents: {
                 entregados: (entregados / noCancelados) * 100,
                 transito: (transito / noCancelados) * 100,
@@ -458,6 +484,7 @@ export default function CountryOperationPage() {
             <FilterHeader
                 availableProducts={availableProducts}
                 availableCountries={[countryName]}
+                availableBrands={brands.map(b => ({ id: b.id, name: b.name, color: b.color }))}
                 title={countryName}
                 icon={Activity}
                 logo="/logos/ship-logo.png"
@@ -506,9 +533,35 @@ export default function CountryOperationPage() {
                             <span className="text-xs text-muted font-semibold">Cancelados:</span>
                             <span className="text-xs font-black font-mono text-red-400">{statusStats.cancelados.toLocaleString()}</span>
                             <span className="text-xs font-semibold font-mono text-red-400/70">({statusStats.percents.cancelados.toFixed(1)}% del total)</span>
+                            {statusStats.cancelReasons.length > 0 && statusStats.cancelReasons[0].tag !== 'Sin etiqueta' && (
+                                <InfoTooltip text={statusStats.cancelReasons.map(r => `${r.tag}: ${r.count} (${r.pct.toFixed(1)}%)`).join('\n')} />
+                            )}
                         </div>
                     </div>
                 </div>
+
+                {/* Cancel Reasons Breakdown */}
+                {statusStats.cancelReasons.length > 0 && statusStats.cancelReasons[0].tag !== 'Sin etiqueta' && (
+                    <div className="px-5 pb-4">
+                        <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+                            <h4 className="text-[10px] font-black text-muted uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                <XCircle className="w-3.5 h-3.5 text-red-400" />
+                                Razones de Cancelación
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {statusStats.cancelReasons.map((r, i) => (
+                                    <div key={i} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-card/50">
+                                        <span className="text-[11px] text-foreground/70 truncate">{r.tag}</span>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className="font-mono text-xs font-bold text-red-400">{r.count}</span>
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400">{r.pct.toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Department Detail OR City Summary — same card */}
                 <div className="p-5 max-h-[340px] overflow-y-auto custom-scrollbar">

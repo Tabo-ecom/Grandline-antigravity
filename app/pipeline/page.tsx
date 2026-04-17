@@ -142,7 +142,7 @@ function JobProgress({ job }: { job: JobPoll | null }) {
                             {(isRunning || isDone) && <span className="font-mono text-[11px] font-bold" style={{ color: isDone ? '#00FF88' : '#d75c33' }}>{pct}%</span>}
                         </div>
                     </div>
-                    <div className="text-[11px] text-muted mt-0.5">{job.progress || job.error || 'Esperando en cola...'}</div>
+                    <div className="text-[11px] text-muted mt-0.5">{isFailed ? (job.error || job.progress) : (job.progress || 'Esperando en cola...')}</div>
                 </div>
             </div>
             {/* Progress bar */}
@@ -305,6 +305,8 @@ export default function PipelinePage() {
     const [lnStore, setLnStore] = useState('');
     const [lnNiche, setLnNiche] = useState<Niche>('generic');
     const [lnStatus, setLnStatus] = useState<'draft' | 'active'>('draft');
+    const [lnImageSource, setLnImageSource] = useState<'scraped' | 'ai' | 'both'>('both');
+    const [showResearchPreview, setShowResearchPreview] = useState(false);
     const [lnJobId, setLnJobId] = useState<string | null>(null);
     const [lnImgB64, setLnImgB64] = useState('');
     const [lnImgFilename, setLnImgFilename] = useState('');
@@ -389,6 +391,7 @@ export default function PipelinePage() {
                 store: lnStore,
                 niche: lnNiche,
                 status: lnStatus,
+                image_source: lnImageSource,
                 image_base64: lnImgB64 || null,
                 image_filename: lnImgFilename || null,
             });
@@ -569,9 +572,14 @@ export default function PipelinePage() {
                                             const sr = savedResearches.find(x => x.id === selectedResearchId);
                                             return sr?.report ? (
                                                 <div className="p-3 bg-[#AA77FF]/5 border border-[#AA77FF]/15 rounded-xl text-[10px] space-y-1">
-                                                    <div className="font-bold text-[#AA77FF]">{sr.productName}</div>
-                                                    <div className="text-muted">Score: {sr.report.scorecard.total}/10 · {sr.report.recommendation}</div>
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="font-bold text-[#AA77FF]">{sr.productName}</div>
+                                                        <button onClick={() => setShowResearchPreview(true)}
+                                                            className="text-[9px] text-accent hover:underline font-semibold">Ver completo →</button>
+                                                    </div>
+                                                    <div className="text-muted">Score: {sr.report.scorecard.total}/10 · {sr.report.recommendation} · {sr.niche}</div>
                                                     <div className="text-muted">Audiencia: {sr.report.targetAudience?.slice(0, 80)}...</div>
+                                                    {sr.productImages?.[0] && <img src={sr.productImages[0]} alt="" className="w-16 h-16 rounded-lg object-contain bg-background border border-card-border mt-1" />}
                                                 </div>
                                             ) : null;
                                         })()}
@@ -615,6 +623,13 @@ export default function PipelinePage() {
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Nicho</div>
                                 <NicheSelector value={lnNiche} onChange={setLnNiche} />
 
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Fuente de Imágenes</div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button onClick={() => setLnImageSource('scraped')} className={`py-2 rounded-lg border text-[10px] font-semibold transition-all ${lnImageSource === 'scraped' ? 'bg-blue-400/10 border-blue-400/30 text-blue-400' : 'border-card-border text-muted'}`}>📷 Original</button>
+                                    <button onClick={() => setLnImageSource('ai')} className={`py-2 rounded-lg border text-[10px] font-semibold transition-all ${lnImageSource === 'ai' ? 'bg-purple-400/10 border-purple-400/30 text-purple-400' : 'border-card-border text-muted'}`}>🤖 IA</button>
+                                    <button onClick={() => setLnImageSource('both')} className={`py-2 rounded-lg border text-[10px] font-semibold transition-all ${lnImageSource === 'both' ? 'bg-accent/10 border-accent/30 text-accent' : 'border-card-border text-muted'}`}>🔄 Ambas</button>
+                                </div>
+
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Estado al publicar</div>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button onClick={() => setLnStatus('draft')} className={`py-2 rounded-lg border text-[11px] font-semibold transition-all ${lnStatus === 'draft' ? 'bg-accent/10 border-accent/30 text-accent' : 'border-card-border text-muted'}`}>Borrador</button>
@@ -636,11 +651,20 @@ export default function PipelinePage() {
                                         <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                                         <div>
                                             <div className="text-sm font-bold text-emerald-400">Producto creado en Shopify</div>
-                                            {lnJob.result.shopify_url && (
-                                                <a href={lnJob.result.shopify_url} target="_blank" rel="noopener" className="text-[11px] text-accent flex items-center gap-1 mt-1">
-                                                    <ExternalLink className="w-3 h-3" /> Ver en Shopify
-                                                </a>
-                                            )}
+                                            <div className="flex items-center gap-3 mt-1.5">
+                                                {lnJob.result.admin_url && (
+                                                    <a href={lnJob.result.admin_url} target="_blank" rel="noopener" className="text-[11px] text-accent flex items-center gap-1 hover:underline">
+                                                        <ExternalLink className="w-3 h-3" /> Admin Shopify
+                                                    </a>
+                                                )}
+                                                {lnJob.result.store_url && lnJob.result.product_title && (
+                                                    <a href={`https://${lnJob.result.store_url}/products/${lnJob.result.product_title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
+                                                        target="_blank" rel="noopener"
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 rounded-lg text-[11px] font-bold hover:bg-emerald-400/20 transition-all">
+                                                        <ExternalLink className="w-3 h-3" /> IR A VER PÁGINA
+                                                    </a>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     {lnJob.result.copy && <CopyViewer copy={lnJob.result.copy} />}
@@ -726,6 +750,48 @@ export default function PipelinePage() {
                         </div>
                     </div>
                 )}
+
+            {/* Research Preview Popup */}
+            {showResearchPreview && selectedResearchId && (() => {
+                const sr = savedResearches.find(x => x.id === selectedResearchId);
+                if (!sr?.report) return null;
+                const rp = sr.report;
+                return (
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowResearchPreview(false)}>
+                        <div className="bg-card border border-card-border rounded-2xl w-[800px] max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-card-border sticky top-0 bg-card/95 backdrop-blur-sm z-10">
+                                <div>
+                                    <div className="font-bold text-[15px]">{sr.productName}</div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-accent/10 text-accent uppercase">{sr.niche}</span>
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${rp.recommendation === 'GO' ? 'bg-emerald-400/15 text-emerald-400' : rp.recommendation === 'NO_GO' ? 'bg-red-400/15 text-red-400' : 'bg-yellow-400/15 text-yellow-400'}`}>{rp.recommendation}</span>
+                                        <span className="font-mono text-[12px] font-bold" style={{ color: rp.scorecard.total >= 7 ? '#00FF88' : rp.scorecard.total >= 5 ? '#FFD700' : '#FF3366' }}>{rp.scorecard.total}/10</span>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowResearchPreview(false)} className="w-8 h-8 rounded-lg border border-card-border flex items-center justify-center text-muted hover:text-red-400 transition-all"><X className="w-4 h-4" /></button>
+                            </div>
+                            <div className="p-5 space-y-4">
+                                {sr.productImages?.[0] && <div className="flex gap-2">{sr.productImages.slice(0, 3).map((img, i) => <img key={i} src={img} alt="" className="w-24 h-24 rounded-xl object-contain bg-background border border-card-border" />)}</div>}
+                                <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Resumen</div><p className="text-[12px] leading-relaxed">{rp.summary}</p></div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Demanda</div><p className="text-[11px] text-muted leading-relaxed">{rp.demand}</p></div>
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Competencia</div><p className="text-[11px] text-muted leading-relaxed">{rp.competition}</p></div>
+                                </div>
+                                <div className="bg-background border border-card-border rounded-xl p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-2">Unit Economics</div>
+                                    <div className="grid grid-cols-5 gap-2 text-center">{[{l:'Costo',v:rp.unitEconomics.costProduct},{l:'Precio',v:rp.unitEconomics.suggestedPrice},{l:'CPA',v:rp.unitEconomics.estimatedCPA},{l:'Margen',v:rp.unitEconomics.projectedMargin},{l:'ROAS',v:rp.unitEconomics.minROAS}].map(x => <div key={x.l}><div className="text-[9px] text-muted/50">{x.l}</div><div className="font-mono font-bold text-[12px]">{x.v}</div></div>)}</div>
+                                </div>
+                                {rp.buyerPersona?.name && <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Buyer Persona</div><div className="text-[12px] font-bold">{rp.buyerPersona.name}</div><div className="text-[10px] text-muted">{rp.buyerPersona.age} · {rp.buyerPersona.gender} · {rp.buyerPersona.occupation}</div></div>}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Pain Points</div>{rp.painPoints?.map((p, i) => <div key={i} className="text-[10px] text-muted py-0.5">• {p}</div>)}</div>
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Ángulos Ads</div>{rp.adAngles?.map((a, i) => <div key={i} className="text-[10px] text-muted py-0.5">• {a}</div>)}</div>
+                                </div>
+                                {rp.offerSuggestions && rp.offerSuggestions.length > 0 && <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Ofertas Sugeridas</div>{rp.offerSuggestions.map((o, i) => <div key={i} className="text-[10px] text-muted py-0.5">• <strong>{o.name}</strong>: {o.description}</div>)}</div>}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
             </div>
         </div>
     );

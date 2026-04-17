@@ -12,7 +12,7 @@ export const VegaChatBubble: React.FC = () => {
             <VegaChatPanel />
             <button
                 onClick={() => setChatOpen(!chatOpen)}
-                className="fixed bottom-5 right-5 w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20 flex items-center justify-center z-[60] hover:scale-105 transition-all group"
+                className="fixed bottom-5 right-5 w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20 hidden md:flex items-center justify-center z-[60] hover:scale-105 transition-all group"
                 title="Vega AI - Chat"
             >
                 <img src="/logos/vega-isotipo.png" alt="Vega" className="w-6 h-6 object-contain brightness-0 invert group-hover:scale-110 transition-transform" />

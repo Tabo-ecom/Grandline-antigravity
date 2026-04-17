@@ -19,24 +19,21 @@ interface TikTokOAuthStatus {
 /* ─── OAuth Helpers ──────────────────────────────────────── */
 
 /**
- * Build TikTok OAuth URL for Login Kit
+ * Build TikTok Marketing API OAuth URL
  */
 export function buildTikTokOAuthUrl(userId: string): string {
-    const clientKey = process.env.NEXT_PUBLIC_TIKTOK_CLIENT_KEY || '';
+    const appId = process.env.NEXT_PUBLIC_TIKTOK_CLIENT_KEY || '';
     const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://app.grandline.com.co';
     const redirectUri = `${appDomain}/api/auth/tiktok/callback`;
-    const scope = 'user.info.basic,video.upload';
     const state = userId;
 
     const params = new URLSearchParams({
-        client_key: clientKey,
-        response_type: 'code',
-        scope,
+        app_id: appId,
         redirect_uri: redirectUri,
         state,
     });
 
-    return `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+    return `https://business-api.tiktok.com/portal/auth?${params.toString()}`;
 }
 
 /**
@@ -296,20 +293,17 @@ export function getTikTokAgeGroups(ageMin: number, ageMax: number): string[] {
     return groups;
 }
 
-export async function fetchTikTokAdAccounts(token: string): Promise<TikTokAdAccount[]> {
-    if (!token) return [];
-
+export async function fetchTikTokAdAccounts(_token?: string): Promise<TikTokAdAccount[]> {
     try {
-        // TikTok requires advertiser_info with developer app context usually, 
-        // but for a user with an access_token, we can try to fetch the list of authorized advertisers.
-        const response = await fetch(`https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/?access_token=${token}`);
-        const data = await response.json();
-
-        if (data.code !== 0) {
-            throw new Error(data.message || 'Error fetching TikTok accounts');
+        // Use server-side proxy to avoid CORS — token is read from Firestore server-side
+        const { authFetch: af } = await import('@/lib/api/client');
+        const res = await af('/api/sunny/tiktok-accounts');
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Error fetching TikTok accounts');
         }
-
-        return data.data?.list || [];
+        const data = await res.json();
+        return data.accounts || [];
     } catch (error) {
         console.error('Error fetching TikTok accounts:', error);
         throw error;

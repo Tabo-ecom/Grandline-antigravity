@@ -6,7 +6,7 @@ import {
     isPendienteConfirmacion,
 } from '../utils/status';
 
-// Dropi order interface
+// Dropi order interface — all known columns from Dropi reports
 export interface DropiOrder {
     ID: string;
     ESTATUS: string;
@@ -28,6 +28,30 @@ export interface DropiOrder {
     PAIS?: string;
     TRANSPORTADORA?: string;
     RECAUDO?: string;
+    TAGS?: string;
+    // Extended fields (parsed for future use)
+    DEPARTAMENTO?: string;
+    GUIA?: string;
+    NOMBRE_CLIENTE?: string;
+    TELEFONO_CLIENTE?: string;
+    DIRECCION?: string;
+    OBSERVACIONES?: string;
+    FECHA_ENTREGA?: string;
+    FECHA_DESPACHO?: string;
+    FECHA_DEVOLUCION?: string;
+    PRECIO_VENTA?: number;
+    DESCUENTO?: number;
+    VARIANTE?: string;
+    BODEGA?: string;
+    TIENDA?: string;
+    VENDEDOR?: string;
+    SUBESTATUS?: string;
+    NUMERO_GUIA?: string;
+    PESO?: number;
+    COMISION_PASARELA?: number;
+    VALOR_RECAUDO?: number;
+    // Raw row data for future-proofing
+    _raw?: Record<string, any>;
 }
 
 // KPI results interface
@@ -71,6 +95,9 @@ export interface KPIResults {
     // Pending confirmation
     n_pend: number;         // Pendiente Confirmación count
     perc_pend: number;      // % of total orders that are pending
+
+    // Cancellation reasons breakdown
+    cancelReasons?: { tag: string; count: number; pct: number }[];
 
     // New additions for GlobalSummary
     fact_despachada: number;
@@ -218,6 +245,21 @@ export function calculateKPIs(
         utilidad_por_entrega,
         n_pend,
         perc_pend: n_ord > 0 ? (n_pend / n_ord) * 100 : 0,
+
+        // Cancellation reasons from TAGS
+        cancelReasons: (() => {
+            const tagCounts = new Map<string, Set<string>>();
+            orders.forEach(o => {
+                if (!isCancelado(o.ESTATUS)) return;
+                const tag = (o.TAGS || '').trim() || 'Sin etiqueta';
+                if (!tagCounts.has(tag)) tagCounts.set(tag, new Set());
+                tagCounts.get(tag)!.add(o.ID);
+            });
+            return Array.from(tagCounts.entries())
+                .map(([tag, ids]) => ({ tag, count: ids.size, pct: n_can > 0 ? (ids.size / n_can) * 100 : 0 }))
+                .sort((a, b) => b.count - a.count);
+        })(),
+
         fact_despachada,
         roas: roas_bruto, // Alias for backward compatibility
     };

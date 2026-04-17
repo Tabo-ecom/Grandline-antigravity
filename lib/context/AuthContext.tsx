@@ -24,6 +24,7 @@ export interface UserProfile {
     allowed_modules?: string[];
     created_by?: string;
     feature_flags?: string[];
+    avatar_url?: string;
 }
 
 interface AuthContextType {

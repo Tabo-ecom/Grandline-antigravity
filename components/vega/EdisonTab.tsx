@@ -142,7 +142,7 @@ function JobProgress({ job }: { job: JobPoll | null }) {
                             {(isRunning || isDone) && <span className="font-mono text-[11px] font-bold" style={{ color: isDone ? '#00FF88' : '#d75c33' }}>{pct}%</span>}
                         </div>
                     </div>
-                    <div className="text-[11px] text-muted mt-0.5">{job.progress || job.error || 'Esperando en cola...'}</div>
+                    <div className="text-[11px] text-muted mt-0.5">{isFailed ? (job.error || job.progress) : (job.progress || 'Esperando en cola...')}</div>
                 </div>
             </div>
             {/* Progress bar */}
@@ -305,6 +305,9 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
     const [lnStore, setLnStore] = useState('');
     const [lnNiche, setLnNiche] = useState<Niche>((initialNiche as Niche) || 'generic');
     const [lnStatus, setLnStatus] = useState<'draft' | 'active'>('draft');
+    const [lnImageMode, setLnImageMode] = useState<'scraped' | 'ai' | 'both'>('scraped');
+    const [lnPrice, setLnPrice] = useState('');
+    const [lnAngle, setLnAngle] = useState('');
     const [lnJobId, setLnJobId] = useState<string | null>(null);
     const [lnImgB64, setLnImgB64] = useState('');
     const [lnImgFilename, setLnImgFilename] = useState('');
@@ -328,6 +331,7 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
     const [researchContext, setResearchContext] = useState<any>(null);
     const [savedResearches, setSavedResearches] = useState<VegaResearch[]>([]);
     const [selectedResearchId, setSelectedResearchId] = useState('');
+    const [showResearchPopup, setShowResearchPopup] = useState(false);
 
     // Auto-switch to landing tab when coming from Pythagoras with URL
     useEffect(() => {
@@ -393,14 +397,22 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
         if (!lnUrl) return;
         setError('');
         try {
+            // Build research data with angle and price
+            const researchPayload = initialResearchData ? {
+                ...initialResearchData,
+                selected_angle: lnAngle || undefined,
+                price: lnPrice || undefined,
+            } : lnPrice || lnAngle ? { price: lnPrice, selected_angle: lnAngle } : undefined;
+
             const res = await startPipeline({
                 url: lnUrl,
                 store: lnStore,
                 niche: lnNiche,
                 status: lnStatus,
+                image_source: lnImageMode,
                 image_base64: lnImgB64 || null,
                 image_filename: lnImgFilename || null,
-                research_data: initialResearchData || undefined,
+                research_data: researchPayload,
             });
             setLnJobId(res.job_id);
         } catch (e: any) { setError(e.message); }
@@ -579,15 +591,44 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
                                             const sr = savedResearches.find(x => x.id === selectedResearchId);
                                             return sr?.report ? (
                                                 <div className="p-3 bg-[#AA77FF]/5 border border-[#AA77FF]/15 rounded-xl text-[10px] space-y-1">
-                                                    <div className="font-bold text-[#AA77FF]">{sr.productName}</div>
-                                                    <div className="text-muted">Score: {sr.report.scorecard.total}/10 · {sr.report.recommendation}</div>
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="font-bold text-[#AA77FF]">{sr.productName}</div>
+                                                        <button onClick={() => setShowResearchPopup(true)} className="text-[9px] text-accent hover:underline font-semibold">Ver completo →</button>
+                                                    </div>
+                                                    <div className="text-muted">Score: {sr.report.scorecard.total}/10 · {sr.report.recommendation} · {sr.niche}</div>
                                                     <div className="text-muted">Audiencia: {sr.report.targetAudience?.slice(0, 80)}...</div>
+                                                    {sr.productImages?.[0] && <img src={sr.productImages[0]} alt="" className="w-16 h-16 rounded-lg object-contain bg-background border border-card-border mt-1" />}
                                                 </div>
                                             ) : null;
                                         })()}
                                         <div className="border-b border-card-border" />
                                     </>
                                 )}
+
+                                {/* Angle selector (from research) */}
+                                {selectedResearchId && (() => {
+                                    const sr = savedResearches.find(x => x.id === selectedResearchId);
+                                    const angles = sr?.report?.adAngles || [];
+                                    return angles.length > 0 ? (
+                                        <>
+                                            <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Ángulo de Venta</div>
+                                            <div className="space-y-1.5">
+                                                {angles.map((a, i) => (
+                                                    <button key={i} onClick={() => setLnAngle(a)}
+                                                        className={`w-full text-left p-2.5 rounded-xl border text-[11px] transition-all ${lnAngle === a ? 'bg-accent/10 border-accent/30 text-accent' : 'border-card-border text-muted hover:border-accent/20'}`}>
+                                                        <span className="font-bold">#{i + 1}</span> {a}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : null;
+                                })()}
+
+                                {/* Price input */}
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Precio de Venta (COP)</div>
+                                <input type="text" value={lnPrice} onChange={e => setLnPrice(e.target.value)}
+                                    placeholder="Ej: 89,900"
+                                    className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted/30 focus:border-accent/50 focus:outline-none font-mono" />
 
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted">URL de Referencia</div>
                                 <input type="url" value={lnUrl} onChange={e => setLnUrl(e.target.value)}
@@ -624,6 +665,21 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
 
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Nicho</div>
                                 <NicheSelector value={lnNiche} onChange={setLnNiche} />
+
+                                <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Modo de Imagenes</div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {([
+                                        { value: 'scraped' as const, label: 'Amazon', desc: 'Fotos reales' },
+                                        { value: 'ai' as const, label: 'Gemini IA', desc: 'Genera nuevas' },
+                                        { value: 'both' as const, label: 'Ambas', desc: 'Amazon + IA' },
+                                    ]).map(opt => (
+                                        <button key={opt.value} onClick={() => setLnImageMode(opt.value)}
+                                            className={`py-2 rounded-lg border text-center transition-all ${lnImageMode === opt.value ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : 'border-card-border text-muted'}`}>
+                                            <div className="text-[11px] font-semibold">{opt.label}</div>
+                                            <div className="text-[8px] text-muted/60">{opt.desc}</div>
+                                        </button>
+                                    ))}
+                                </div>
 
                                 <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Estado al publicar</div>
                                 <div className="grid grid-cols-2 gap-2">
@@ -736,6 +792,49 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
                         </div>
                     </div>
                 )}
+
+            {/* Research Preview Popup */}
+            {showResearchPopup && selectedResearchId && (() => {
+                const sr = savedResearches.find(x => x.id === selectedResearchId);
+                if (!sr?.report) return null;
+                const rp = sr.report;
+                return (
+                    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowResearchPopup(false)}>
+                        <div className="bg-card border border-card-border rounded-2xl w-[800px] max-h-[85vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-card-border sticky top-0 bg-card/95 backdrop-blur-sm z-10">
+                                <div>
+                                    <div className="font-bold text-[15px]">{sr.productName}</div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[9px] font-semibold px-2 py-0.5 rounded bg-accent/10 text-accent uppercase">{sr.niche}</span>
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${rp.recommendation === 'GO' ? 'bg-emerald-400/15 text-emerald-400' : rp.recommendation === 'NO_GO' ? 'bg-red-400/15 text-red-400' : 'bg-yellow-400/15 text-yellow-400'}`}>{rp.recommendation}</span>
+                                        <span className="font-mono text-[12px] font-bold" style={{ color: (rp.scorecard?.total ?? 0) >= 7 ? '#00FF88' : (rp.scorecard?.total ?? 0) >= 5 ? '#FFD700' : '#FF3366' }}>{rp.scorecard?.total ?? 0}/10</span>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowResearchPopup(false)} className="w-8 h-8 rounded-lg border border-card-border flex items-center justify-center text-muted hover:text-red-400 transition-all"><X className="w-4 h-4" /></button>
+                            </div>
+                            <div className="p-5 space-y-4">
+                                {sr.productImages?.[0] && <div className="flex gap-2">{sr.productImages.slice(0, 3).map((img, i) => <img key={i} src={img} alt="" className="w-24 h-24 rounded-xl object-contain bg-background border border-card-border" />)}</div>}
+                                <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Resumen</div><p className="text-[12px] leading-relaxed">{rp.summary}</p></div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Demanda</div><p className="text-[11px] text-muted leading-relaxed">{rp.demand}</p></div>
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Competencia</div><p className="text-[11px] text-muted leading-relaxed">{rp.competition}</p></div>
+                                </div>
+                                <div className="bg-background border border-card-border rounded-xl p-4">
+                                    <div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-2">Unit Economics</div>
+                                    <div className="grid grid-cols-5 gap-2 text-center">{[{l:'Costo',v:rp.unitEconomics?.costProduct},{l:'Precio',v:rp.unitEconomics?.suggestedPrice},{l:'CPA',v:rp.unitEconomics?.estimatedCPA},{l:'Margen',v:rp.unitEconomics?.projectedMargin},{l:'ROAS',v:rp.unitEconomics?.minROAS}].map(x => <div key={x.l}><div className="text-[9px] text-muted/50">{x.l}</div><div className="font-mono font-bold text-[12px]">{x.v || '—'}</div></div>)}</div>
+                                </div>
+                                {rp.buyerPersona?.name && <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Buyer Persona</div><div className="text-[12px] font-bold">{rp.buyerPersona.name}</div><div className="text-[10px] text-muted">{rp.buyerPersona.age} · {rp.buyerPersona.gender} · {rp.buyerPersona.occupation}</div></div>}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Pain Points</div>{rp.painPoints?.map((p, i) => <div key={i} className="text-[10px] text-muted py-0.5">• {p}</div>)}</div>
+                                    <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Ángulos Ads</div>{rp.adAngles?.map((a, i) => <div key={i} className="text-[10px] text-muted py-0.5">• {a}</div>)}</div>
+                                </div>
+                                {rp.adScripts && rp.adScripts.length > 0 && <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-2">Guiones</div>{rp.adScripts.map((s: any, i: number) => <div key={i} className="mb-2 text-[10px]"><span className="font-bold text-accent">#{i+1} {s.angle}</span><br/><span className="text-yellow-400">HOOK:</span> <span className="text-muted">{s.hook}</span></div>)}</div>}
+                                {rp.offerSuggestions && rp.offerSuggestions.length > 0 && <div className="bg-background border border-card-border rounded-xl p-4"><div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-1">Ofertas</div>{rp.offerSuggestions.map((o: any, i: number) => <div key={i} className="text-[10px] text-muted py-0.5">• <strong>{o.name}</strong>: {o.description}</div>)}</div>}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
             </div>
         </div>
     );

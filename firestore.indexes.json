@@ -1,4 +1,62 @@
 {
-    "indexes": [],
+    "indexes": [
+        {
+            "collectionGroup": "docs",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "order_index", "order": "ASCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "chat_channels",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "order_index", "order": "ASCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "chat_messages",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "channel_id", "order": "ASCENDING" },
+                { "fieldPath": "timestamp", "order": "DESCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "task_spaces",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "order_index", "order": "ASCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "space_tasks",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "space_id", "order": "ASCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "space_tasks",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "space_id", "order": "ASCENDING" },
+                { "fieldPath": "list_type", "order": "ASCENDING" }
+            ]
+        },
+        {
+            "collectionGroup": "calendar_events",
+            "queryScope": "COLLECTION",
+            "fields": [
+                { "fieldPath": "team_id", "order": "ASCENDING" },
+                { "fieldPath": "date", "order": "ASCENDING" }
+            ]
+        }
+    ],
     "fieldOverrides": []
 }

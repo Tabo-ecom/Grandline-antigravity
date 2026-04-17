@@ -9,9 +9,14 @@ export interface StoreProfile {
     id: string;
     name: string;
     country: string;
+    // Facebook
     pixelId: string;
     pageId: string;
     defaultAccountId?: string;
+    // TikTok
+    ttPixelId?: string;
+    ttDefaultAccountId?: string;
+    // Shared
     currency: string;
 }
 

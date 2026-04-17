@@ -37,8 +37,12 @@ import HealthBadge from '@/components/dashboard/HealthBadge';
 import PlatformBar from '@/components/dashboard/PlatformBar';
 import { useGlobalFilters } from '@/lib/context/FilterContext';
 import dynamic from 'next/dynamic';
+import { getCatalog, CatalogBrand } from '@/lib/services/productCatalog';
 
 const CountryTable = dynamic(() => import('@/components/dashboard/CountryTable'));
+const FunnelAnalysis = dynamic(() => import('@/components/publicidad/FunnelAnalysis').then(m => ({ default: m.FunnelAnalysis })));
+const MetricsAIAlerts = dynamic(() => import('@/components/publicidad/MetricsAIAlerts').then(m => ({ default: m.MetricsAIAlerts })));
+const GlobalSummary = dynamic(() => import('@/components/publicidad/GlobalSummary').then(m => ({ default: m.GlobalSummary })));
 import { useKPITargets } from '@/lib/hooks/useKPITargets';
 import { buildDataContext } from '@/lib/services/vega/context-builder';
 import { authFetch } from '@/lib/api/client';
@@ -96,6 +100,11 @@ interface CountryMetric {
 
 export default function GlobalDashboard() {
     const { effectiveUid } = useAuth();
+    const [catalogBrands, setCatalogBrands] = React.useState<CatalogBrand[]>([]);
+
+    React.useEffect(() => {
+        if (effectiveUid) getCatalog(effectiveUid).then(c => setCatalogBrands(c.brands));
+    }, [effectiveUid]);
 
     const {
         loading,
@@ -289,11 +298,25 @@ export default function GlobalDashboard() {
             }
         }));
     };
+    const updateProductPendingCancel = (ctryName: string, prodId: string, val: number) => {
+        setLocalOverrides((prev: any) => ({
+            ...prev,
+            products: {
+                ...(prev?.products || {}),
+                [ctryName]: {
+                    ...(prev?.products?.[ctryName] || {}),
+                    [`${prodId}_pend_cancel`]: val
+                }
+            }
+        }));
+    };
+
     const [visibleTrends, setVisibleTrends] = useState({
         sales: true,
-        profit: true,
-        ads: true,
-        projected_profit: true
+        profit: false,
+        ads: false,
+        projected_profit: true,
+        cpa: true,
     });
 
     // Drag-select state for chart
@@ -493,6 +516,7 @@ export default function GlobalDashboard() {
                 <FilterHeader
                     availableCountries={availableCountries}
                     availableProducts={availableProducts}
+                    availableBrands={catalogBrands.map(b => ({ id: b.id, name: b.name, color: b.color }))}
                     title="Wheel"
                     icon={LayoutGrid}
                     logo="/logos/wheel-logo.png"
@@ -571,8 +595,8 @@ export default function GlobalDashboard() {
                             <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">Ventas Despachadas <InfoTooltip text="Total facturado de órdenes no canceladas. AOV = valor promedio por orden." /></span>
-                                    <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-emerald-500/10">
-                                        <DollarSign className="w-4 h-4 text-emerald-500" />
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg shadow-emerald-500/20">
+                                        <DollarSign className="w-4 h-4 text-white" />
                                     </div>
                                 </div>
                                 <p className="text-2xl font-black tracking-tight text-emerald-500 font-mono">{formatCurrency(kpis?.fact_neto || 0)}</p>
@@ -598,8 +622,8 @@ export default function GlobalDashboard() {
                             <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">Órdenes Totales <InfoTooltip text="Todas las órdenes del periodo. Eficiencia = % de órdenes despachadas vs total." /></span>
-                                    <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/10">
-                                        <Package className="w-4 h-4 text-blue-400" />
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-blue-500 to-indigo-500 shadow-lg shadow-blue-500/20">
+                                        <Package className="w-4 h-4 text-white" />
                                     </div>
                                 </div>
                                 <p className="text-2xl font-black tracking-tight text-blue-400 font-mono">{kpis?.n_ord || 0}</p>
@@ -629,8 +653,8 @@ export default function GlobalDashboard() {
                             <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">CPA Despachado <InfoTooltip text="Costo por adquisición: gasto en ads dividido entre órdenes despachadas. % FACT = proporción de ads sobre la venta." /></span>
-                                    <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-purple-500/10">
-                                        <TrendingDown className="w-4 h-4 text-purple-400" />
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-purple-500 to-violet-500 shadow-lg shadow-purple-500/20">
+                                        <TrendingDown className="w-4 h-4 text-white" />
                                     </div>
                                 </div>
                                 <p className="text-2xl font-black tracking-tight text-purple-400 font-mono">{formatCurrency(cpaDespachado)}</p>
@@ -666,8 +690,8 @@ export default function GlobalDashboard() {
                             <div className="bg-card border border-card-border rounded-2xl p-4 hover:border-accent/30 transition-all shadow-sm">
                                 <div className="flex items-center justify-between mb-3">
                                     <span className="text-[10px] font-black text-muted uppercase tracking-widest flex items-center gap-1.5">CPA Entregado <InfoTooltip text="Costo por adquisición proyectado a entrega. Usa la tasa de entrega configurada para estimar el costo real por cliente." /></span>
-                                    <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-indigo-500/10">
-                                        <Target className="w-4 h-4 text-indigo-400" />
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-500 shadow-lg shadow-indigo-500/20">
+                                        <Target className="w-4 h-4 text-white" />
                                     </div>
                                 </div>
                                 <p className="text-2xl font-black tracking-tight text-indigo-400 font-mono">{formatCurrency(cpaEntregado)}</p>
@@ -692,7 +716,7 @@ export default function GlobalDashboard() {
                     <div className="bg-card border border-card-border rounded-2xl p-6 shadow-sm">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-rose-500" />
+                                <div className="p-1.5 rounded-lg bg-gradient-to-br from-rose-500 to-pink-500"><Zap className="w-3.5 h-3.5 text-white" /></div>
                                 Inversión en Ads
                                 <InfoTooltip text="Gasto publicitario por plataforma. ROAS = retorno sobre la inversión en ads (venta / gasto)." />
                             </h3>
@@ -716,7 +740,7 @@ export default function GlobalDashboard() {
                     <div className="bg-card border border-card-border rounded-2xl p-6 relative shadow-sm">
                         <div className="flex justify-between items-center mb-6 relative z-10">
                             <h3 className="text-[11px] font-black text-muted uppercase tracking-widest flex items-center gap-2">
-                                <Target className="w-4 h-4 text-emerald-500" />
+                                <div className="p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-500"><Target className="w-3.5 h-3.5 text-white" /></div>
                                 Ganancia
                                 <InfoTooltip text="Utilidad Real = Ingreso - Costos - Ads - Fletes. Proyectada estima la ganancia final según tasa de entrega." />
                             </h3>
@@ -820,43 +844,38 @@ export default function GlobalDashboard() {
                                 </button>
                             </div>
 
-                            <div className="flex flex-col md:flex-row items-end md:items-center gap-4 relative z-10 mt-2 md:mt-0">
-                                {/* View Toggle */}
-                                <div className="flex bg-hover-bg rounded-lg p-1 border border-card-border">
-                                    <button
-                                        onClick={() => { setChartView('date'); clearSelection(); }}
-                                        className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all ${chartView === 'date' ? 'bg-card text-accent shadow-sm' : 'text-muted hover:text-foreground'}`}
-                                    >
-                                        Fecha
-                                    </button>
-                                    <button
-                                        onClick={() => { setChartView('product'); clearSelection(); }}
-                                        className={`px-3 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all ${chartView === 'product' ? 'bg-card text-accent shadow-sm' : 'text-muted hover:text-foreground'}`}
-                                    >
-                                        Producto
-                                    </button>
-                                </div>
-                                {[
-                                    { key: 'sales', name: 'Ventas', color: '#6366f1' },
-                                    { key: 'profit', name: 'Utilidad', color: '#10b981' },
-                                    { key: 'ads', name: 'Ads', color: '#f43f5e' },
-                                    { key: 'projected_profit', name: 'Utd. Proyectada', color: '#3b82f6' },
-                                ].map(item => {
-                                    const isVisible = visibleTrends[item.key as keyof typeof visibleTrends];
-                                    return (
-                                        <button
-                                            key={item.key}
-                                            onClick={() => setVisibleTrends(prev => ({ ...prev, [item.key]: !isVisible }))}
-                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${isVisible
-                                                ? 'bg-hover-bg border-card-border text-foreground shadow-sm'
-                                                : 'bg-transparent border-card-border text-muted grayscale opacity-30 hover:opacity-60'
-                                                }`}
-                                        >
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                                            {item.name}
+                            <div className="flex flex-col gap-2 relative z-10 mt-2 md:mt-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    {/* View Toggle */}
+                                    <div className="flex bg-hover-bg rounded-lg p-0.5 border border-card-border">
+                                        <button onClick={() => { setChartView('date'); clearSelection(); }}
+                                            className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-md transition-all ${chartView === 'date' ? 'bg-card text-accent shadow-sm' : 'text-muted hover:text-foreground'}`}>
+                                            Fecha
                                         </button>
-                                    );
-                                })}
+                                        <button onClick={() => { setChartView('product'); clearSelection(); }}
+                                            className={`px-2.5 py-1 text-[9px] font-black uppercase tracking-wider rounded-md transition-all ${chartView === 'product' ? 'bg-card text-accent shadow-sm' : 'text-muted hover:text-foreground'}`}>
+                                            Producto
+                                        </button>
+                                    </div>
+                                    {/* Metric toggles */}
+                                    {[
+                                        { key: 'sales', name: 'Ventas', color: '#6366f1' },
+                                        { key: 'profit', name: 'Utilidad', color: '#10b981' },
+                                        { key: 'ads', name: 'Ads', color: '#f43f5e' },
+                                        { key: 'projected_profit', name: 'Utd. Proy.', color: '#3b82f6' },
+                                        { key: 'cpa', name: 'CPA', color: '#a855f7' },
+                                    ].map(item => {
+                                        const isVisible = visibleTrends[item.key as keyof typeof visibleTrends];
+                                        return (
+                                            <button key={item.key}
+                                                onClick={() => setVisibleTrends(prev => ({ ...prev, [item.key]: !isVisible }))}
+                                                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold transition-all border ${isVisible ? 'bg-hover-bg border-card-border text-foreground' : 'bg-transparent border-transparent text-muted/30 hover:text-muted/50'}`}>
+                                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                                {item.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
 
@@ -872,7 +891,7 @@ export default function GlobalDashboard() {
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart
                                         data={chartView === 'date' ? dailySalesData : (expandedTrends ? productPerformanceDataFull : productPerformanceData)}
-                                        margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                                        margin={{ top: 10, right: visibleTrends.cpa ? 55 : 10, left: -10, bottom: 0 }}
                                         onMouseDown={handleChartMouseDown}
                                         onMouseMove={handleChartMouseMove}
                                         onMouseUp={handleChartMouseUp}
@@ -914,6 +933,8 @@ export default function GlobalDashboard() {
                                         {visibleTrends.ads && <Bar dataKey="ads" name="Ads" stackId="a" fill="#f43f5e" radius={[0, 0, 0, 0]} barSize={chartView === 'date' ? 28 : undefined} />}
                                         {visibleTrends.projected_profit && <Bar dataKey="projected_profit" name="Utd. Proyectada" stackId="a" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={chartView === 'date' ? 28 : undefined} />}
                                         {visibleTrends.sales && <Line type="monotone" dataKey="sales" name="Venta Total" stroke="#6366f1" strokeWidth={2} dot={false} strokeDasharray="5 5" />}
+                                        {visibleTrends.cpa && <Line type="monotone" dataKey="cpa" name="CPA" stroke="#a855f7" strokeWidth={2.5} dot={{ r: 3, fill: '#a855f7' }} yAxisId="right" />}
+                                        {visibleTrends.cpa && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#a855f7' }} tickFormatter={(v: number) => `$${(v/1000).toFixed(0)}k`} width={50} />}
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             )}
@@ -959,7 +980,12 @@ export default function GlobalDashboard() {
                             return (
                                 <div className="relative z-10 mb-4 p-4 rounded-xl" style={{ backgroundColor: cancelColor.bg, border: `1px solid ${cancelColor.border}` }}>
                                     <div className="flex items-center justify-between mb-2">
-                                        <span className="text-[10px] text-muted font-black uppercase tracking-widest">% Cancelación</span>
+                                        <span className="text-[10px] text-muted font-black uppercase tracking-widest flex items-center gap-1.5">
+                                            % Cancelación
+                                            {kpis?.cancelReasons && kpis.cancelReasons.length > 0 && (
+                                                <InfoTooltip text={kpis.cancelReasons.map(r => `${r.tag}: ${r.count} (${r.pct.toFixed(1)}%)`).join('\n')} />
+                                            )}
+                                        </span>
                                         <span className="text-2xl font-black font-mono" style={{ color: cancelPct <= 10 ? '#10b981' : cancelPct <= 15 ? '#f59e0b' : '#ef4444' }}>
                                             {cancelPct.toFixed(1)}%
                                         </span>
@@ -974,6 +1000,20 @@ export default function GlobalDashboard() {
                                         <span className="text-xs text-muted font-mono">{logisticStats.cancelados} canceladas</span>
                                         <span className="text-xs text-muted font-mono">{totalOrders} total</span>
                                     </div>
+                                    {/* Cancel reasons breakdown */}
+                                    {kpis?.cancelReasons && kpis.cancelReasons.length > 0 && kpis.cancelReasons[0].tag !== 'Sin etiqueta' && (
+                                        <div className="mt-3 pt-3 border-t border-card-border space-y-1.5">
+                                            {kpis.cancelReasons.slice(0, 5).map((r, i) => (
+                                                <div key={i} className="flex items-center justify-between gap-2">
+                                                    <span className="text-[10px] text-foreground/60 truncate max-w-[160px]">{r.tag}</span>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="font-mono text-[10px] font-bold text-red-400">{r.count}</span>
+                                                        <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-red-500/10 text-red-400">{r.pct.toFixed(1)}%</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })()}
@@ -1196,6 +1236,8 @@ export default function GlobalDashboard() {
                     </div>
                 )}
 
+                {/* VEGA AI Alerts + Funnel movidos a /publicidad */}
+
                 <CountryTable
                     metricsByCountry={metricsByCountry}
                     expandedCountry={expandedCountry}
@@ -1205,6 +1247,7 @@ export default function GlobalDashboard() {
                     updateProductOverride={updateProductOverride}
                     toggleReturnBuffer={toggleReturnBuffer}
                     updatePendingCancelOverride={updatePendingCancelOverride}
+                    updateProductPendingCancel={updateProductPendingCancel}
                     freightAnalysis={freightAnalysis}
                     handleSaveProjections={handleSaveProjections}
                     isSavingProjections={isSavingProjections}

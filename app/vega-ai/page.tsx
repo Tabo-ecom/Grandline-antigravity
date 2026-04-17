@@ -5,6 +5,7 @@ import { Microscope, Palette, BarChart3, ChevronDown, ChevronRight, Clock, Bell 
 import dynamic from 'next/dynamic';
 
 // Satellite tabs — lazy loaded
+const GeneralTab = dynamic(() => import('@/components/vega/GeneralTab'));
 const PythagorasTab = dynamic(() => import('@/components/vega/PythagorasTab'));
 const EdisonTab = dynamic(() => import('@/components/vega/EdisonTab'));
 
@@ -18,6 +19,7 @@ const KPICalibration = dynamic(() => import('@/components/settings/KPICalibratio
 
 // ── Satellite Definitions ──────────────────────────────────────────────────
 const SATELLITES = [
+    { key: 'general', label: 'General', subtitle: 'Agentes & Flujos', icon: Activity, color: '#d75c33' },
     { key: 'pythagoras', label: 'Pythagoras', subtitle: 'Market Research', icon: Microscope, color: '#AA77FF' },
     { key: 'edison', label: 'Edison', subtitle: 'Creative Designer', icon: Palette, color: '#FF8844' },
     { key: 'shaka', label: 'Shaka', subtitle: 'Data Analytics', icon: BarChart3, color: '#00CFFF' },
@@ -169,6 +171,10 @@ export default function VegaAIPage() {
             </div>
 
             {/* Tab Content */}
+            {activeSatellite === 'general' && (
+                <GeneralTab />
+            )}
+
             {activeSatellite === 'pythagoras' && (
                 <PythagorasTab onCreateLanding={handleCreateLanding} />
             )}
