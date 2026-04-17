@@ -16,7 +16,7 @@ const db = getFirestore();
 const adminAuth = getAuth();
 
 // Re-fetch Notion structure to get proper parent-child relationships
-const NOTION_KEY = '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';
+const NOTION_KEY = process.env.NOTION_KEY || '';
 
 async function notionFetch(path, body = null) {
     const res = await fetch(`https://api.notion.com/v1${path}`, {

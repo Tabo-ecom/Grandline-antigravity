@@ -28,7 +28,7 @@ if (!getApps().length) {
 const db = getFirestore();
 const adminAuth = getAuth();
 
-const NOTION_KEY = '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';
+const NOTION_KEY = process.env.NOTION_KEY || '';
 
 // ─── Notion API helpers ───
 async function notionFetch(path, body = null) {
