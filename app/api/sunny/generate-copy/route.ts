@@ -25,7 +25,30 @@ DESCRIPCION: [descripción corta para el anuncio, máximo 90 caracteres, complem
 COPIES:
 [copy 1, max 280 chars]|||[copy 2, max 280 chars]|||[copy 3, max 280 chars]|||[copy 4, max 280 chars]|||[copy 5, max 280 chars]`;
 
-async function callGemini(prompt: string): Promise<string> {
+const TIKTOK_COPY_SYSTEM_PROMPT = `Eres un copywriter experto en e-commerce para TikTok Ads en Latinoamérica.
+
+## REGLAS CRÍTICAS
+- TikTok solo permite MÁXIMO 100 CARACTERES por descripción de anuncio
+- Cada copy DEBE tener 100 caracteres o menos (incluyendo espacios y emojis)
+- Escribe en español natural latinoamericano
+- Sé MUY conciso y directo — cada palabra cuenta
+- Usa máximo 1 emoji por copy
+- El objetivo es generar curiosidad y clics rápidos (contenido tipo short-form video)
+
+## LOS 5 ÁNGULOS (uno por variante, TODOS bajo 100 chars)
+1. **DOLOR**: Problema + solución en una frase
+2. **DIRECTO**: Beneficio principal + CTA
+3. **CURIOSIDAD**: Genera intriga rápida
+4. **TESTIMONIO**: Experiencia corta y real
+5. **BENEFICIOS**: 1-2 beneficios clave
+
+## FORMATO DE RESPUESTA
+TITULO: [máximo 40 caracteres]
+DESCRIPCION: [máximo 100 caracteres]
+COPIES:
+[copy 1, MAX 100 chars]|||[copy 2, MAX 100 chars]|||[copy 3, MAX 100 chars]|||[copy 4, MAX 100 chars]|||[copy 5, MAX 100 chars]`;
+
+async function callGemini(prompt: string, systemPrompt: string = COPY_SYSTEM_PROMPT): Promise<string> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
 
@@ -36,7 +59,7 @@ async function callGemini(prompt: string): Promise<string> {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                systemInstruction: { parts: [{ text: COPY_SYSTEM_PROMPT }] },
+                systemInstruction: { parts: [{ text: systemPrompt }] },
                 generationConfig: {
                     temperature: 0.9,
                     maxOutputTokens: 2048,
@@ -50,7 +73,7 @@ async function callGemini(prompt: string): Promise<string> {
     return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
-async function callOpenAI(prompt: string): Promise<string> {
+async function callOpenAI(prompt: string, systemPrompt: string = COPY_SYSTEM_PROMPT): Promise<string> {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
 
@@ -63,7 +86,7 @@ async function callOpenAI(prompt: string): Promise<string> {
         body: JSON.stringify({
             model: 'gpt-4o-mini',
             messages: [
-                { role: 'system', content: COPY_SYSTEM_PROMPT },
+                { role: 'system', content: systemPrompt },
                 { role: 'user', content: prompt }
             ],
             temperature: 0.9,
@@ -100,13 +123,22 @@ export async function POST(request: NextRequest) {
         const rl = checkRateLimit(`${auth.uid}:sunny-copy`, { max: 10 });
         if (!rl.success) return rateLimitResponse();
 
-        const { product, country, destinationUrl, instruction } = await request.json();
+        const { product, country, destinationUrl, instruction, platform } = await request.json();
 
         if (!product) {
             return NextResponse.json({ error: 'Product name is required' }, { status: 400 });
         }
 
-        const prompt = `Genera contenido publicitario para el siguiente producto:
+        const isTikTok = platform === 'tiktok' || platform === 'both';
+        const prompt = isTikTok
+            ? `Genera contenido publicitario CORTO para TikTok Ads:
+
+PRODUCTO: ${product}
+PAÍS DESTINO: ${country || 'Colombia'}
+${instruction ? `INSTRUCCIÓN ESPECIAL: ${instruction}` : ''}
+
+IMPORTANTE: Cada copy debe tener MÁXIMO 100 caracteres. Genera: 1 título corto, 1 descripción (máx 100 chars), y 5 copies cortos.`
+            : `Genera contenido publicitario para el siguiente producto:
 
 PRODUCTO: ${product}
 PAÍS DESTINO: ${country || 'Colombia'}
@@ -115,13 +147,14 @@ ${instruction ? `INSTRUCCIÓN ESPECIAL: ${instruction}` : ''}
 
 Genera: 1 título corto, 1 descripción corta, y 5 body copies con ángulos diferentes (Dolor, Directo, Curiosidad, Testimonio, Beneficios).`;
 
+        const systemPrompt = isTikTok ? TIKTOK_COPY_SYSTEM_PROMPT : COPY_SYSTEM_PROMPT;
         let rawResponse: string;
 
         try {
-            rawResponse = await callGemini(prompt);
+            rawResponse = await callGemini(prompt, systemPrompt);
         } catch (geminiError) {
             console.warn('[Sunny AI] Gemini failed, falling back to OpenAI:', geminiError);
-            rawResponse = await callOpenAI(prompt);
+            rawResponse = await callOpenAI(prompt, systemPrompt);
         }
 
         const { title, description, copies } = parseResponse(rawResponse);

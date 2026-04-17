@@ -208,6 +208,15 @@ export const Lanzador: React.FC = () => {
         }
     }, [effectiveUid]);
 
+    // Reset selected accounts when platform changes
+    useEffect(() => {
+        setSelectedAccountIds([]);
+        setCampaignMode('new');
+        if (naming.strategy === 'ASC' && platform !== 'facebook') {
+            setNaming(prev => ({ ...prev, strategy: 'CBO' }));
+        }
+    }, [platform]);
+
     useEffect(() => {
         if (activeStore) {
             setNaming(prev => ({ ...prev, country: activeStore.country }));
@@ -323,6 +332,7 @@ export const Lanzador: React.FC = () => {
                 style: 'hype',
                 destinationLink: destinationUrl,
                 instruction: vegaInstruction || undefined,
+                platform,
             });
             setAiTitle(result.title);
             setAiDescription(result.description);
@@ -1257,8 +1267,8 @@ export const Lanzador: React.FC = () => {
                     </div>
                 </CollapsibleSection>
 
-                {/* 3.5 Campaign Mode: New vs Existing */}
-                <CollapsibleSection title="Destino de Campaña" icon={Rocket}>
+                {/* 3.5 Campaign Mode: New vs Existing (Facebook only) */}
+                {(platform === 'facebook' || platform === 'both') && <CollapsibleSection title="Destino de Campaña" icon={Rocket}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <button
                             onClick={() => { setCampaignMode('new'); setSelectedCampaignByAccount({}); setSelectedAdSetByAccount({}); }}
@@ -1392,10 +1402,10 @@ export const Lanzador: React.FC = () => {
                             )}
                         </div>
                     )}
-                </CollapsibleSection>
+                </CollapsibleSection>}
 
-                {/* 4. Ad Structure */}
-                <CollapsibleSection title="Estructura de Anuncios" icon={Layers}>
+                {/* 4. Ad Structure (Facebook only — TikTok always uses grouped) */}
+                {(platform === 'facebook' || platform === 'both') && <CollapsibleSection title="Estructura de Anuncios" icon={Layers}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Grouped */}
                         <button
@@ -1456,7 +1466,7 @@ export const Lanzador: React.FC = () => {
                             <p className="text-[10px] text-muted mt-1 uppercase tracking-widest">asset_feed_spec (multi-asset)</p>
                         </button>
                     </div>
-                </CollapsibleSection>
+                </CollapsibleSection>}
 
                 {/* 5. Presupuesto */}
                 <CollapsibleSection title="Presupuesto" icon={DollarSign}>
@@ -1538,7 +1548,8 @@ export const Lanzador: React.FC = () => {
                         </div>
                     )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-4">
+                        {/* Exclusion lists — Facebook only */}
+                        {platform !== 'tiktok' && <div className="space-y-4">
                             <label className="text-[10px] font-black uppercase tracking-widest text-muted">Listas de Exclusión</label>
                             <div className="grid grid-cols-1 gap-3">
                                 {exclusionLists.length > 0 ? exclusionLists.map((list) => (
@@ -1565,7 +1576,7 @@ export const Lanzador: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </div>}
                         <div className="space-y-4">
                             <label className="text-[10px] font-black uppercase tracking-widest text-muted">Demografía (Opcional)</label>
                             <div className="p-5 bg-background border border-card-border rounded-2xl space-y-5">

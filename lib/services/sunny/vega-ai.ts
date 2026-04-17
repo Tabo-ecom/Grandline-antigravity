@@ -13,6 +13,7 @@ export interface VegaAIRequest {
     style?: string;
     destinationLink?: string;
     instruction?: string;
+    platform?: 'facebook' | 'tiktok' | 'both';
 }
 
 export interface VegaAIResult {
@@ -22,7 +23,7 @@ export interface VegaAIResult {
 }
 
 export async function generateCopy(req: VegaAIRequest): Promise<VegaAIResult> {
-    const { product, target, destinationLink, instruction } = req;
+    const { product, target, destinationLink, instruction, platform } = req;
 
     const response = await authFetch('/api/sunny/generate-copy', {
         method: 'POST',
@@ -32,6 +33,7 @@ export async function generateCopy(req: VegaAIRequest): Promise<VegaAIResult> {
             country: target,
             destinationUrl: destinationLink,
             instruction,
+            platform,
         })
     });
 

@@ -156,18 +156,17 @@ export interface TikTokLaunchResult {
 
 const TT_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3';
 
-async function ttApiCall(endpoint: string, token: string, body: any): Promise<any> {
-    const res = await fetch(`${TT_API_BASE}${endpoint}`, {
+async function ttApiCall(endpoint: string, _token: string, body: any): Promise<any> {
+    // Uses server-side proxy to avoid CORS and keep token secure
+    const { authFetch: af } = await import('@/lib/api/client');
+    const res = await af('/api/sunny/tiktok-ads', {
         method: 'POST',
-        headers: {
-            'Access-Token': token,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, body }),
     });
     const data = await res.json();
-    if (data.code !== 0) {
-        throw new Error(data.message || `TikTok API error: ${data.code}`);
+    if (!res.ok) {
+        throw new Error(data.error || `TikTok API error`);
     }
     return data.data;
 }
@@ -233,36 +232,32 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
     return data.ad_ids?.[0] || data.ad_id;
 }
 
-export async function uploadTikTokVideo(token: string, advertiserId: string, file: File): Promise<string> {
+export async function uploadTikTokVideo(_token: string, advertiserId: string, file: File): Promise<string> {
+    // Uses server-side proxy to avoid CORS
+    const { authFetch: af } = await import('@/lib/api/client');
     const formData = new FormData();
     formData.append('advertiser_id', advertiserId);
-    formData.append('upload_type', 'UPLOAD_BY_FILE');
-    formData.append('video_file', file);
+    formData.append('file', file);
+    formData.append('type', 'video');
 
-    const res = await fetch(`${TT_API_BASE}/file/video/ad/upload/`, {
-        method: 'POST',
-        headers: { 'Access-Token': token },
-        body: formData,
-    });
+    const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
     const data = await res.json();
-    if (data.code !== 0) throw new Error(data.message || 'Error uploading video to TikTok');
-    return data.data?.video_id;
+    if (!res.ok) throw new Error(data.error || 'Error uploading video to TikTok');
+    return data.id;
 }
 
-export async function uploadTikTokImage(token: string, advertiserId: string, file: File): Promise<string> {
+export async function uploadTikTokImage(_token: string, advertiserId: string, file: File): Promise<string> {
+    // Uses server-side proxy to avoid CORS
+    const { authFetch: af } = await import('@/lib/api/client');
     const formData = new FormData();
     formData.append('advertiser_id', advertiserId);
-    formData.append('upload_type', 'UPLOAD_BY_FILE');
-    formData.append('image_file', file);
+    formData.append('file', file);
+    formData.append('type', 'image');
 
-    const res = await fetch(`${TT_API_BASE}/file/image/ad/upload/`, {
-        method: 'POST',
-        headers: { 'Access-Token': token },
-        body: formData,
-    });
+    const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
     const data = await res.json();
-    if (data.code !== 0) throw new Error(data.message || 'Error uploading image to TikTok');
-    return data.data?.image_id;
+    if (!res.ok) throw new Error(data.error || 'Error uploading image to TikTok');
+    return data.id;
 }
 
 /** Map country name to TikTok location ID */
