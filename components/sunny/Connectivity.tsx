@@ -31,6 +31,7 @@ export const Connectivity: React.FC = () => {
         selectedStoreId,
         setSelectedStoreId,
         addStoreProfile,
+        updateStoreProfile,
         deleteStoreProfile,
         exclusionLists,
         addExclusionList,
@@ -39,6 +40,7 @@ export const Connectivity: React.FC = () => {
     const { effectiveUid } = useAuth();
 
     const [isAddingProfile, setIsAddingProfile] = useState(false);
+    const [editingProfile, setEditingProfile] = useState<StoreProfile | null>(null);
     const [newProfile, setNewProfile] = useState<Partial<StoreProfile>>({
         name: '',
         country: 'Colombia',
@@ -251,12 +253,22 @@ export const Connectivity: React.FC = () => {
                                     <span className="text-[10px] font-black uppercase tracking-widest text-accent block mb-1">{profile.country}</span>
                                     <h3 className="text-lg font-black uppercase text-foreground tracking-tighter italic">{profile.name}</h3>
                                 </div>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); deleteStoreProfile(profile.id); }}
-                                    className="p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-500 rounded-lg transition-all"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex gap-1">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setEditingProfile(profile); }}
+                                        className="p-2 opacity-0 group-hover:opacity-100 hover:bg-accent/20 text-accent rounded-lg transition-all"
+                                        title="Editar"
+                                    >
+                                        <Cpu className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); deleteStoreProfile(profile.id); }}
+                                        className="p-2 opacity-0 group-hover:opacity-100 hover:bg-red-500/20 text-red-500 rounded-lg transition-all"
+                                        title="Eliminar"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="space-y-3 relative z-10">
@@ -387,6 +399,79 @@ export const Connectivity: React.FC = () => {
                                     </button>
                                     <button
                                         onClick={() => setIsAddingProfile(false)}
+                                        className="px-4 py-2.5 bg-card text-muted font-bold uppercase text-[10px] rounded-lg border border-card-border hover:border-muted/30 transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal: Editar Perfil */}
+                {editingProfile && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setEditingProfile(null)}>
+                        <div className="w-full max-w-md mx-4 p-6 rounded-2xl border border-accent/30 bg-card shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-5">
+                                <h4 className="text-sm font-black uppercase italic text-accent tracking-tighter">Editar Perfil: {editingProfile.name}</h4>
+                                <button onClick={() => setEditingProfile(null)} className="p-1.5 hover:bg-background rounded-lg transition-colors text-muted hover:text-foreground">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted ml-1">Nombre</label>
+                                    <input
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-accent/50 outline-none"
+                                        value={editingProfile.name}
+                                        onChange={e => setEditingProfile({ ...editingProfile, name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-blue-400 ml-1">Meta Pixel ID</label>
+                                    <input
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-blue-500/50 outline-none font-mono"
+                                        value={editingProfile.pixelId || ''}
+                                        onChange={e => setEditingProfile({ ...editingProfile, pixelId: e.target.value })}
+                                        placeholder="Meta Pixel ID"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-blue-400 ml-1">Meta Page ID</label>
+                                    <input
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-blue-500/50 outline-none font-mono"
+                                        value={editingProfile.pageId || ''}
+                                        onChange={e => setEditingProfile({ ...editingProfile, pageId: e.target.value })}
+                                        placeholder="Meta Page ID"
+                                    />
+                                </div>
+                                <div className="border-t border-card-border pt-3 mt-3">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-pink-400 ml-1 mb-2 block">TikTok Pixel ID</label>
+                                    <input
+                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-pink-500/50 outline-none font-mono"
+                                        value={editingProfile.ttPixelId || ''}
+                                        onChange={e => setEditingProfile({ ...editingProfile, ttPixelId: e.target.value })}
+                                        placeholder="TikTok Pixel ID"
+                                    />
+                                </div>
+                                <div className="flex gap-2 pt-3">
+                                    <button
+                                        onClick={async () => {
+                                            await updateStoreProfile(editingProfile.id, {
+                                                name: editingProfile.name,
+                                                pixelId: editingProfile.pixelId,
+                                                pageId: editingProfile.pageId,
+                                                ttPixelId: editingProfile.ttPixelId,
+                                            });
+                                            setEditingProfile(null);
+                                        }}
+                                        className="flex-1 py-2.5 bg-accent text-white font-black uppercase text-[10px] rounded-lg hover:bg-accent/90 transition-colors"
+                                    >
+                                        Guardar Cambios
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingProfile(null)}
                                         className="px-4 py-2.5 bg-card text-muted font-bold uppercase text-[10px] rounded-lg border border-card-border hover:border-muted/30 transition-colors"
                                     >
                                         Cancelar
