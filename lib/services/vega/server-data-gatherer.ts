@@ -7,6 +7,7 @@ import { adminGetAllOrderFiles, adminGetAppData, adminGetAllDocs } from '@/lib/f
 import { fetchExchangeRates, toCOP, isMatchingCountry, getCurrencyForCountry, getOfficialCountryName, normalizeCountry } from '@/lib/utils/currency';
 import { deduplicateAdSpends, fixAdSpendCurrencies, type AdSpend, type AdSettings, type CampaignMapping } from '@/lib/services/marketing';
 import { DropiOrder, calculateKPIs, calculateProjection } from '@/lib/calculations/kpis';
+import { calculateSupplierKPIs, type SupplierKPIResults } from '@/lib/calculations/supplierKpis';
 import { parseDropiDate, getLocalDateKey } from '@/lib/utils/date-parsers';
 import { isCancelado, isEntregado, isTransit, isDevolucion } from '@/lib/utils/status';
 import { getEffectiveProductId, getProductGroup, type ProductGroup } from '@/lib/services/productGroups';
@@ -14,6 +15,9 @@ import { totalByCategory, type Expense } from '@/lib/services/expenses';
 import { buildDataContext, type VegaDataContext } from './context-builder';
 import { applyPriceCorrections, type PriceCorrection } from '@/lib/services/priceCorrections';
 import type { ExtendedDropiOrder } from '@/lib/hooks/useDashboardData';
+import type { SupplierOrder } from '@/lib/utils/supplierParser';
+import type { InventoryProduct } from '@/lib/services/supplierInventory';
+import type { ReportType } from '@/lib/types/vega';
 
 interface DateRange {
     startDate: Date;
@@ -21,11 +25,11 @@ interface DateRange {
     label: string;
 }
 
-function getDateRangeForReport(type: 'daily' | 'weekly' | 'monthly'): DateRange {
+function getDateRangeForReport(type: ReportType): DateRange {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    if (type === 'daily') {
+    if (type === 'daily' || type === 'logistics') {
         // Yesterday's full day
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
@@ -38,7 +42,7 @@ function getDateRangeForReport(type: 'daily' | 'weekly' | 'monthly'): DateRange 
         };
     }
 
-    if (type === 'weekly') {
+    if (type === 'weekly' || type === 'financial' || type === 'supplier') {
         // Last 7 days (not including today)
         const end = new Date(today);
         end.setDate(end.getDate() - 1);
@@ -53,7 +57,21 @@ function getDateRangeForReport(type: 'daily' | 'weekly' | 'monthly'): DateRange 
         };
     }
 
-    // Monthly: current month up to yesterday
+    if (type === 'month_close') {
+        // Full PREVIOUS month (day 1 to last day)
+        const prevMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+        const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+        const start = new Date(prevYear, prevMonth, 1);
+        const end = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59, 999); // last day of prev month
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        return {
+            startDate: start,
+            endDate: end,
+            label: `${monthNames[prevMonth]} ${prevYear}`
+        };
+    }
+
+    // Monthly (and fallback for other types): current month up to yesterday
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(today);
     end.setDate(end.getDate() - 1);
@@ -66,6 +84,31 @@ function getDateRangeForReport(type: 'daily' | 'weekly' | 'monthly'): DateRange 
     };
 }
 
+export interface CarrierStats {
+    carrier: string;
+    orders: number;
+    delivered: number;
+    deliveryRate: number;
+}
+
+export interface PnLCascade {
+    ingProveedor: number;
+    ingDropshipping: number;
+    ingTotal: number;
+    costoTotal: number;
+    gananciaBruta: number;
+    fletesTotal: number;
+    ads: number;
+    gastosOperativos: number;
+    gastosAdmin: number;
+    utilidadBruta: number;
+    utilidadOp: number;
+    utilidadNeta: number;
+    margenBruto: number;
+    margenOp: number;
+    margenNeto: number;
+}
+
 export interface ReportData {
     context: string;
     period: string;
@@ -73,9 +116,34 @@ export interface ReportData {
     metricsByCountry: any[];
     adPlatformMetrics: { fb: number; tiktok: number; google: number };
     prevKpis: any;
+    cancelReasons?: { tag: string; count: number; pct: number }[];
+    supplierKpis?: SupplierKPIResults | null;
+    carrierBreakdown?: CarrierStats[];
+    berryExpenses?: { category: string; amount: number }[];
+    berryExpenseTotal?: number;
+    pnl?: PnLCascade | null;
 }
 
-export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', userId: string): Promise<ReportData> {
+function computeCarrierBreakdown(orders: ExtendedDropiOrder[]): CarrierStats[] {
+    const carrierMap = new Map<string, { orders: Set<string>; delivered: Set<string> }>();
+    orders.forEach(o => {
+        const carrier = (o.TRANSPORTADORA as string || 'Sin transportadora').trim();
+        if (!carrierMap.has(carrier)) carrierMap.set(carrier, { orders: new Set(), delivered: new Set() });
+        const entry = carrierMap.get(carrier)!;
+        entry.orders.add(o.ID?.toString() || '');
+        if (isEntregado(o.ESTATUS)) entry.delivered.add(o.ID?.toString() || '');
+    });
+    return Array.from(carrierMap.entries())
+        .map(([carrier, data]) => ({
+            carrier,
+            orders: data.orders.size,
+            delivered: data.delivered.size,
+            deliveryRate: data.orders.size > 0 ? (data.delivered.size / data.orders.size) * 100 : 0,
+        }))
+        .sort((a, b) => b.orders - a.orders);
+}
+
+export async function gatherDataForReport(type: ReportType, userId: string): Promise<ReportData> {
     if (!userId) throw new Error("userId is required for gatherDataForReport");
     const range = getDateRangeForReport(type);
 
@@ -500,6 +568,102 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         });
     }
 
+    // ── Supplier data (for supplier/financial/month_close reports) ──
+    let supplierKpis: SupplierKPIResults | null = null;
+    if (['supplier', 'month_close', 'financial'].includes(type)) {
+        try {
+            const [supplierFilesRaw, supplierInventory] = await Promise.all([
+                adminGetAllDocs('supplier_order_files', userId),
+                adminGetAppData<InventoryProduct[]>('supplier_inventory', userId).then(d => Array.isArray(d) ? d : []),
+            ]);
+
+            // Flatten supplier orders and filter by date range
+            const allSupplierOrders: SupplierOrder[] = [];
+            if (Array.isArray(supplierFilesRaw)) {
+                supplierFilesRaw.forEach((file: any) => {
+                    if (file.orders && Array.isArray(file.orders)) {
+                        file.orders.forEach((order: any) => {
+                            allSupplierOrders.push(order as SupplierOrder);
+                        });
+                    }
+                });
+            }
+            const filteredSupplierOrders = allSupplierOrders.filter(o => {
+                const d = parseDropiDate(o.FECHA);
+                if (!d || d.getTime() === 0) return false;
+                return d >= range.startDate && d <= range.endDate;
+            });
+
+            supplierKpis = calculateSupplierKPIs(filteredSupplierOrders, supplierInventory);
+        } catch (err) {
+            console.error('Error fetching supplier data:', err);
+        }
+    }
+
+    // ── Carrier breakdown (for logistics/month_close reports) ──
+    let carrierBreakdown: CarrierStats[] | undefined;
+    if (['logistics', 'month_close'].includes(type)) {
+        carrierBreakdown = computeCarrierBreakdown(filteredOrders);
+    }
+
+    // ── Cancel reasons (from kpis) ──
+    const cancelReasons = kpis.cancelReasons;
+
+    // ── P&L cascade (for financial/month_close reports) ──
+    let pnl: PnLCascade | null = null;
+    if (['financial', 'month_close'].includes(type)) {
+        const sIng = supplierKpis?.ingreso_proveedor ?? 0;
+        const vIng = kpis.ing_real ?? 0;
+        const ingTotal = sIng + vIng;
+
+        const sCosto = supplierKpis?.costo_interno ?? 0;
+        const vCpr = kpis.cpr ?? 0;
+        const costoTotal = sCosto + vCpr;
+        const gananciaBruta = ingTotal - costoTotal;
+
+        // Fletes (only from sales/dropshipping)
+        const vFlEnt = kpis.fl_ent ?? 0;
+        const vFlDev = kpis.fl_dev ?? 0;
+        const vFlTra = kpis.fl_tra ?? 0;
+        const fletesTotal = vFlEnt + vFlDev + vFlTra;
+
+        const vAds = kpis.g_ads ?? 0;
+
+        // Expenses by category
+        const OPERATIONAL_CATS = ['Nómina', 'Fullfilment', 'Envíos', 'Aplicaciones', 'Costos Bodega', 'Garantías'];
+        const ADMIN_CATS = ['Servicios', 'Gastos Bancarios', 'Impuestos', 'Inversiones', 'Otros Gastos', 'Pendiente'];
+        const berryByCat = totalByCategory(
+            expenses.filter(e => {
+                // For month_close: use previous month; for financial: current month
+                if (type === 'month_close') {
+                    const prevMonth = new Date().getMonth() === 0 ? 12 : new Date().getMonth();
+                    const prevYear = new Date().getMonth() === 0 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+                    return e.month === prevMonth && e.year === prevYear;
+                }
+                return e.month === (new Date().getMonth() + 1) && e.year === new Date().getFullYear();
+            })
+        );
+        const gastosOperativos = OPERATIONAL_CATS.reduce((s, c) => s + (berryByCat[c] || 0), 0);
+        const knownCats = new Set([...OPERATIONAL_CATS, ...ADMIN_CATS, 'Marketing']);
+        const gastosAdmin = ADMIN_CATS.reduce((s, c) => s + (berryByCat[c] || 0), 0)
+            + Object.entries(berryByCat).filter(([cat]) => !knownCats.has(cat)).reduce((s, [, v]) => s + v, 0);
+
+        const utilidadBruta = gananciaBruta - fletesTotal - vAds;
+        const utilidadOp = utilidadBruta - gastosOperativos;
+        const utilidadNeta = utilidadOp - gastosAdmin;
+        const margenBruto = ingTotal > 0 ? (gananciaBruta / ingTotal) * 100 : 0;
+        const margenOp = ingTotal > 0 ? (utilidadOp / ingTotal) * 100 : 0;
+        const margenNeto = ingTotal > 0 ? (utilidadNeta / ingTotal) * 100 : 0;
+
+        pnl = {
+            ingProveedor: sIng, ingDropshipping: vIng, ingTotal,
+            costoTotal, gananciaBruta, fletesTotal, ads: vAds,
+            gastosOperativos, gastosAdmin,
+            utilidadBruta, utilidadOp, utilidadNeta,
+            margenBruto, margenOp, margenNeto,
+        };
+    }
+
     // Build context
     const vegaData: VegaDataContext = {
         kpis,
@@ -532,5 +696,11 @@ export async function gatherDataForReport(type: 'daily' | 'weekly' | 'monthly', 
         metricsByCountry,
         adPlatformMetrics: { fb, tiktok, google },
         prevKpis,
+        cancelReasons,
+        supplierKpis,
+        carrierBreakdown,
+        berryExpenses,
+        berryExpenseTotal,
+        pnl,
     };
 }

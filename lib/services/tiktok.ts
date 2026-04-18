@@ -18,23 +18,6 @@ interface TikTokOAuthStatus {
 
 /* ─── OAuth Helpers ──────────────────────────────────────── */
 
-/**
- * Build TikTok Marketing API OAuth URL
- */
-export function buildTikTokOAuthUrl(userId: string): string {
-    const appId = process.env.NEXT_PUBLIC_TIKTOK_CLIENT_KEY || '';
-    const appDomain = process.env.NEXT_PUBLIC_APP_DOMAIN || 'https://app.grandline.com.co';
-    const redirectUri = `${appDomain}/api/auth/tiktok/callback`;
-    const state = userId;
-
-    const params = new URLSearchParams({
-        app_id: appId,
-        redirect_uri: redirectUri,
-        state,
-    });
-
-    return `https://business-api.tiktok.com/portal/auth?${params.toString()}`;
-}
 
 /**
  * Fetch TikTok connection status from our API
@@ -63,45 +46,6 @@ export async function disconnectTikTok(authFetch: (url: string, opts?: RequestIn
 
 /* ─── Content Posting API (via proxy) ────────────────────── */
 
-/**
- * Upload video to TikTok as draft via server proxy
- * Returns { upload_url, publish_id } for client to PUT the file
- */
-export async function initTikTokVideoUpload(
-    authFetch: (url: string, opts?: RequestInit) => Promise<Response>,
-    fileSize: number
-): Promise<{ upload_url: string; publish_id: string } | null> {
-    try {
-        const res = await authFetch('/api/sunny/tiktok-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'init_video_upload', fileSize }),
-        });
-        if (!res.ok) return null;
-        return await res.json();
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Check TikTok publish status
- */
-export async function checkTikTokPublishStatus(
-    authFetch: (url: string, opts?: RequestInit) => Promise<Response>,
-    publishId: string
-): Promise<any> {
-    try {
-        const res = await authFetch('/api/sunny/tiktok-proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'check_publish_status', publishId }),
-        });
-        return await res.json();
-    } catch {
-        return null;
-    }
-}
 
 /* ─── TikTok Marketing API — Campaign Creation ───────────── */
 

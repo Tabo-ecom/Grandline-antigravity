@@ -26,16 +26,17 @@ export interface VegaDataContext {
     berryExpenses?: { category: string; amount: number }[];
     berryExpenseTotal?: number;
     campaignNames?: string[];
+    cancelReasons?: { tag: string; count: number; percent: number }[];
+    carrierBreakdown?: { carrier: string; orders: number; delivered: number; deliveryRate: number }[];
+    supplierKpis?: any;
+    reportType?: string;
 }
 
 const MAX_CONTEXT_CHARS = 80_000;
 
-export function buildDataContext(data: VegaDataContext): string {
-    const {
-        kpis, prevKpis, orderCount, countries, adPlatformMetrics, projectedProfit,
-        metricsByCountry, dateRange, dailySalesData, filteredOrders, availableProducts,
-        filteredAds, logisticStats, berryExpenses, berryExpenseTotal, campaignNames
-    } = data;
+export function buildDataContext(data: VegaDataContext, reportType?: string): string {
+    const type = reportType || data.reportType || 'daily';
+    const kpis = data.kpis;
 
     if (!kpis) return 'No hay datos disponibles para el período seleccionado.';
 
@@ -44,9 +45,31 @@ export function buildDataContext(data: VegaDataContext): string {
     const tier2 = buildTier2Country(data, kpis);
     const tier3 = buildTier3ProductDetail(data);
     const tier4 = buildTier4Campaigns(data);
+    const tierLogistics = buildTierLogistics(data, kpis);
+    const tierFinancial = buildTierFinancial(data, kpis);
+    const tierSupplier = buildTierSupplier(data);
+
+    // Route tiers by report type
+    let tiers: string[];
+    switch (type) {
+        case 'logistics':
+            tiers = [tier1, tierLogistics, tier2];
+            break;
+        case 'financial':
+            tiers = [tier1, tierFinancial, tier2];
+            break;
+        case 'supplier':
+            tiers = [tierSupplier, tier1];
+            break;
+        case 'month_close':
+            tiers = [tier1, tierFinancial, tierSupplier, tier2];
+            break;
+        default: // daily, weekly, monthly
+            tiers = [tier1, tier2, tier3, tier4];
+            break;
+    }
 
     // Assemble tiers within budget
-    const tiers = [tier1, tier2, tier3, tier4];
     let result = '';
 
     for (const tier of tiers) {
@@ -435,6 +458,141 @@ function buildTier4Campaigns(data: VegaDataContext): string {
         if (campaignNames.length > 30) {
             lines.push(`  ... y ${campaignNames.length - 30} campañas más`);
         }
+    }
+
+    return lines.join('\n');
+}
+
+// ===== Helper: format number as COP with thousand separators =====
+function cop(n: number): string {
+    return `$${Math.round(n).toLocaleString('es-CO')}`;
+}
+
+function pct(n: number, decimals = 1): string {
+    return `${n.toFixed(decimals)}%`;
+}
+
+// ===== TIER: Logistics Analysis =====
+function buildTierLogistics(data: VegaDataContext, kpis: KPIResults): string {
+    const { cancelReasons, carrierBreakdown } = data;
+    const lines: string[] = [
+        '',
+        '=== ANALISIS LOGISTICO ===',
+        `Tasa de Entrega: ${pct(kpis.tasa_ent)} | Cancelación: ${pct(kpis.tasa_can)} | Devolución: ${pct(kpis.tasa_dev)}`,
+        `Órdenes en tránsito: ${kpis.n_tra}`,
+    ];
+
+    if (cancelReasons && cancelReasons.length > 0) {
+        lines.push('--- Motivos de Cancelación ---');
+        cancelReasons.forEach(r => {
+            lines.push(`  ${r.tag}: ${r.count} órdenes (${pct(r.percent)})`);
+        });
+    }
+
+    if (carrierBreakdown && carrierBreakdown.length > 0) {
+        lines.push('--- Desglose por Transportadora ---');
+        carrierBreakdown.forEach(c => {
+            lines.push(`  ${c.carrier}: ${c.orders} órdenes, ${c.delivered} entregadas (${pct(c.deliveryRate)} entrega)`);
+        });
+    }
+
+    return lines.join('\n');
+}
+
+// ===== TIER: Supplier =====
+function buildTierSupplier(data: VegaDataContext): string {
+    const { supplierKpis } = data;
+    if (!supplierKpis) return '';
+
+    const ingreso = supplierKpis.ingresoProveedor || 0;
+    const costo = supplierKpis.costoMercancia || 0;
+    const ganancia = supplierKpis.gananciaProveedor || (ingreso - costo);
+    const margen = ingreso > 0 ? (ganancia / ingreso) * 100 : 0;
+
+    const lines: string[] = [
+        '',
+        '=== PROVEEDOR ===',
+        `Ingreso Proveedor: ${cop(ingreso)} | Costo Mercancía: ${cop(costo)}`,
+        `Ganancia Proveedor: ${cop(ganancia)} | Margen: ${pct(margen)}`,
+        'NOTA: Proveedor NO paga fletes.',
+    ];
+
+    const topProducts = supplierKpis.topProductsByMargin || supplierKpis.topProducts;
+    if (topProducts && topProducts.length > 0) {
+        lines.push('--- Top Productos por Margen ---');
+        topProducts.forEach((p: any) => {
+            const pMargen = p.ingreso > 0 ? (p.ganancia / p.ingreso) * 100 : 0;
+            lines.push(`  ${p.name || p.producto}: ${p.unidades || p.qty} unidades, Ganancia ${cop(p.ganancia)}, Margen ${pct(p.margen ?? pMargen)}`);
+        });
+    }
+
+    const alertas = supplierKpis.inventoryAlerts || supplierKpis.alertasInventario;
+    if (alertas && alertas.length > 0) {
+        lines.push('--- Alertas de Inventario ---');
+        alertas.forEach((a: any) => {
+            const dias = a.diasRestantes ?? a.daysLeft ?? '?';
+            lines.push(`  ${a.name || a.producto}: ${a.unidades || a.stock} unidades restantes (~${dias} días)`);
+        });
+    }
+
+    return lines.join('\n');
+}
+
+// ===== TIER: Financial (Estado de Resultados) =====
+function buildTierFinancial(data: VegaDataContext, kpis: KPIResults): string {
+    const { supplierKpis, berryExpenses, berryExpenseTotal } = data;
+
+    const ingProveedor = supplierKpis?.ingresoProveedor || 0;
+    const ingDropshipping = kpis.ing_real || 0;
+    const ingresosTotales = ingProveedor + ingDropshipping;
+    const costoMercancia = (supplierKpis?.costoMercancia || 0) + (kpis.cpr || 0);
+    const gananciaBruta = ingresosTotales - costoMercancia;
+    const margenBruto = ingresosTotales > 0 ? (gananciaBruta / ingresosTotales) * 100 : 0;
+
+    const fletes = (kpis.fl_ent || 0) + (kpis.fl_dev || 0);
+    const publicidad = kpis.g_ads || 0;
+
+    // Separate Berry expenses into operational vs administrative
+    let gastosOperativos = 0;
+    let gastosAdmin = 0;
+    const berryByCategory: { category: string; amount: number }[] = berryExpenses || [];
+    const totalBerry = berryExpenseTotal || 0;
+
+    // Classify berry expenses - administrative keywords
+    const adminKeywords = ['administrativo', 'admin', 'salario', 'nómina', 'nomina', 'contabilidad', 'legal'];
+    berryByCategory.forEach(e => {
+        const isAdmin = adminKeywords.some(k => e.category.toLowerCase().includes(k));
+        if (isAdmin) {
+            gastosAdmin += e.amount;
+        } else {
+            gastosOperativos += e.amount;
+        }
+    });
+
+    const utilidadOperacional = gananciaBruta - fletes - publicidad - gastosOperativos;
+    const utilidadNeta = utilidadOperacional - gastosAdmin;
+    const margenNeto = ingresosTotales > 0 ? (utilidadNeta / ingresosTotales) * 100 : 0;
+
+    const lines: string[] = [
+        '',
+        '=== ESTADO DE RESULTADOS ===',
+        `Ing. Proveedor: ${cop(ingProveedor)} + Ing. Dropshipping: ${cop(ingDropshipping)} = Ingresos Totales: ${cop(ingresosTotales)}`,
+        `(-) Costo Mercancía: ${cop(costoMercancia)}`,
+        `= Ganancia Bruta: ${cop(gananciaBruta)} (Margen: ${pct(margenBruto)})`,
+        `(-) Fletes (solo ventas): ${cop(fletes)}`,
+        `(-) Publicidad: ${cop(publicidad)}`,
+        `(-) Gastos Operativos: ${cop(gastosOperativos)}`,
+        `= Utilidad Operacional: ${cop(utilidadOperacional)}`,
+        `(-) Gastos Administrativos: ${cop(gastosAdmin)}`,
+        `= Utilidad Neta: ${cop(utilidadNeta)} (Margen Neto: ${pct(margenNeto)})`,
+    ];
+
+    if (berryByCategory.length > 0) {
+        lines.push('--- Berry Gastos por Categoría ---');
+        berryByCategory.forEach(e => {
+            const share = totalBerry > 0 ? (e.amount / totalBerry) * 100 : 0;
+            lines.push(`  ${e.category}: ${cop(e.amount)} (${pct(share)}% del total)`);
+        });
     }
 
     return lines.join('\n');

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        if (!['daily', 'weekly', 'monthly'].includes(reportType)) {
+        if (!['daily', 'weekly', 'monthly', 'logistics', 'financial', 'supplier', 'month_close'].includes(reportType)) {
             return NextResponse.json(
                 { error: 'Invalid reportType' },
                 { status: 400 },

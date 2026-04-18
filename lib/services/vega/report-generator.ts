@@ -12,12 +12,17 @@ import { buildReportEmailHTML } from '@/lib/services/vega/email-template';
 import { calculateOverallHealth } from '@/lib/utils/health';
 import { DEFAULT_KPI_TARGETS } from '@/lib/types/kpi-targets';
 import { adminAuth } from '@/lib/firebase/admin';
-import type { VegaReport, VegaNotificationConfig, VegaReportMetadata } from '@/lib/types/vega';
+import type { VegaReport, VegaNotificationConfig, VegaReportMetadata, ReportType } from '@/lib/types/vega';
+import { REPORT_COLOR_MAP } from '@/lib/types/vega';
 
 const REPORT_TITLES: Record<string, string> = {
     daily: 'El Latido del Negocio',
     weekly: 'La Brújula Táctica',
     monthly: 'La Visión del Almirante',
+    logistics: 'Bitácora Logística',
+    financial: 'Estado de Resultados',
+    supplier: 'Reporte Proveedor',
+    month_close: 'Cierre de Mes',
 };
 
 function fmt(n: number): string {
@@ -77,18 +82,28 @@ function buildDailySlackMessage(period: string, kpis: any, metricsByCountry: any
 
 export async function generateAndSendReport(
     userId: string,
-    reportType: 'daily' | 'weekly' | 'monthly',
+    reportType: ReportType,
 ): Promise<{ reportId: string; sentVia: string[] }> {
-    const { context, period, kpis, metricsByCountry, adPlatformMetrics, prevKpis } = await gatherDataForReport(reportType, userId);
+    const { context, period, kpis, metricsByCountry, adPlatformMetrics, prevKpis, supplierKpis, cancelReasons, carrierBreakdown, pnl } = await gatherDataForReport(reportType, userId);
     const content = await vegaGenerateReport(reportType, context, period);
 
     const healthScore = calculateOverallHealth(kpis, DEFAULT_KPI_TARGETS);
-    const metadata: VegaReportMetadata = { healthScore, kpis, metricsByCountry, adPlatformMetrics, prevKpis };
+    const metadata: VegaReportMetadata = {
+        healthScore, kpis, metricsByCountry, adPlatformMetrics, prevKpis,
+        supplierKpis: supplierKpis as any || undefined,
+        cancelReasons: cancelReasons as any || undefined,
+        carrierBreakdown: carrierBreakdown as any || undefined,
+        pnlCascade: pnl as any || undefined,
+    };
 
     const scheduleMap: Record<string, VegaReport['schedule']> = {
         daily: 'daily',
         weekly: 'weekly_monday',
         monthly: `monthly_${new Date().getDate()}` as any,
+        logistics: 'daily',
+        financial: 'weekly_friday',
+        supplier: 'weekly_monday',
+        month_close: 'monthly_1',
     };
 
     const report: VegaReport = {
@@ -139,11 +154,24 @@ export async function generateAndSendReport(
     // Email
     if (config.emailEnabled && adminAuth) {
         try {
-            const userRecord = await adminAuth.getUser(userId);
-            if (userRecord.email) {
+            const accentColor = REPORT_COLOR_MAP[reportType] || '#d75c33';
+            const html = buildReportEmailHTML(report, accentColor);
+            const subject = `VEGA — ${report.title}`;
+
+            // Multi-recipient: use config.emailRecipients if available, fallback to user email
+            const recipients: string[] = [];
+            if (config.emailRecipients && config.emailRecipients.length > 0) {
+                recipients.push(...config.emailRecipients);
+            } else {
+                const userRecord = await adminAuth.getUser(userId);
+                if (userRecord.email) recipients.push(userRecord.email);
+            }
+
+            if (recipients.length > 0) {
                 channels.push('email');
-                const html = buildReportEmailHTML(report);
-                await sendReportEmail(userRecord.email, `VEGA — ${report.title}`, html);
+                for (const email of recipients) {
+                    await sendReportEmail(email, subject, html);
+                }
             }
         } catch { /* email error */ }
     }

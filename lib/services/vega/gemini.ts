@@ -596,6 +596,134 @@ FORMATO EXACTO (solo estas 3 líneas):
 1. [Acción concreta]
 2. [Acción concreta]
 3. [Acción concreta]`,
+
+        logistics: `Genera la "Bitácora Logística" para ${period}.
+${structuredInstructions}
+
+Enfócate en: tasas de entrega, motivos de cancelación (TAGS), análisis por transportadora, devoluciones y órdenes en tránsito.
+
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
+
+## Análisis Logístico
+Tasas de entrega y cancelación por país y producto. Evolución vs período anterior si hay datos. Identifica patrones de entregas fallidas.
+
+## Motivos de Cancelación
+Desglose por TAGS de cancelación. Cuáles son los motivos más frecuentes, tendencias y qué productos/países concentran cada motivo.
+
+## Análisis por Transportadora
+Rendimiento de cada transportadora: tasa de entrega, tiempo promedio, devoluciones. Cuál es la más confiable y cuál necesita atención.
+
+## Devoluciones y Tránsito
+Análisis de devoluciones por producto y país. Órdenes en tránsito actuales y proyección de resolución.
+
+## Recomendaciones Logísticas
+3-5 acciones concretas con tags:
+- [OPTIMIZAR] Mejorar rutas o transportadoras específicas
+- [MONITOREAR] Productos o zonas con tasa de entrega en deterioro
+- [PAUSAR] Zonas o productos con logística insostenible`,
+
+        financial: `Genera el "Estado de Resultados" para ${period}.
+${structuredInstructions}
+
+Enfócate en la cascada P&L completa: Ingresos → Costos de Producto → Ganancia Bruta → Gastos Operativos → Gastos Administrativos → Utilidad Neta. Incluye gastos Berry por categoría y márgenes por país.
+
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
+
+## Estado de Resultados
+Cascada P&L completa con montos y porcentajes sobre ingresos:
+- Ingresos (facturación entregados)
+- (-) Costo de Producto → Ganancia Bruta y margen bruto %
+- (-) Fletes (entrega + devolución + tránsito)
+- (-) Gasto Publicitario
+- (-) Gastos Operativos Berry (desglosados por categoría)
+- = Utilidad Neta y margen neto %
+
+## Análisis de Gastos
+Desglose de gastos Berry por categoría (Aplicaciones, Fulfillment, Envíos, Nómina, Servicios, Gastos Bancarios, Otros, Inversiones, Impuestos, Marketing). Cuáles crecieron, cuáles son controlables, y dónde hay oportunidad de ahorro.
+
+## Márgenes por País
+Para cada país activo: ingresos, costos, margen bruto y neto. Identificar qué países son rentables y cuáles operan a pérdida.
+
+## Recomendaciones Financieras
+3-5 acciones concretas con tags:
+- [OPTIMIZAR] Reducir gastos específicos o mejorar márgenes
+- [ESCALAR] Países o productos con mejores márgenes
+- [PAUSAR] Operaciones que generan pérdida neta
+- [MONITOREAR] Tendencias de gastos que requieren vigilancia`,
+
+        supplier: `Genera el "Reporte Proveedor" para ${period}.
+${structuredInstructions}
+
+IMPORTANTE: Este reporte es desde la perspectiva del PROVEEDOR. El proveedor NO paga fletes — su P&L es: Ingreso por Producto - Costo de Producto = Margen Proveedor. NO incluyas fletes en los cálculos del proveedor.
+
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
+
+## P&L Proveedor
+Estado de resultados del proveedor SIN fletes:
+- Ingreso total por productos entregados
+- (-) Costo de producto
+- = Margen Proveedor (monto y %)
+Desglose por producto mostrando ingreso, costo y margen unitario y total.
+
+## Productos por Margen
+Ranking de productos ordenados por margen (de mayor a menor). Identificar productos estrella y productos con margen insuficiente. Incluir volumen de ventas para contextualizar.
+
+## Alertas de Inventario
+Productos con alto volumen de ventas que podrían necesitar reabastecimiento. Productos con baja rotación que podrían estar acumulando inventario.
+
+## Análisis por Tienda
+Rendimiento de cada tienda/país desde la perspectiva del proveedor: volumen, ingreso, margen. Qué tiendas son más rentables para el proveedor.
+
+## Recomendaciones
+3-5 acciones concretas con tags:
+- [ESCALAR] Productos con mejor margen y volumen
+- [OPTIMIZAR] Productos con margen bajo pero alto volumen — negociar costos
+- [MONITOREAR] Productos con ventas decrecientes
+- [PAUSAR] Productos con margen negativo o insignificante`,
+
+        month_close: `Genera el "Cierre de Mes" para ${period}.
+${structuredInstructions}
+
+Este es el reporte más completo del mes. Combina ventas, proveedor y gastos en un análisis integral. Usa datos del período anterior (prevKpis) para comparación mes a mes cuando estén disponibles.
+
+Después de los bloques estructurados, genera SOLO estas secciones narrativas:
+
+## Estado de Resultados del Mes
+P&L completo del mes con cascada detallada:
+- Ingresos totales (facturación entregados)
+- (-) Costo de Producto → Ganancia Bruta
+- (-) Fletes totales (entrega + devolución + tránsito)
+- (-) Gasto Publicitario total
+- = Utilidad Operativa
+- (-) Gastos Berry (total y desglose por categoría)
+- = Utilidad Neta
+Incluye márgenes % en cada nivel.
+
+## Comparativa vs Mes Anterior
+Si hay datos de período anterior, compara métrica por métrica:
+- Órdenes, facturación, tasa de entrega, tasa de cancelación
+- ROAS, CPA, gasto ads
+- Utilidad real y proyectada
+- Usa ↑/↓ para indicar dirección y % de cambio
+
+## Análisis de Gastos
+Desglose completo de gastos Berry por categoría. Comparativa vs mes anterior. Identificar gastos que crecieron desproporcionadamente. Ratio gastos fijos / ingresos.
+
+## Resumen Proveedor
+P&L desde perspectiva del proveedor (SIN fletes): ingreso, costo, margen por producto. Top productos por margen y volumen.
+
+## Proyecciones
+Basado en la tendencia del mes que cierra, proyectar para el mes siguiente:
+- Volumen de órdenes esperado
+- Ingresos proyectados
+- Utilidad esperada (escenario optimista, esperado, pesimista)
+- Acciones recomendadas para el próximo mes
+
+3-5 prioridades con tags:
+- [ESCALAR] Lo que funcionó y debe crecer
+- [OPTIMIZAR] Lo que necesita ajustes
+- [PAUSAR] Lo que debe detenerse
+- [MONITOREAR] Lo que hay que vigilar de cerca`,
     };
 
     return prompts[type] || `Genera un reporte tipo ${type} para ${period}. Incluye KPIs principales, análisis por país/producto, rendimiento publicitario y recomendaciones.

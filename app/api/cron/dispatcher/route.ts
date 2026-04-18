@@ -10,7 +10,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { getScheduleConfig, shouldRunReport } from '@/lib/services/vega/schedule';
 import { generateAndSendAdReport } from '@/lib/services/vega/ad-performance-report';
 
-const REPORT_TYPES = ['daily', 'weekly', 'monthly'] as const;
+const REPORT_TYPES = ['daily', 'weekly', 'monthly', 'logistics', 'financial', 'supplier', 'month_close'] as const;
 const PREFIX = 'vega_schedule_config_';
 
 export async function GET(req: NextRequest) {

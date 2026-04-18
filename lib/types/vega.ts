@@ -4,7 +4,38 @@ export type AlertSeverity = 'critical' | 'warning' | 'info';
 export type AlertFrequency = 'realtime' | 'daily' | 'weekly' | 'monthly';
 export type AlertCondition = 'greater_than' | 'less_than' | 'equals' | 'change_percent_up' | 'change_percent_down';
 export type NotificationChannel = 'in_app' | 'telegram' | 'slack';
-export type ReportType = 'daily' | 'weekly' | 'monthly' | 'audit' | 'efficiency' | 'ads' | 'profitability' | 'custom';
+export type ReportType = 'daily' | 'weekly' | 'monthly' | 'logistics' | 'financial' | 'supplier' | 'month_close' | 'audit' | 'efficiency' | 'ads' | 'profitability' | 'custom';
+
+// Color identity per report type
+export const REPORT_COLOR_MAP: Record<string, string> = {
+    daily: '#d75c33',
+    weekly: '#d75c33',
+    logistics: '#3b82f6',
+    financial: '#10b981',
+    supplier: '#8b5cf6',
+    month_close: '#f59e0b',
+    monthly: '#f59e0b',
+};
+
+export const REPORT_TITLE_MAP: Record<string, string> = {
+    daily: 'El Latido del Negocio',
+    weekly: 'La Brújula Táctica',
+    monthly: 'La Visión del Almirante',
+    logistics: 'Bitácora Logística',
+    financial: 'Estado de Resultados',
+    supplier: 'Reporte Proveedor',
+    month_close: 'Cierre de Mes',
+};
+
+export const REPORT_LABEL_MAP: Record<string, string> = {
+    daily: 'REPORTE DIARIO',
+    weekly: 'REPORTE SEMANAL',
+    monthly: 'REPORTE MENSUAL',
+    logistics: 'BITÁCORA LOGÍSTICA',
+    financial: 'ESTADO DE RESULTADOS',
+    supplier: 'REPORTE PROVEEDOR',
+    month_close: 'CIERRE DE MES',
+};
 
 export interface VegaAlertRule {
     id: string;
@@ -65,6 +96,21 @@ export interface VegaReportMetadata {
     adPlatformMetrics?: { fb: number; tiktok: number; google: number };
     prevKpis?: Record<string, number>;
     berryExpenses?: { category: string; amount: number }[];
+    // New report data
+    supplierKpis?: {
+        ingreso: number; costo: number; ganancia: number; margen: number;
+        unidades: number; ordenes: number;
+        topProducts?: { nombre: string; unidades: number; ganancia: number; margen: number }[];
+        stockAlerts?: { nombre: string; stockActual: number; diasRestantes: number }[];
+    };
+    cancelReasons?: { tag: string; count: number; pct: number }[];
+    carrierBreakdown?: { carrier: string; orders: number; delivered: number; deliveryRate: number }[];
+    pnlCascade?: {
+        ingProveedor: number; ingDropshipping: number; ingTotal: number;
+        costoTotal: number; gananciaBruta: number; margenBruto: number;
+        fletes: number; ads: number; gastosOp: number; gastosAdmin: number;
+        utilidadNeta: number; margenNeto: number;
+    };
 }
 
 export interface VegaReport {
@@ -75,7 +121,7 @@ export interface VegaReport {
     generatedAt: number;
     period: string;
     automated?: boolean;
-    schedule?: 'daily' | 'weekly_monday' | 'monthly_1' | 'monthly_7' | 'monthly_15';
+    schedule?: 'daily' | 'weekly_monday' | 'weekly_friday' | 'monthly_1' | 'monthly_7' | 'monthly_15';
     sentVia?: ('telegram' | 'slack' | 'email')[];
     metadata?: VegaReportMetadata;
 }
@@ -85,6 +131,7 @@ export interface VegaNotificationConfig {
     telegramChatId: string;
     slackWebhookUrl: string;
     emailEnabled?: boolean;
+    emailRecipients?: string[]; // Multiple recipients
     // Slack Bot (bidirectional control)
     slackBotToken?: string;
     slackSigningSecret?: string;
@@ -96,6 +143,10 @@ export interface VegaScheduleConfig {
     dailyReport: { enabled: boolean; hour: number };
     weeklyReport: { enabled: boolean; dayOfWeek: number; hour: number };
     monthlyReport: { enabled: boolean; daysOfMonth: number[]; hour: number };
+    logisticsReport?: { enabled: boolean; hour: number };              // Daily logistics
+    financialReport?: { enabled: boolean; dayOfWeek: number; hour: number }; // Weekly financial
+    supplierReport?: { enabled: boolean; dayOfWeek: number; hour: number };  // Weekly supplier
+    monthCloseReport?: { enabled: boolean; dayOfMonth: number; hour: number }; // Monthly close
     adPerformanceReport: {
         enabled: boolean;
         intervalHours: number;

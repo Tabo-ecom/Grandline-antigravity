@@ -15,6 +15,10 @@ const DEFAULT_SCHEDULE: VegaScheduleConfig = {
     monthlyReport: { enabled: false, daysOfMonth: [1, 15], hour: 8 },
     adPerformanceReport: { enabled: false, intervalHours: 2, startHour: 8, endHour: 22 },
     alertHours: { enabled: false, startHour: 7, endHour: 21 },
+    logisticsReport: { enabled: false, hour: 9 },
+    financialReport: { enabled: false, dayOfWeek: 5, hour: 18 },
+    supplierReport: { enabled: false, dayOfWeek: 1, hour: 8 },
+    monthCloseReport: { enabled: false, dayOfMonth: 1, hour: 7 },
 };
 
 export async function getScheduleConfig(userId: string): Promise<VegaScheduleConfig> {
@@ -42,7 +46,7 @@ export function getUserLocalTime(timezone: string): Date {
 /** Check if a report should run right now based on user's schedule */
 export function shouldRunReport(
     config: VegaScheduleConfig,
-    reportType: 'daily' | 'weekly' | 'monthly' | 'ad_performance',
+    reportType: 'daily' | 'weekly' | 'monthly' | 'ad_performance' | 'logistics' | 'financial' | 'supplier' | 'month_close',
     nowUtc: Date,
 ): boolean {
     const local = getUserLocalTime(config.timezone);
@@ -72,6 +76,24 @@ export function shouldRunReport(
             const hoursSinceLast = (nowUtc.getTime() - lastRun) / (1000 * 60 * 60);
             return hoursSinceLast >= config.adPerformanceReport.intervalHours;
         }
+
+        case 'logistics':
+            return !!config.logisticsReport?.enabled && hour === config.logisticsReport.hour;
+
+        case 'financial':
+            return !!config.financialReport?.enabled
+                && dayOfWeek === config.financialReport.dayOfWeek
+                && hour === config.financialReport.hour;
+
+        case 'supplier':
+            return !!config.supplierReport?.enabled
+                && dayOfWeek === config.supplierReport.dayOfWeek
+                && hour === config.supplierReport.hour;
+
+        case 'month_close':
+            return !!config.monthCloseReport?.enabled
+                && dayOfMonth === config.monthCloseReport.dayOfMonth
+                && hour === config.monthCloseReport.hour;
 
         default:
             return false;

@@ -4,6 +4,7 @@
  */
 
 import type { VegaReport, VegaReportMetadata } from '@/lib/types/vega';
+import { REPORT_LABEL_MAP } from '@/lib/types/vega';
 
 // Colors matching the app theme
 const C = {
@@ -44,14 +45,14 @@ function kpiColor(value: number, isGoodWhenHigh: boolean): string {
     return C.blue;
 }
 
-function buildHeader(report: VegaReport, meta: VegaReportMetadata): string {
+function buildHeader(report: VegaReport, meta: VegaReportMetadata, accent: string): string {
     const color = healthColor(meta.healthScore.level);
-    const reportLabel = report.type === 'daily' ? 'REPORTE DIARIO' : report.type === 'weekly' ? 'REPORTE SEMANAL' : 'REPORTE MENSUAL';
+    const reportLabel = REPORT_LABEL_MAP[report.type] || 'REPORTE';
 
     return `
-    <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, rgba(215,92,51,0.08) 0%, transparent 100%); border: 1px solid ${C.border}; border-radius: 16px; margin-bottom: 24px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, ${accent}14 0%, transparent 100%); border: 1px solid ${C.border}; border-radius: 16px; margin-bottom: 24px;">
         <tr><td style="padding: 40px 32px; text-align: center;">
-            <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase; color: ${C.accent}; margin-bottom: 8px;">${reportLabel}</div>
+            <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.3em; text-transform: uppercase; color: ${accent}; margin-bottom: 8px;">${reportLabel}</div>
             <div style="font-size: 28px; font-weight: 800; color: ${C.text}; margin-bottom: 6px;">${report.title}</div>
             <div style="font-size: 14px; color: ${C.muted}; margin-bottom: 16px;">${report.period}</div>
             <table cellpadding="0" cellspacing="0" style="margin: 0 auto;"><tr><td style="padding: 8px 20px; border: 2px solid ${color}40; border-radius: 12px; background: ${color}15;">
@@ -143,7 +144,7 @@ function buildProducts(meta: VegaReportMetadata): string {
                 : '';
             return `<tr><td style="padding: 8px 16px; border-bottom: 1px solid ${C.border};">
                 <div style="font-size: 12px; font-weight: 600; color: ${C.text}; margin-bottom: 2px;">${p.name} ${streak}</div>
-                <div style="font-size: 11px; color: ${C.muted};">${p.n_ord} órd · CPA ${fmt(p.cpa || 0)} · U.Proy <span style="color: ${isProfit ? C.green : C.red}; font-weight: 700;">${fmt(p.utilProy || 0)}</span></div>
+                <div style="font-size: 11px; color: ${C.muted};">${p.n_ord} ord · CPA ${fmt(p.cpa || 0)} · U.Proy <span style="color: ${isProfit ? C.green : C.red}; font-weight: 700;">${fmt(p.utilProy || 0)}</span></div>
             </td></tr>`;
         }).join('');
     }
@@ -162,7 +163,7 @@ function buildProducts(meta: VegaReportMetadata): string {
             <td width="50%" style="padding-left: 8px; vertical-align: top;">
                 <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-radius: 12px; overflow: hidden;">
                     <tr><td style="padding: 12px 16px; background: ${C.red}10; border-bottom: 1px solid ${C.border};">
-                        <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.red};">GENERANDO PÉRDIDA (${loss.length})</span>
+                        <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.red};">GENERANDO PERDIDA (${loss.length})</span>
                     </td></tr>
                     ${productRows(loss, false)}
                 </table>
@@ -171,7 +172,7 @@ function buildProducts(meta: VegaReportMetadata): string {
     </table>`;
 }
 
-function buildAdsSummary(meta: VegaReportMetadata): string {
+function buildAdsSummary(meta: VegaReportMetadata, accent: string): string {
     const ads = meta.adPlatformMetrics;
     if (!ads) return '';
 
@@ -190,7 +191,7 @@ function buildAdsSummary(meta: VegaReportMetadata): string {
         </td></tr>
         <tr><td style="padding: 16px;">
             <div style="font-size: 22px; font-weight: 800; color: ${C.text}; margin-bottom: 4px;">${fmt(total)}</div>
-            <div style="font-size: 11px; color: ${C.muted}; margin-bottom: 16px;">Gasto Total · ${pctAds}% de facturación</div>
+            <div style="font-size: 11px; color: ${C.muted}; margin-bottom: 16px;">Gasto Total · ${pctAds}% de facturacion</div>
             <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                     <td style="padding: 8px 0;">
@@ -201,7 +202,7 @@ function buildAdsSummary(meta: VegaReportMetadata): string {
                 </tr>
                 <tr>
                     <td style="padding: 8px 0; border-top: 1px solid ${C.border};">
-                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: ${C.accent}; margin-right: 8px; vertical-align: middle;"></span>
+                        <span style="display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: ${accent}; margin-right: 8px; vertical-align: middle;"></span>
                         <span style="font-size: 12px; color: ${C.text}; vertical-align: middle;">TikTok</span>
                         <span style="font-size: 12px; font-weight: 700; color: ${C.text}; float: right;">${fmt(ads.tiktok)} (${tkPct}%)</span>
                     </td>
@@ -230,11 +231,11 @@ function buildCountries(meta: VegaReportMetadata): string {
     return `
     <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-radius: 12px; margin-bottom: 24px; overflow: hidden;">
         <tr><td colspan="5" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
-            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.blue};">PAÍSES</span>
+            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.blue};">PAISES</span>
         </td></tr>
         <tr style="background: rgba(255,255,255,0.02);">
-            <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">PAÍS</td>
-            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ÓRDENES</td>
+            <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">PAIS</td>
+            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ORDENES</td>
             <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ENTREGA</td>
             <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ADS</td>
             <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">U.PROY</td>
@@ -243,7 +244,7 @@ function buildCountries(meta: VegaReportMetadata): string {
     </table>`;
 }
 
-function buildNarrative(content: string): string {
+function buildNarrative(content: string, accent: string): string {
     // Extract sections from AI content (skip EXECUTIVE_SUMMARY and ALERTS which are handled separately)
     const lines = content.split('\n');
     const sections: { title: string; body: string }[] = [];
@@ -283,9 +284,9 @@ function buildNarrative(content: string): string {
         body = body.split('\n').filter(l => l.trim()).join('<br>');
 
         return `
-        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${C.accent}; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${accent}; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
             <tr><td style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
-                <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.accent}; text-transform: uppercase;">${s.title}</span>
+                <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent}; text-transform: uppercase;">${s.title}</span>
             </td></tr>
             <tr><td style="padding: 16px; font-size: 13px; color: ${C.text}; line-height: 1.7;">
                 ${body}
@@ -294,7 +295,7 @@ function buildNarrative(content: string): string {
     }).join('');
 }
 
-function buildExecutiveSummary(content: string): string {
+function buildExecutiveSummary(content: string, accent: string): string {
     const match = content.match(/<!--\s*EXECUTIVE_SUMMARY\s*-->\s*([\s\S]*?)(?=\n##|\n<!--|\[CRITICA\]|\[ATENCION\]|\[INFO\]|$)/);
     if (!match) return '';
 
@@ -302,15 +303,183 @@ function buildExecutiveSummary(content: string): string {
     if (!summary) return '';
 
     return `
-    <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${C.accent}; border-radius: 12px; margin-bottom: 24px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${accent}; border-radius: 12px; margin-bottom: 24px;">
         <tr><td style="padding: 20px 24px;">
-            <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.accent}; margin-bottom: 8px;">RESUMEN EJECUTIVO</div>
+            <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent}; margin-bottom: 8px;">RESUMEN EJECUTIVO</div>
             <div style="font-size: 14px; color: ${C.text}; line-height: 1.7;">${summary}</div>
         </td></tr>
     </table>`;
 }
 
-export function buildReportEmailHTML(report: VegaReport): string {
+function buildSupplierSection(meta: VegaReportMetadata, accent: string): string {
+    const sk = meta.supplierKpis;
+    if (!sk) return '';
+
+    const kpiRows = [
+        { label: 'Ingreso', value: fmt(sk.ingreso), color: C.green },
+        { label: 'Costo', value: fmt(sk.costo), color: C.red },
+        { label: 'Ganancia', value: fmt(sk.ganancia), color: sk.ganancia > 0 ? C.green : C.red },
+        { label: 'Margen', value: pct(sk.margen), color: sk.margen >= 20 ? C.green : sk.margen >= 10 ? C.orange : C.red },
+    ].map(r => `<tr>
+        <td style="padding: 10px 16px; border-bottom: 1px solid ${C.border}; font-size: 13px; color: ${C.text};">${r.label}</td>
+        <td style="padding: 10px 16px; border-bottom: 1px solid ${C.border}; font-size: 14px; font-weight: 700; color: ${r.color}; text-align: right;">${r.value}</td>
+    </tr>`).join('');
+
+    let topProducts = '';
+    if (sk.topProducts && sk.topProducts.length > 0) {
+        const rows = sk.topProducts.map(p => `<tr>
+            <td style="padding: 8px 16px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text};">${p.nombre}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: center;">${p.unidades}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; font-weight: 700; color: ${p.ganancia > 0 ? C.green : C.red}; text-align: right;">${fmt(p.ganancia)}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: right;">${pct(p.margen)}</td>
+        </tr>`).join('');
+
+        topProducts = `
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+            <tr><td colspan="4" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
+                <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent};">TOP PRODUCTOS</span>
+            </td></tr>
+            <tr style="background: rgba(255,255,255,0.02);">
+                <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">PRODUCTO</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">UNIDADES</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">GANANCIA</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">MARGEN</td>
+            </tr>
+            ${rows}
+        </table>`;
+    }
+
+    let stockAlerts = '';
+    if (sk.stockAlerts && sk.stockAlerts.length > 0) {
+        const rows = sk.stockAlerts.map(s => {
+            const urgency = s.diasRestantes <= 3 ? C.red : s.diasRestantes <= 7 ? C.orange : C.muted;
+            return `<tr>
+                <td style="padding: 8px 16px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text};">${s.nombre}</td>
+                <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: center;">${s.stockActual}</td>
+                <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; font-weight: 700; color: ${urgency}; text-align: right;">${s.diasRestantes}d</td>
+            </tr>`;
+        }).join('');
+
+        stockAlerts = `
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-radius: 12px; margin-bottom: 16px; overflow: hidden;">
+            <tr><td colspan="3" style="padding: 12px 16px; background: ${C.red}08; border-bottom: 1px solid ${C.border};">
+                <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${C.red};">ALERTAS DE STOCK</span>
+            </td></tr>
+            <tr style="background: rgba(255,255,255,0.02);">
+                <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">PRODUCTO</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">STOCK</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">DIAS REST.</td>
+            </tr>
+            ${rows}
+        </table>`;
+    }
+
+    return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${accent}; border-radius: 12px; margin-bottom: 24px; overflow: hidden;">
+        <tr><td colspan="2" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
+            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent};">KPIs PROVEEDOR</span>
+        </td></tr>
+        ${kpiRows}
+    </table>
+    ${topProducts}
+    ${stockAlerts}`;
+}
+
+function buildLogisticsSection(meta: VegaReportMetadata, accent: string): string {
+    const reasons = meta.cancelReasons;
+    if (!reasons || reasons.length === 0) return '';
+
+    const reasonRows = reasons.map(r => `<tr>
+        <td style="padding: 8px 16px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text};">${r.tag}</td>
+        <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: center;">${r.count}</td>
+        <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: right;">${pct(r.pct)}</td>
+    </tr>`).join('');
+
+    let carrierHtml = '';
+    const carriers = meta.carrierBreakdown;
+    if (carriers && carriers.length > 0) {
+        const cRows = carriers.map(c => `<tr>
+            <td style="padding: 8px 16px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text};">${c.carrier}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: center;">${c.orders}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.text}; text-align: center;">${c.delivered}</td>
+            <td style="padding: 8px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; font-weight: 700; color: ${c.deliveryRate >= 70 ? C.green : c.deliveryRate >= 50 ? C.orange : C.red}; text-align: right;">${pct(c.deliveryRate)}</td>
+        </tr>`).join('');
+
+        carrierHtml = `
+        <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-radius: 12px; margin-bottom: 24px; overflow: hidden;">
+            <tr><td colspan="4" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
+                <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent};">TRANSPORTADORAS</span>
+            </td></tr>
+            <tr style="background: rgba(255,255,255,0.02);">
+                <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">CARRIER</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ORDENES</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">ENTREGADOS</td>
+                <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">% ENTREGA</td>
+            </tr>
+            ${cRows}
+        </table>`;
+    }
+
+    return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${accent}; border-radius: 12px; margin-bottom: 24px; overflow: hidden;">
+        <tr><td colspan="3" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
+            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent};">MOTIVOS DE CANCELACION</span>
+        </td></tr>
+        <tr style="background: rgba(255,255,255,0.02);">
+            <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">MOTIVO</td>
+            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: center;">CANTIDAD</td>
+            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">%</td>
+        </tr>
+        ${reasonRows}
+    </table>
+    ${carrierHtml}`;
+}
+
+function buildPnLCascade(meta: VegaReportMetadata, accent: string): string {
+    const pnl = meta.pnlCascade;
+    if (!pnl) return '';
+
+    const revenue = pnl.ingTotal || 1;
+    const rows: { label: string; value: number; pctRev: number; color: string; bold?: boolean }[] = [
+        { label: 'Ingresos Proveedor', value: pnl.ingProveedor, pctRev: (pnl.ingProveedor / revenue) * 100, color: C.green },
+        { label: 'Ingresos Dropshipping', value: pnl.ingDropshipping, pctRev: (pnl.ingDropshipping / revenue) * 100, color: C.green },
+        { label: 'Ingresos Totales', value: pnl.ingTotal, pctRev: 100, color: C.green, bold: true },
+        { label: 'Costos Totales', value: -pnl.costoTotal, pctRev: (pnl.costoTotal / revenue) * 100, color: C.red },
+        { label: 'Ganancia Bruta', value: pnl.gananciaBruta, pctRev: pnl.margenBruto, color: pnl.gananciaBruta > 0 ? C.green : C.red, bold: true },
+        { label: 'Fletes', value: -pnl.fletes, pctRev: (pnl.fletes / revenue) * 100, color: C.red },
+        { label: 'Ads', value: -pnl.ads, pctRev: (pnl.ads / revenue) * 100, color: C.red },
+        { label: 'Gastos Operativos', value: -pnl.gastosOp, pctRev: (pnl.gastosOp / revenue) * 100, color: C.red },
+        { label: 'Gastos Administrativos', value: -pnl.gastosAdmin, pctRev: (pnl.gastosAdmin / revenue) * 100, color: C.red },
+        { label: 'Utilidad Neta', value: pnl.utilidadNeta, pctRev: pnl.margenNeto, color: pnl.utilidadNeta > 0 ? C.green : C.red, bold: true },
+    ];
+
+    const rowsHtml = rows.map(r => {
+        const fontWeight = r.bold ? '800' : '400';
+        const bgStyle = r.bold ? `background: ${r.color}08;` : '';
+        const displayValue = r.value < 0 ? `-${fmt(Math.abs(r.value))}` : fmt(r.value);
+        return `<tr style="${bgStyle}">
+            <td style="padding: 10px 16px; border-bottom: 1px solid ${C.border}; font-size: 13px; font-weight: ${fontWeight}; color: ${C.text};">${r.label}</td>
+            <td style="padding: 10px 8px; border-bottom: 1px solid ${C.border}; font-size: 13px; font-weight: 700; color: ${r.color}; text-align: right;">${displayValue}</td>
+            <td style="padding: 10px 8px; border-bottom: 1px solid ${C.border}; font-size: 12px; color: ${C.muted}; text-align: right;">${pct(r.pctRev)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <table width="100%" cellpadding="0" cellspacing="0" style="background: ${C.cardBg}; border: 1px solid ${C.border}; border-left: 3px solid ${accent}; border-radius: 12px; margin-bottom: 24px; overflow: hidden;">
+        <tr><td colspan="3" style="padding: 12px 16px; border-bottom: 1px solid ${C.border};">
+            <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.2em; color: ${accent};">ESTADO DE RESULTADOS (P&L)</span>
+        </td></tr>
+        <tr style="background: rgba(255,255,255,0.02);">
+            <td style="padding: 8px 16px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em;">CONCEPTO</td>
+            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">VALOR</td>
+            <td style="padding: 8px; font-size: 10px; font-weight: 700; color: ${C.muted}; letter-spacing: 0.1em; text-align: right;">% ING.</td>
+        </tr>
+        ${rowsHtml}
+    </table>`;
+}
+
+export function buildReportEmailHTML(report: VegaReport, accentColor?: string): string {
+    const ac = accentColor || '#d75c33';
     const meta = report.metadata;
     if (!meta) {
         // Fallback for reports without metadata — just wrap content in basic HTML
@@ -319,14 +488,20 @@ export function buildReportEmailHTML(report: VegaReport): string {
         </body></html>`;
     }
 
-    const header = buildHeader(report, meta);
-    const execSummary = buildExecutiveSummary(report.content);
+    const header = buildHeader(report, meta, ac);
+    const execSummary = buildExecutiveSummary(report.content, ac);
     const heroKPIs = buildHeroKPIs(report, meta);
     const alerts = buildAlerts(report.content);
-    const adsSummary = buildAdsSummary(meta);
+    const adsSummary = buildAdsSummary(meta, ac);
     const products = buildProducts(meta);
     const countries = buildCountries(meta);
-    const narrative = buildNarrative(report.content);
+
+    // Conditional sections based on report type and metadata
+    const supplierSection = meta.supplierKpis ? buildSupplierSection(meta, ac) : '';
+    const logisticsSection = meta.cancelReasons ? buildLogisticsSection(meta, ac) : '';
+    const pnlCascade = meta.pnlCascade ? buildPnLCascade(meta, ac) : '';
+
+    const narrative = buildNarrative(report.content, ac);
 
     return `<!DOCTYPE html>
 <html lang="es">
@@ -347,13 +522,16 @@ export function buildReportEmailHTML(report: VegaReport): string {
                     ${adsSummary}
                     ${products}
                     ${countries}
+                    ${supplierSection}
+                    ${logisticsSection}
+                    ${pnlCascade}
                     ${narrative}
 
                     <!-- Footer -->
                     <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 32px; border-top: 1px solid ${C.border};">
                         <tr><td style="padding: 24px 0; text-align: center;">
-                            <div style="font-size: 11px; color: ${C.muted};">Generado por <span style="color: ${C.accent}; font-weight: 700;">VEGA AI</span> · Grand Line</div>
-                            <div style="font-size: 10px; color: ${C.muted}; margin-top: 4px;">Este reporte fue enviado automáticamente a tu correo de registro.</div>
+                            <div style="font-size: 11px; color: ${C.muted};">Generado por <span style="color: ${ac}; font-weight: 700;">VEGA AI</span> · Grand Line</div>
+                            <div style="font-size: 10px; color: ${C.muted}; margin-top: 4px;">Este reporte fue enviado automaticamente a tu correo de registro.</div>
                         </td></tr>
                     </table>
                 </td></tr>

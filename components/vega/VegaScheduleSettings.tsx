@@ -41,6 +41,10 @@ const DEFAULT_CONFIG: VegaScheduleConfig = {
     monthlyReport: { enabled: false, daysOfMonth: [1, 15], hour: 8 },
     adPerformanceReport: { enabled: false, intervalHours: 2, startHour: 8, endHour: 22 },
     alertHours: { enabled: false, startHour: 7, endHour: 21 },
+    logisticsReport: { enabled: false, hour: 9 },
+    financialReport: { enabled: false, dayOfWeek: 5, hour: 18 },
+    supplierReport: { enabled: false, dayOfWeek: 1, hour: 8 },
+    monthCloseReport: { enabled: false, dayOfMonth: 1, hour: 7 },
 };
 
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
