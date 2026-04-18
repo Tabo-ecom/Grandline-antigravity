@@ -294,15 +294,21 @@ export async function uploadTikTokImage(_token: string, advertiserId: string, fi
     return data.id;
 }
 
-/** Map country name to TikTok location ID */
+/** Map country name to TikTok numeric location ID (geo_id) */
 export function getTikTokLocationId(country: string): string {
     const map: Record<string, string> = {
-        'Colombia': 'CO', 'México': 'MX', 'Mexico': 'MX', 'Ecuador': 'EC',
-        'Perú': 'PE', 'Peru': 'PE', 'Chile': 'CL', 'Argentina': 'AR',
-        'Paraguay': 'PY', 'Guatemala': 'GT', 'Panamá': 'PA', 'Panama': 'PA',
-        'España': 'ES', 'Costa Rica': 'CR',
+        'Colombia': '3686110',
+        'México': '3996063', 'Mexico': '3996063',
+        'Ecuador': '3658394',
+        'Perú': '3932488', 'Peru': '3932488',
+        'Chile': '3895114',
+        'Argentina': '3865483',
+        'Paraguay': '3437598',
+        'Guatemala': '3595528',
+        'Panamá': '3703430', 'Panama': '3703430',
+        'Costa Rica': '3624060',
     };
-    return map[country] || 'CO';
+    return map[country] || '3686110'; // Default: Colombia
 }
 
 /** Map demographics age range to TikTok age groups */
