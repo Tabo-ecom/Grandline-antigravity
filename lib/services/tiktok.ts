@@ -233,39 +233,47 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
 }
 
 export async function uploadTikTokVideo(_token: string, advertiserId: string, file: File): Promise<string> {
-    // Uses server-side proxy to avoid CORS
+    // Step 1: Get token from server (avoids exposing it in client code)
     const { authFetch: af } = await import('@/lib/api/client');
+    const tokenRes = await af('/api/sunny/tiktok-token');
+    if (!tokenRes.ok) throw new Error('No se pudo obtener token de TikTok');
+    const { token } = await tokenRes.json();
+
+    // Step 2: Upload directly to TikTok from client (bypasses Vercel 4.5MB limit)
     const formData = new FormData();
     formData.append('advertiser_id', advertiserId);
-    formData.append('file', file);
-    formData.append('type', 'video');
+    formData.append('upload_type', 'UPLOAD_BY_FILE');
+    formData.append('video_file', file);
 
-    const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
-    const text = await res.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch {
-        throw new Error(`Upload failed (${res.status}): ${text.substring(0, 100)}`);
-    }
-    if (!res.ok) throw new Error(data.error || 'Error uploading video to TikTok');
-    return data.id;
+    const res = await fetch(`${TT_API_BASE}/file/video/ad/upload/`, {
+        method: 'POST',
+        headers: { 'Access-Token': token },
+        body: formData,
+    });
+    const data = await res.json();
+    if (data.code !== 0) throw new Error(data.message || 'Error uploading video to TikTok');
+    return data.data?.video_id;
 }
 
 export async function uploadTikTokImage(_token: string, advertiserId: string, file: File): Promise<string> {
-    // Uses server-side proxy to avoid CORS
     const { authFetch: af } = await import('@/lib/api/client');
+    const tokenRes = await af('/api/sunny/tiktok-token');
+    if (!tokenRes.ok) throw new Error('No se pudo obtener token de TikTok');
+    const { token } = await tokenRes.json();
+
     const formData = new FormData();
     formData.append('advertiser_id', advertiserId);
-    formData.append('file', file);
-    formData.append('type', 'image');
+    formData.append('upload_type', 'UPLOAD_BY_FILE');
+    formData.append('image_file', file);
 
-    const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
-    const text = await res.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch {
-        throw new Error(`Upload failed (${res.status}): ${text.substring(0, 100)}`);
-    }
-    if (!res.ok) throw new Error(data.error || 'Error uploading image to TikTok');
-    return data.id;
+    const res = await fetch(`${TT_API_BASE}/file/image/ad/upload/`, {
+        method: 'POST',
+        headers: { 'Access-Token': token },
+        body: formData,
+    });
+    const data = await res.json();
+    if (data.code !== 0) throw new Error(data.message || 'Error uploading image to TikTok');
+    return data.data?.image_id;
 }
 
 /** Map country name to TikTok location ID */
