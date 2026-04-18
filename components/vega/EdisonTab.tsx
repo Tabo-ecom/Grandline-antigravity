@@ -397,11 +397,18 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
         if (!lnUrl) return;
         setError('');
         try {
-            // Build research data with angle and price
-            const researchPayload = initialResearchData ? {
-                ...initialResearchData,
+            // Get research data from SELECTED research (dropdown) or initial props
+            const selectedResearch = selectedResearchId
+                ? savedResearches.find(x => x.id === selectedResearchId)
+                : null;
+            const researchReport = selectedResearch?.report || initialResearchData;
+
+            const researchPayload = researchReport ? {
+                ...researchReport,
+                productName: selectedResearch?.productName || researchReport?.productName,
                 selected_angle: lnAngle || undefined,
                 price: lnPrice || undefined,
+                productImages: selectedResearch?.productImages || [],
             } : lnPrice || lnAngle ? { price: lnPrice, selected_angle: lnAngle } : undefined;
 
             const res = await startPipeline({
@@ -573,10 +580,15 @@ export default function EdisonTab({ initialUrl, initialNiche, initialResearchDat
                                             onChange={e => {
                                                 const id = e.target.value;
                                                 setSelectedResearchId(id);
+                                                setLnAngle(''); // Reset angle when switching
                                                 const r = savedResearches.find(x => x.id === id);
                                                 if (r) {
-                                                    setLnUrl(r.referenceUrl);
+                                                    setLnUrl(r.referenceUrl || r.productUrl);
                                                     setLnNiche((r.niche || 'generic') as Niche);
+                                                    // Pre-fill price from research
+                                                    if (r.report?.unitEconomics?.suggestedPrice) {
+                                                        setLnPrice(r.report.unitEconomics.suggestedPrice.replace(/[^0-9.,]/g, ''));
+                                                    }
                                                 }
                                             }}
                                             className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none appearance-none">

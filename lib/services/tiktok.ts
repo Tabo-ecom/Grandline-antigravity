@@ -233,47 +233,65 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
 }
 
 export async function uploadTikTokVideo(_token: string, advertiserId: string, file: File): Promise<string> {
-    // Step 1: Get token from server (avoids exposing it in client code)
+    // Upload to Firebase Storage first, then tell TikTok to download from URL
+    // This bypasses both Vercel 4.5MB limit AND TikTok CORS restrictions
+    const { storage } = await import('@/lib/firebase/config');
+    const { ref, uploadBytes, getDownloadURL, deleteObject } = await import('firebase/storage');
+
+    const fileName = `tiktok-uploads/${Date.now()}-${file.name}`;
+    const storageRef = ref(storage, fileName);
+
+    // Upload to Firebase Storage
+    await uploadBytes(storageRef, file);
+    const downloadUrl = await getDownloadURL(storageRef);
+
+    // Tell TikTok to download from URL via server proxy
     const { authFetch: af } = await import('@/lib/api/client');
-    const tokenRes = await af('/api/sunny/tiktok-token');
-    if (!tokenRes.ok) throw new Error('No se pudo obtener token de TikTok');
-    const { token } = await tokenRes.json();
-
-    // Step 2: Upload directly to TikTok from client (bypasses Vercel 4.5MB limit)
-    const formData = new FormData();
-    formData.append('advertiser_id', advertiserId);
-    formData.append('upload_type', 'UPLOAD_BY_FILE');
-    formData.append('video_file', file);
-
-    const res = await fetch(`${TT_API_BASE}/file/video/ad/upload/`, {
+    const res = await af('/api/sunny/tiktok-upload', {
         method: 'POST',
-        headers: { 'Access-Token': token },
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            advertiser_id: advertiserId,
+            type: 'video',
+            url: downloadUrl,
+            fileName: file.name,
+        }),
     });
     const data = await res.json();
-    if (data.code !== 0) throw new Error(data.message || 'Error uploading video to TikTok');
-    return data.data?.video_id;
+
+    // Clean up Firebase Storage
+    deleteObject(storageRef).catch(() => {});
+
+    if (!res.ok) throw new Error(data.error || 'Error uploading video to TikTok');
+    return data.id;
 }
 
 export async function uploadTikTokImage(_token: string, advertiserId: string, file: File): Promise<string> {
+    const { storage } = await import('@/lib/firebase/config');
+    const { ref, uploadBytes, getDownloadURL, deleteObject } = await import('firebase/storage');
+
+    const fileName = `tiktok-uploads/${Date.now()}-${file.name}`;
+    const storageRef = ref(storage, fileName);
+
+    await uploadBytes(storageRef, file);
+    const downloadUrl = await getDownloadURL(storageRef);
+
     const { authFetch: af } = await import('@/lib/api/client');
-    const tokenRes = await af('/api/sunny/tiktok-token');
-    if (!tokenRes.ok) throw new Error('No se pudo obtener token de TikTok');
-    const { token } = await tokenRes.json();
-
-    const formData = new FormData();
-    formData.append('advertiser_id', advertiserId);
-    formData.append('upload_type', 'UPLOAD_BY_FILE');
-    formData.append('image_file', file);
-
-    const res = await fetch(`${TT_API_BASE}/file/image/ad/upload/`, {
+    const res = await af('/api/sunny/tiktok-upload', {
         method: 'POST',
-        headers: { 'Access-Token': token },
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            advertiser_id: advertiserId,
+            type: 'image',
+            url: downloadUrl,
+        }),
     });
     const data = await res.json();
-    if (data.code !== 0) throw new Error(data.message || 'Error uploading image to TikTok');
-    return data.data?.image_id;
+
+    deleteObject(storageRef).catch(() => {});
+
+    if (!res.ok) throw new Error(data.error || 'Error uploading image to TikTok');
+    return data.id;
 }
 
 /** Map country name to TikTok location ID */

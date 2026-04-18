@@ -9,8 +9,9 @@ const TT_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3';
 
 /**
  * POST /api/sunny/tiktok-upload
- * Server-side proxy for uploading video/image creatives to TikTok Ads.
- * Receives FormData with: advertiser_id, file, type (video|image)
+ * Server-side proxy for uploading creatives to TikTok via URL.
+ * Client uploads file to Firebase Storage first, then passes the URL here.
+ * Body: { advertiser_id, type: 'video'|'image', url, fileName? }
  */
 export async function POST(req: NextRequest) {
     try {
@@ -18,41 +19,45 @@ export async function POST(req: NextRequest) {
         if (!auth) return unauthorizedResponse();
         if (!adminDb) return NextResponse.json({ error: 'Server not configured' }, { status: 500 });
 
-        // Get TikTok token from settings
         const settingsSnap = await adminDb.collection('app_data').doc(`ad_settings_${auth.teamId}`).get();
         if (!settingsSnap.exists) return NextResponse.json({ error: 'No settings' }, { status: 400 });
         const settings = decryptSettings(settingsSnap.data()?.value || {});
         const token = settings.tt_token;
         if (!token) return NextResponse.json({ error: 'No TikTok token' }, { status: 400 });
 
-        const formData = await req.formData();
-        const advertiserId = formData.get('advertiser_id') as string;
-        const file = formData.get('file') as File;
-        const fileType = formData.get('type') as string; // 'video' or 'image'
+        const { advertiser_id, type, url, fileName } = await req.json();
 
-        if (!advertiserId || !file) {
-            return NextResponse.json({ error: 'advertiser_id and file required' }, { status: 400 });
+        if (!advertiser_id || !url || !type) {
+            return NextResponse.json({ error: 'advertiser_id, type, and url required' }, { status: 400 });
         }
 
-        // Build FormData for TikTok API
-        const ttForm = new FormData();
-        ttForm.append('advertiser_id', advertiserId);
-        ttForm.append('upload_type', 'UPLOAD_BY_FILE');
+        let endpoint: string;
+        let body: any;
 
-        if (fileType === 'video') {
-            ttForm.append('video_file', file);
+        if (type === 'video') {
+            endpoint = `${TT_API_BASE}/file/video/ad/upload/`;
+            body = {
+                advertiser_id,
+                upload_type: 'UPLOAD_BY_URL',
+                video_url: url,
+                file_name: fileName || `video_${Date.now()}.mp4`,
+            };
         } else {
-            ttForm.append('image_file', file);
+            endpoint = `${TT_API_BASE}/file/image/ad/upload/`;
+            body = {
+                advertiser_id,
+                upload_type: 'UPLOAD_BY_URL',
+                image_url: url,
+            };
         }
-
-        const endpoint = fileType === 'video'
-            ? `${TT_API_BASE}/file/video/ad/upload/`
-            : `${TT_API_BASE}/file/image/ad/upload/`;
 
         const ttRes = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Access-Token': token },
-            body: ttForm,
+            headers: {
+                'Access-Token': token,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
         });
 
         const ttText = await ttRes.text();
@@ -63,7 +68,6 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
                 error: 'TikTok returned invalid response',
                 raw: ttText.substring(0, 300),
-                status: ttRes.status,
             }, { status: 400 });
         }
 
@@ -74,15 +78,11 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        const resultId = fileType === 'video'
+        const resultId = type === 'video'
             ? ttData.data?.video_id
             : ttData.data?.image_id;
 
-        return NextResponse.json({
-            success: true,
-            id: resultId,
-            type: fileType,
-        });
+        return NextResponse.json({ success: true, id: resultId, type });
     } catch (error: any) {
         console.error('[TikTok Upload] error:', error);
         return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
