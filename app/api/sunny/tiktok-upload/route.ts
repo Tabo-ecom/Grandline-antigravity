@@ -3,6 +3,8 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifyAuth, unauthorizedResponse } from '@/lib/api/auth';
 import { decryptSettings } from '@/lib/api/crypto';
 
+export const maxDuration = 60;
+
 const TT_API_BASE = 'https://business-api.tiktok.com/open_api/v1.3';
 
 /**
@@ -53,7 +55,17 @@ export async function POST(req: NextRequest) {
             body: ttForm,
         });
 
-        const ttData = await ttRes.json();
+        const ttText = await ttRes.text();
+        let ttData: any;
+        try {
+            ttData = JSON.parse(ttText);
+        } catch {
+            return NextResponse.json({
+                error: 'TikTok returned invalid response',
+                raw: ttText.substring(0, 300),
+                status: ttRes.status,
+            }, { status: 400 });
+        }
 
         if (ttData.code !== 0) {
             return NextResponse.json({

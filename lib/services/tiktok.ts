@@ -241,7 +241,11 @@ export async function uploadTikTokVideo(_token: string, advertiserId: string, fi
     formData.append('type', 'video');
 
     const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
-    const data = await res.json();
+    const text = await res.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch {
+        throw new Error(`Upload failed (${res.status}): ${text.substring(0, 100)}`);
+    }
     if (!res.ok) throw new Error(data.error || 'Error uploading video to TikTok');
     return data.id;
 }
@@ -255,7 +259,11 @@ export async function uploadTikTokImage(_token: string, advertiserId: string, fi
     formData.append('type', 'image');
 
     const res = await af('/api/sunny/tiktok-upload', { method: 'POST', body: formData });
-    const data = await res.json();
+    const text = await res.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch {
+        throw new Error(`Upload failed (${res.status}): ${text.substring(0, 100)}`);
+    }
     if (!res.ok) throw new Error(data.error || 'Error uploading image to TikTok');
     return data.id;
 }
