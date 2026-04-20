@@ -176,7 +176,7 @@ async function getOrCreateIdentity(token: string, advertiserId: string, displayN
     const data = await ttApiCall('/identity/create/', token, {
         advertiser_id: advertiserId,
         display_name: displayName || 'Store',
-        identity_type: 'BC_AUTH_TT',
+        identity_type: 'AUTH_CODE',
     });
     const id = data.identity_id;
     identityCache.set(cacheKey, id);
@@ -193,7 +193,7 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
         ad_text: config.adText,
         landing_page_url: config.landingPageUrl,
         call_to_action: config.callToAction || 'SHOP_NOW',
-        identity_type: 'BC_AUTH_TT',
+        identity_type: 'AUTH_CODE',
         identity_id: identityId,
     };
     if (config.videoId) creative.video_id = config.videoId;
