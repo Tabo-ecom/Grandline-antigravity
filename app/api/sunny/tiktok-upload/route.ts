@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
                 advertiser_id,
                 upload_type: 'UPLOAD_BY_URL',
                 video_url: url,
-                file_name: fileName || `video_${Date.now()}.mp4`,
+                file_name: `${Date.now()}_${fileName || 'video'}.mp4`,
             };
         } else {
             endpoint = `${TT_API_BASE}/file/image/ad/upload/`;
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
                 advertiser_id,
                 upload_type: 'UPLOAD_BY_URL',
                 image_url: url,
+                file_name: `${Date.now()}_image.jpg`,
             };
         }
 
