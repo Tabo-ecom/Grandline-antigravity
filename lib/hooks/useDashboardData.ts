@@ -102,6 +102,8 @@ export interface DashboardDataHook {
     adsByCountryProduct: Record<string, Record<string, number>>;
     // Freight Analysis
     freightAnalysis: Record<string, FreightAnalysisResult>;
+    // Repurchase/Recompra
+    repurchaseMetrics: import('@/lib/calculations/repurchaseMetrics').GlobalRepurchaseMetrics | null;
     // Brand filter
     brandProductIds: Set<string> | null;
     catalogProducts: CatalogProduct[];
@@ -896,7 +898,14 @@ export function useDashboardData(): DashboardDataHook {
         return analyzeFreightByCountry(filteredOrders);
     }, [filteredOrders, loading]);
 
-    // 9.5 Align daily profit with card u_real (subtract ads)
+    // 9.5 Repurchase/Recompra metrics
+    const repurchaseMetrics = useMemo(() => {
+        if (loading || rawOrders.length === 0) return null;
+        const { calculateRepurchaseMetrics } = require('@/lib/calculations/repurchaseMetrics');
+        return calculateRepurchaseMetrics(rawOrders);
+    }, [rawOrders, loading]);
+
+    // 9.6 Align daily profit with card u_real (subtract ads)
     // projected_profit stays as-is per day (stable regardless of date range)
     // Card's projectedProfit will use the sum of daily values as source of truth
     const alignedDailySalesData = useMemo(() => {
@@ -1028,6 +1037,7 @@ export function useDashboardData(): DashboardDataHook {
         productGroups,
         adsByCountryProduct,
         freightAnalysis,
+        repurchaseMetrics,
         brandProductIds,
         catalogProducts,
     };
