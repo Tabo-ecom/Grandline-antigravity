@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Microscope, Palette, BarChart3, ChevronDown, ChevronRight, Clock, Bell as BellIcon, Send, Eye, Activity, Crosshair, Settings } from 'lucide-react';
+import { Microscope, Palette, BarChart3, ChevronDown, ChevronRight, Clock, Bell as BellIcon, Send, Eye, Activity, Crosshair, Settings, Mic } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 // Satellite tabs — lazy loaded
 const GeneralTab = dynamic(() => import('@/components/vega/GeneralTab'));
 const PythagorasTab = dynamic(() => import('@/components/vega/PythagorasTab'));
 const EdisonTab = dynamic(() => import('@/components/vega/EdisonTab'));
+const TranscriberTab = dynamic(() => import('@/components/vega/TranscriberTab'));
 
 // Shaka sub-components (existing)
 const VegaCoreMonitoring = dynamic(() => import('@/components/vega/VegaCoreMonitoring').then(m => ({ default: m.VegaCoreMonitoring })));
@@ -23,6 +24,7 @@ const SATELLITES = [
     { key: 'pythagoras', label: 'Pythagoras', subtitle: 'Market Research', icon: Microscope, color: '#AA77FF' },
     { key: 'edison', label: 'Edison', subtitle: 'Creative Designer', icon: Palette, color: '#FF8844' },
     { key: 'shaka', label: 'Shaka', subtitle: 'Data Analytics', icon: BarChart3, color: '#00CFFF' },
+    { key: 'transcriber', label: 'Transcriptor', subtitle: 'Video → Texto', icon: Mic, color: '#EC4899' },
 ] as const;
 
 type SatelliteKey = typeof SATELLITES[number]['key'];
@@ -190,6 +192,10 @@ export default function VegaAIPage() {
 
             {activeSatellite === 'shaka' && (
                 <ShakaTab />
+            )}
+
+            {activeSatellite === 'transcriber' && (
+                <TranscriberTab />
             )}
         </div>
     );

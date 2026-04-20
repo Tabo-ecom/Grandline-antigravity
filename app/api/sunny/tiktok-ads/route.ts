@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
             '/campaign/create/',
             '/adgroup/create/',
             '/ad/create/',
+            '/identity/create/',
         ];
         if (!allowedEndpoints.includes(endpoint)) {
             return NextResponse.json({ error: `Endpoint not allowed: ${endpoint}` }, { status: 400 });

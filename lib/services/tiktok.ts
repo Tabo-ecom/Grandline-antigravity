@@ -166,14 +166,35 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
     return data.adgroup_id;
 }
 
+// Cache identity IDs per advertiser to avoid creating duplicates
+const identityCache = new Map<string, string>();
+
+async function getOrCreateIdentity(token: string, advertiserId: string, displayName: string): Promise<string> {
+    const cacheKey = `${advertiserId}_${displayName}`;
+    if (identityCache.has(cacheKey)) return identityCache.get(cacheKey)!;
+
+    const data = await ttApiCall('/identity/create/', token, {
+        advertiser_id: advertiserId,
+        display_name: displayName || 'Store',
+        identity_type: 'CUSTOMIZED_USER',
+    });
+    const id = data.identity_id;
+    identityCache.set(cacheKey, id);
+    return id;
+}
+
 export async function createTikTokAd(token: string, config: TikTokAdConfig): Promise<string> {
+    // Get or create identity for this advertiser
+    const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store');
+
     const creative: any = {
         ad_name: config.name,
         ad_format: config.adFormat || 'SINGLE_VIDEO',
         ad_text: config.adText,
         landing_page_url: config.landingPageUrl,
         call_to_action: config.callToAction || 'SHOP_NOW',
-        identity_type: config.identityType || 'CUSTOMIZED_USER',
+        identity_type: 'CUSTOMIZED_USER',
+        identity_id: identityId,
     };
     if (config.videoId) creative.video_id = config.videoId;
     if (config.imageId) creative.image_ids = [config.imageId];
