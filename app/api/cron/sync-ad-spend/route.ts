@@ -111,9 +111,20 @@ export async function GET(req: NextRequest) {
 
             try {
                 const settings = decryptSettings(data.value);
-                const fbToken = settings.fb_token;
-                const fbAccounts = settings.fb_account_ids || [];
-                if (!fbToken || fbAccounts.length === 0) continue;
+
+                // Build list of all FB token+account pairs (primary + additional connections)
+                const fbPairs: { token: string; accounts: { id: string; name: string }[] }[] = [];
+                if (settings.fb_token && settings.fb_account_ids?.length) {
+                    fbPairs.push({ token: settings.fb_token, accounts: settings.fb_account_ids });
+                }
+                if (settings.fb_connections?.length) {
+                    for (const conn of settings.fb_connections) {
+                        if (conn.token && conn.account_ids?.length) {
+                            fbPairs.push({ token: conn.token, accounts: conn.account_ids });
+                        }
+                    }
+                }
+                if (fbPairs.length === 0 && !settings.tt_token) continue;
 
                 // Load user's campaign mappings for country detection
                 const mappingsDoc = await adminDb.collection('app_data')
@@ -134,11 +145,12 @@ export async function GET(req: NextRequest) {
                     if (o.productId && o.country) productCountryMap.set(o.productId, o.country);
                 });
 
-                // Fetch and save ad spend for each account
+                // Fetch and save ad spend for each account across all FB connections
                 const batch = adminDb.batch();
                 let batchCount = 0;
                 let userSaved = 0;
 
+                for (const { token: fbToken, accounts: fbAccounts } of fbPairs) {
                 for (const account of fbAccounts) {
                     try {
                         // Fetch the REAL currency from Meta API (not user settings)
@@ -206,12 +218,13 @@ export async function GET(req: NextRequest) {
                         }
                     } catch (accErr: any) {
                         if (accErr instanceof MetaTokenExpiredError) {
-                            results.push({ userId, saved: userSaved, error: 'Token expired' });
+                            console.warn(`[Cron] Token expired for ${userId}, skipping connection`);
                             break;
                         }
                         console.error(`[Cron] Error syncing account ${account.id} for ${userId}:`, accErr.message);
                     }
                 }
+                } // end fbPairs loop
 
                 if (batchCount > 0) {
                     await batch.commit();

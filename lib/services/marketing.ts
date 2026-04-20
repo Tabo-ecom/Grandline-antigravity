@@ -80,16 +80,24 @@ export interface AdAccount {
     name: string;
 }
 
+export interface FbConnection {
+    label: string;
+    token: string;
+    account_ids: AdAccount[];
+    currency?: string;
+}
+
 export interface AdSettings {
     fb_token: string;
     fb_account_ids: AdAccount[];
+    fb_connections?: FbConnection[];
     tt_token: string;
     tt_account_ids: AdAccount[];
     fb_currency?: string;
     tt_currency?: string;
     ai_provider?: 'gemini' | 'openai' | 'none';
     ai_api_key?: string;
-    ai_auto_map?: boolean; // Enable automatic mapping
+    ai_auto_map?: boolean;
     google_api_key?: string;
     google_client_id?: string;
     custom_metrics?: CustomMetric[];

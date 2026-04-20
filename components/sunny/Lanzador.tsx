@@ -243,6 +243,9 @@ export const Lanzador: React.FC = () => {
         setFormatPairs(pairs);
     }, [multiFormat, uploadedFiles]);
 
+    // Map account ID → token for multi-connection support
+    const [fbTokenMap, setFbTokenMap] = useState<Map<string, string>>(new Map());
+
     useEffect(() => {
         const loadAccounts = async () => {
             setIsLoadingAccounts(true);
@@ -251,28 +254,35 @@ export const Lanzador: React.FC = () => {
                 if (settings) {
                     if (settings.fb_token) setMetaToken(settings.fb_token);
                     if (settings.tt_token) setTtToken(settings.tt_token);
-                    let fb = (settings.fb_account_ids || []).map((acc: any) => ({ ...acc, platform: 'facebook' }));
 
-                    // Enrich accounts that only have numeric IDs as names
-                    const hasNamelessFb = fb.some((acc: any) => !acc.name || !/[a-zA-Z]/.test(acc.name));
-                    if (hasNamelessFb && settings.fb_token) {
-                        try {
-                            const metaAccounts = await fetchMetaAdAccounts(settings.fb_token);
-                            const nameMap = new Map(metaAccounts.map(a => [a.id, a.name]));
-                            fb = fb.map((acc: any) => {
-                                const metaName = nameMap.get(acc.id) || nameMap.get(`act_${acc.id}`);
-                                if (metaName && (!acc.name || !/[a-zA-Z]/.test(acc.name))) {
-                                    return { ...acc, name: metaName };
-                                }
-                                return acc;
-                            });
-                        } catch (e) {
-                            console.warn('Could not enrich account names from Meta:', e);
+                    const tokenMap = new Map<string, string>();
+                    let allFb: any[] = [];
+
+                    // Primary connection
+                    if (settings.fb_token && settings.fb_account_ids?.length) {
+                        const primary = settings.fb_account_ids.map((acc: any) => ({ ...acc, platform: 'facebook' }));
+                        primary.forEach((acc: any) => tokenMap.set(acc.id, settings.fb_token));
+                        allFb.push(...primary);
+                    }
+
+                    // Additional connections
+                    if (settings.fb_connections?.length) {
+                        for (const conn of settings.fb_connections) {
+                            if (conn.token && conn.account_ids?.length) {
+                                const connAccs = conn.account_ids.map((acc: any) => ({
+                                    ...acc,
+                                    platform: 'facebook',
+                                    connectionLabel: conn.label,
+                                }));
+                                connAccs.forEach((acc: any) => tokenMap.set(acc.id, conn.token));
+                                allFb.push(...connAccs);
+                            }
                         }
                     }
 
+                    setFbTokenMap(tokenMap);
                     const tt = (settings.tt_account_ids || []).map((acc: any) => ({ ...acc, platform: 'tiktok' }));
-                    setAdAccounts([...fb, ...tt]);
+                    setAdAccounts([...allFb, ...tt]);
                 }
             } catch (error) {
                 console.error("Error loading global ad accounts:", error);
@@ -606,6 +616,8 @@ export const Lanzador: React.FC = () => {
             const allLaunchResults: (MetaLaunchResult & { accountName: string })[] = [];
 
             for (const acc of fbAccounts) {
+                // Use the token mapped to this specific account (multi-connection support)
+                const token = fbTokenMap.get(acc.id) || metaToken!;
                 const accountId = acc.id.startsWith('act_') ? acc.id : `act_${acc.id}`;
                 setLaunchProgress(`Subiendo creativos a ${acc.name}...`);
 

@@ -9,6 +9,7 @@ import { adminGetAppData, adminSetAppData } from '@/lib/firebase/admin-helpers';
 import { sendTelegramMessage, sendSlackMessage } from '@/lib/services/vega/notifications';
 import { sendReportEmail } from '@/lib/services/vega/email';
 import { buildReportEmailHTML } from '@/lib/services/vega/email-template';
+import { generateVegaReportPDF } from '@/lib/services/vega/pdf-report';
 import { calculateOverallHealth } from '@/lib/utils/health';
 import { DEFAULT_KPI_TARGETS } from '@/lib/types/kpi-targets';
 import { adminAuth } from '@/lib/firebase/admin';
@@ -169,8 +170,21 @@ export async function generateAndSendReport(
 
             if (recipients.length > 0) {
                 channels.push('email');
+                // Generate PDF attachment
+                let pdfAttachment: { filename: string; content: Buffer; contentType: string }[] | undefined;
+                try {
+                    const pdfBuffer = await generateVegaReportPDF(report);
+                    const safePeriod = report.period.replace(/[^a-zA-Z0-9\-]/g, '_');
+                    pdfAttachment = [{
+                        filename: `VEGA_${report.type}_${safePeriod}.pdf`,
+                        content: pdfBuffer,
+                        contentType: 'application/pdf',
+                    }];
+                } catch (pdfErr) {
+                    console.error('PDF generation failed, sending email without attachment:', pdfErr);
+                }
                 for (const email of recipients) {
-                    await sendReportEmail(email, subject, html);
+                    await sendReportEmail(email, subject, html, pdfAttachment);
                 }
             }
         } catch { /* email error */ }

@@ -69,6 +69,13 @@ export function encryptSettings(settings: Record<string, any>): Record<string, a
             result[field] = encrypt(result[field]);
         }
     }
+    // Encrypt fb_connections tokens
+    if (Array.isArray(result.fb_connections)) {
+        result.fb_connections = result.fb_connections.map((conn: any) => ({
+            ...conn,
+            token: conn.token && !conn.token.startsWith('enc:') ? encrypt(conn.token) : conn.token,
+        }));
+    }
     return result;
 }
 
@@ -79,6 +86,13 @@ export function decryptSettings(settings: Record<string, any>): Record<string, a
         if (result[field] && typeof result[field] === 'string') {
             result[field] = decrypt(result[field]);
         }
+    }
+    // Decrypt fb_connections tokens
+    if (Array.isArray(result.fb_connections)) {
+        result.fb_connections = result.fb_connections.map((conn: any) => ({
+            ...conn,
+            token: conn.token ? decrypt(conn.token) : conn.token,
+        }));
     }
     return result;
 }

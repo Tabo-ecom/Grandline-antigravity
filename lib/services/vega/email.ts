@@ -25,7 +25,8 @@ function getTransporter(): nodemailer.Transporter {
 export async function sendReportEmail(
     to: string,
     subject: string,
-    html: string
+    html: string,
+    attachments?: { filename: string; content: Buffer; contentType?: string }[],
 ): Promise<boolean> {
     try {
         const transport = getTransporter();
@@ -36,6 +37,11 @@ export async function sendReportEmail(
             to,
             subject,
             html,
+            attachments: attachments?.map(a => ({
+                filename: a.filename,
+                content: a.content,
+                contentType: a.contentType || 'application/pdf',
+            })),
         });
 
         return true;

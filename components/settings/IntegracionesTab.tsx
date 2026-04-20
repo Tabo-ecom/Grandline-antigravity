@@ -13,9 +13,17 @@ interface AdAccount {
     name: string;
 }
 
+interface FbConnection {
+    label: string;          // User-given label like "BM Principal", "BM Lucent"
+    token: string;
+    account_ids: AdAccount[];
+    currency?: string;
+}
+
 interface AdSettings {
-    fb_token: string;
-    fb_account_ids: AdAccount[];
+    fb_token: string;               // Legacy primary token
+    fb_account_ids: AdAccount[];    // Legacy primary accounts
+    fb_connections?: FbConnection[]; // Multiple FB connections
     tt_token: string;
     tt_account_ids: AdAccount[];
     fb_currency?: string;
@@ -23,7 +31,6 @@ interface AdSettings {
     ai_provider?: 'gemini' | 'openai' | 'none';
     ai_api_key?: string;
     ai_auto_map?: boolean;
-    // Individual AI keys
     openai_api_key?: string;
     gemini_api_key?: string;
     claude_api_key?: string;
@@ -84,6 +91,8 @@ export default function IntegracionesTab() {
     const [ttAccounts, setTtAccounts] = useState<any[]>([]);
     const [fetchingFb, setFetchingFb] = useState(false);
     const [fetchingTt, setFetchingTt] = useState(false);
+    const [fetchingFbIdx, setFetchingFbIdx] = useState<number | null>(null);
+    const [fbConnectionAccounts, setFbConnectionAccounts] = useState<Record<number, any[]>>({});
     const [meliConnected, setMeliConnected] = useState(false);
     const [meliNickname, setMeliNickname] = useState('');
     const [ttOAuthStatus, setTtOAuthStatus] = useState<{ connected: boolean; display_name?: string }>({ connected: false });
@@ -119,6 +128,35 @@ export default function IntegracionesTab() {
             setFbAccounts(accounts);
         } catch (e: any) { alert('Error: ' + e.message); }
         finally { setFetchingFb(false); }
+    };
+
+    const handleFetchFbConnection = async (idx: number) => {
+        const conn = settings.fb_connections?.[idx];
+        if (!conn?.token) return;
+        setFetchingFbIdx(idx);
+        try {
+            const accounts = await fetchMetaAdAccounts(conn.token);
+            setFbConnectionAccounts(prev => ({ ...prev, [idx]: accounts }));
+        } catch (e: any) { alert('Error: ' + e.message); }
+        finally { setFetchingFbIdx(null); }
+    };
+
+    const addFbConnection = () => {
+        const conns = [...(settings.fb_connections || [])];
+        conns.push({ label: `Conexión ${conns.length + 1}`, token: '', account_ids: [], currency: 'COP' });
+        setSettings({ ...settings, fb_connections: conns });
+    };
+
+    const updateFbConnection = (idx: number, update: Partial<FbConnection>) => {
+        const conns = [...(settings.fb_connections || [])];
+        conns[idx] = { ...conns[idx], ...update };
+        setSettings({ ...settings, fb_connections: conns });
+    };
+
+    const removeFbConnection = (idx: number) => {
+        const conns = [...(settings.fb_connections || [])];
+        conns.splice(idx, 1);
+        setSettings({ ...settings, fb_connections: conns });
     };
 
     const handleFetchTt = async () => {
@@ -172,7 +210,8 @@ export default function IntegracionesTab() {
         setDisconnectingTt(false);
     };
 
-    const fbConnected = !!settings.fb_token && settings.fb_account_ids.length > 0;
+    const totalFbAccounts = (settings.fb_account_ids?.length || 0) + (settings.fb_connections || []).reduce((s, c) => s + (c.account_ids?.length || 0), 0);
+    const fbConnected = totalFbAccounts > 0;
     const ttConnected = !!settings.tt_token && settings.tt_account_ids.length > 0;
 
     return (
@@ -274,11 +313,14 @@ export default function IntegracionesTab() {
                         icon="f"
                         color="#1877F2"
                         status={fbConnected ? 'connected' : settings.fb_token ? 'optional' : 'disconnected'}
-                        statusLabel={fbConnected ? `${settings.fb_account_ids.length} cuentas` : settings.fb_token ? 'Token sin cuentas' : 'No conectado'}
+                        statusLabel={fbConnected ? `${totalFbAccounts} cuentas` : settings.fb_token ? 'Token sin cuentas' : 'No conectado'}
                         defaultOpen={!fbConnected}
                     >
-                        <div>
-                            <label className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1.5 block">Access Token</label>
+                        {/* Primary Connection */}
+                        <div className="space-y-3 pb-3 border-b border-card-border/50">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-[#1877F2] uppercase tracking-widest">Conexión Principal</span>
+                            </div>
                             <input
                                 type="password"
                                 value={settings.fb_token}
@@ -286,44 +328,116 @@ export default function IntegracionesTab() {
                                 className="w-full bg-hover-bg border border-card-border rounded-xl px-3 py-2.5 text-xs focus:border-[#1877F2] outline-none transition-colors font-mono"
                                 placeholder="EAAB..."
                             />
+                            <div className="flex gap-2">
+                                <select
+                                    value={settings.fb_currency || 'USD'}
+                                    onChange={(e) => setSettings({ ...settings, fb_currency: e.target.value })}
+                                    className="flex-1 bg-hover-bg border border-card-border rounded-xl px-3 py-2 text-xs focus:border-[#1877F2] outline-none"
+                                >
+                                    <option value="USD">USD</option>
+                                    <option value="COP">COP</option>
+                                </select>
+                                <button
+                                    type="button" onClick={handleFetchFb} disabled={!settings.fb_token || fetchingFb}
+                                    className="px-3 py-2 bg-[#1877F2]/10 text-[#1877F2] text-[10px] font-bold uppercase rounded-xl hover:bg-[#1877F2]/20 disabled:opacity-30 transition-all"
+                                >
+                                    {fetchingFb ? 'Buscando...' : 'Obtener Cuentas'}
+                                </button>
+                            </div>
+                            <div className="max-h-28 overflow-y-auto space-y-1">
+                                {(() => {
+                                    const accountMap = new Map<string, AdAccount>();
+                                    settings.fb_account_ids.forEach(a => accountMap.set(a.id, a));
+                                    fbAccounts.forEach(acc => { const id = `act_${acc.account_id}`; accountMap.set(id, { id, name: acc.name }); });
+                                    return Array.from(accountMap.values()).map(acc => {
+                                        const isSelected = settings.fb_account_ids.some(a => a.id === acc.id);
+                                        return (
+                                            <label key={acc.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-xs ${isSelected ? 'bg-[#1877F2]/10 border border-[#1877F2]/20' : 'hover:bg-hover-bg border border-transparent'}`}>
+                                                <input type="checkbox" checked={isSelected} onChange={(e) => {
+                                                    const next = e.target.checked ? [...settings.fb_account_ids, acc] : settings.fb_account_ids.filter(a => a.id !== acc.id);
+                                                    setSettings({ ...settings, fb_account_ids: next });
+                                                }} className="w-3.5 h-3.5 accent-[#1877F2]" />
+                                                <span className="font-bold">{acc.name}</span>
+                                                <span className="text-muted font-mono text-[9px] ml-auto">{acc.id}</span>
+                                            </label>
+                                        );
+                                    });
+                                })()}
+                            </div>
                         </div>
-                        <div className="flex gap-2">
-                            <select
-                                value={settings.fb_currency || 'USD'}
-                                onChange={(e) => setSettings({ ...settings, fb_currency: e.target.value })}
-                                className="flex-1 bg-hover-bg border border-card-border rounded-xl px-3 py-2 text-xs focus:border-[#1877F2] outline-none"
-                            >
-                                <option value="USD">USD</option>
-                                <option value="COP">COP</option>
-                            </select>
-                            <button
-                                type="button" onClick={handleFetchFb} disabled={!settings.fb_token || fetchingFb}
-                                className="px-3 py-2 bg-[#1877F2]/10 text-[#1877F2] text-[10px] font-bold uppercase rounded-xl hover:bg-[#1877F2]/20 disabled:opacity-30 transition-all"
-                            >
-                                {fetchingFb ? 'Buscando...' : 'Obtener Cuentas'}
-                            </button>
-                        </div>
-                        {/* Account list */}
-                        <div className="max-h-32 overflow-y-auto space-y-1">
-                            {(() => {
-                                const accountMap = new Map<string, AdAccount>();
-                                settings.fb_account_ids.forEach(a => accountMap.set(a.id, a));
-                                fbAccounts.forEach(acc => { const id = `act_${acc.account_id}`; accountMap.set(id, { id, name: acc.name }); });
-                                return Array.from(accountMap.values()).map(acc => {
-                                    const isSelected = settings.fb_account_ids.some(a => a.id === acc.id);
-                                    return (
-                                        <label key={acc.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-xs ${isSelected ? 'bg-[#1877F2]/10 border border-[#1877F2]/20' : 'hover:bg-hover-bg border border-transparent'}`}>
-                                            <input type="checkbox" checked={isSelected} onChange={(e) => {
-                                                const next = e.target.checked ? [...settings.fb_account_ids, acc] : settings.fb_account_ids.filter(a => a.id !== acc.id);
-                                                setSettings({ ...settings, fb_account_ids: next });
-                                            }} className="w-3.5 h-3.5 accent-[#1877F2]" />
-                                            <span className="font-bold">{acc.name}</span>
-                                            <span className="text-muted font-mono text-[9px] ml-auto">{acc.id}</span>
-                                        </label>
-                                    );
-                                });
-                            })()}
-                        </div>
+
+                        {/* Additional Connections */}
+                        {(settings.fb_connections || []).map((conn, idx) => (
+                            <div key={idx} className="space-y-3 pt-3 pb-3 border-b border-card-border/50">
+                                <div className="flex items-center justify-between">
+                                    <input
+                                        value={conn.label}
+                                        onChange={(e) => updateFbConnection(idx, { label: e.target.value })}
+                                        className="text-[10px] font-bold text-[#1877F2] uppercase tracking-widest bg-transparent outline-none border-b border-transparent focus:border-[#1877F2]/30 w-40"
+                                        placeholder="Nombre conexión..."
+                                    />
+                                    <button
+                                        onClick={() => removeFbConnection(idx)}
+                                        className="text-[9px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider"
+                                    >
+                                        Eliminar
+                                    </button>
+                                </div>
+                                <input
+                                    type="password"
+                                    value={conn.token}
+                                    onChange={(e) => updateFbConnection(idx, { token: e.target.value })}
+                                    className="w-full bg-hover-bg border border-card-border rounded-xl px-3 py-2.5 text-xs focus:border-[#1877F2] outline-none transition-colors font-mono"
+                                    placeholder="EAAB..."
+                                />
+                                <div className="flex gap-2">
+                                    <select
+                                        value={conn.currency || 'COP'}
+                                        onChange={(e) => updateFbConnection(idx, { currency: e.target.value })}
+                                        className="flex-1 bg-hover-bg border border-card-border rounded-xl px-3 py-2 text-xs focus:border-[#1877F2] outline-none"
+                                    >
+                                        <option value="USD">USD</option>
+                                        <option value="COP">COP</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleFetchFbConnection(idx)}
+                                        disabled={!conn.token || fetchingFbIdx === idx}
+                                        className="px-3 py-2 bg-[#1877F2]/10 text-[#1877F2] text-[10px] font-bold uppercase rounded-xl hover:bg-[#1877F2]/20 disabled:opacity-30 transition-all"
+                                    >
+                                        {fetchingFbIdx === idx ? 'Buscando...' : 'Obtener Cuentas'}
+                                    </button>
+                                </div>
+                                <div className="max-h-28 overflow-y-auto space-y-1">
+                                    {(() => {
+                                        const accountMap = new Map<string, AdAccount>();
+                                        (conn.account_ids || []).forEach(a => accountMap.set(a.id, a));
+                                        (fbConnectionAccounts[idx] || []).forEach((acc: any) => { const id = `act_${acc.account_id}`; accountMap.set(id, { id, name: acc.name }); });
+                                        return Array.from(accountMap.values()).map(acc => {
+                                            const isSelected = (conn.account_ids || []).some(a => a.id === acc.id);
+                                            return (
+                                                <label key={acc.id} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-xs ${isSelected ? 'bg-[#1877F2]/10 border border-[#1877F2]/20' : 'hover:bg-hover-bg border border-transparent'}`}>
+                                                    <input type="checkbox" checked={isSelected} onChange={(e) => {
+                                                        const next = e.target.checked ? [...(conn.account_ids || []), acc] : (conn.account_ids || []).filter(a => a.id !== acc.id);
+                                                        updateFbConnection(idx, { account_ids: next });
+                                                    }} className="w-3.5 h-3.5 accent-[#1877F2]" />
+                                                    <span className="font-bold">{acc.name}</span>
+                                                    <span className="text-muted font-mono text-[9px] ml-auto">{acc.id}</span>
+                                                </label>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* Add Connection Button */}
+                        <button
+                            onClick={addFbConnection}
+                            className="w-full py-2.5 border border-dashed border-[#1877F2]/30 hover:border-[#1877F2]/60 rounded-xl text-[10px] font-bold text-[#1877F2] uppercase tracking-widest hover:bg-[#1877F2]/5 transition-all"
+                        >
+                            + Agregar otra conexión de Facebook
+                        </button>
                     </IntegrationCard>
 
                     {/* TikTok */}
