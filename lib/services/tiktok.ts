@@ -171,15 +171,21 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
 const identityCache = new Map<string, string>();
 
 async function getOrCreateIdentity(token: string, advertiserId: string, displayName: string, bcId?: string): Promise<string> {
-    const cacheKey = `${advertiserId}_${displayName}`;
+    const cacheKey = `${advertiserId}_${bcId || 'no_bc'}`;
     if (identityCache.has(cacheKey)) return identityCache.get(cacheKey)!;
 
     const body: any = {
         advertiser_id: advertiserId,
         display_name: displayName || 'Store',
-        identity_type: 'AUTH_CODE',
     };
-    if (bcId) body.identity_authorized_bc_id = bcId;
+
+    if (bcId) {
+        // Advertiser under Business Center — use CUSTOMIZED_USER with bc_id
+        body.identity_type = 'CUSTOMIZED_USER';
+        body.identity_authorized_bc_id = bcId;
+    } else {
+        body.identity_type = 'AUTH_CODE';
+    }
 
     const data = await ttApiCall('/identity/create/', token, body);
     const id = data.identity_id;
@@ -209,7 +215,7 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
         ad_text: config.adText,
         landing_page_url: config.landingPageUrl,
         call_to_action: config.callToAction || 'SHOP_NOW',
-        identity_type: 'AUTH_CODE',
+        identity_type: config.bcId ? 'CUSTOMIZED_USER' : 'AUTH_CODE',
         identity_id: identityId,
     };
     if (config.bcId) creative.identity_authorized_bc_id = config.bcId;
