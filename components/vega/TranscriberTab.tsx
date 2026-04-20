@@ -14,11 +14,23 @@ interface Transcription {
     timestamp: number;
 }
 
+function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1] || result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
 export default function TranscriberTab() {
     const [file, setFile] = useState<File | null>(null);
-    const [preview, setPreview] = useState('');
     const [language, setLanguage] = useState('es');
     const [transcribing, setTranscribing] = useState(false);
+    const [progress, setProgress] = useState('');
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
     const [history, setHistory] = useState<Transcription[]>([]);
@@ -26,16 +38,15 @@ export default function TranscriberTab() {
     const inputRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
 
+    const MAX_SIZE_MB = 20; // Vercel Pro allows up to 50MB but Gemini inline is 20MB
+
     const handleFile = (f: File) => {
-        const validTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
-            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 'audio/x-m4a', 'audio/ogg',
-            'audio/mp4', 'video/x-matroska'];
-        if (!f.type && !f.name.match(/\.(mp4|mp3|wav|webm|m4a|mov|avi|mkv|ogg)$/i)) {
-            setError('Formato no soportado. Usa MP4, MP3, WAV, WEBM, M4A, MOV.');
+        const sizeMB = f.size / (1024 * 1024);
+        if (sizeMB > MAX_SIZE_MB) {
+            setError(`Archivo muy grande (${sizeMB.toFixed(1)}MB). Máximo ${MAX_SIZE_MB}MB.`);
             return;
         }
         setFile(f);
-        setPreview(f.name);
         setError('');
     };
 
@@ -43,14 +54,20 @@ export default function TranscriberTab() {
         if (!file) return;
         setTranscribing(true);
         setError('');
+        setProgress('Convirtiendo archivo...');
         try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('language', language);
+            const base64 = await fileToBase64(file);
+            setProgress('Enviando a Gemini...');
 
             const res = await authFetch('/api/vega/transcribe', {
                 method: 'POST',
-                body: formData,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileBase64: base64,
+                    filename: file.name,
+                    mimeType: file.type || 'video/mp4',
+                    language,
+                }),
             });
 
             if (!res.ok) {
@@ -71,11 +88,11 @@ export default function TranscriberTab() {
             setActiveTranscript(transcription);
             setHistory(prev => [transcription, ...prev]);
             setFile(null);
-            setPreview('');
         } catch (e: any) {
             setError(e.message);
         } finally {
             setTranscribing(false);
+            setProgress('');
         }
     };
 
@@ -102,82 +119,52 @@ export default function TranscriberTab() {
     return (
         <div className="space-y-4">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-                {/* Left: Upload + Config */}
+                {/* Left: Upload */}
                 <div className="space-y-4">
                     <div className="bg-card border border-card-border rounded-2xl p-5 space-y-4">
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-xl bg-pink-500/15 flex items-center justify-center">
-                                <Mic className="w-4 h-4 text-pink-400" />
-                            </div>
-                            <div>
-                                <div className="text-sm font-bold">Transcriptor</div>
-                                <div className="text-[10px] text-muted">Video/Audio → Texto</div>
-                            </div>
+                            <div className="w-8 h-8 rounded-xl bg-pink-500/15 flex items-center justify-center"><Mic className="w-4 h-4 text-pink-400" /></div>
+                            <div><div className="text-sm font-bold">Transcriptor</div><div className="text-[10px] text-muted">Video/Audio → Texto con Gemini</div></div>
                         </div>
 
-                        {/* Upload zone */}
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Archivo</div>
+                        <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Archivo (máx {MAX_SIZE_MB}MB)</div>
                         {file ? (
                             <div className="flex items-center gap-3 p-3 bg-background border border-card-border rounded-xl">
                                 <div className="w-10 h-10 rounded-lg bg-pink-500/10 flex items-center justify-center">
                                     {file.type?.startsWith('video') ? <Video className="w-5 h-5 text-pink-400" /> : <Mic className="w-5 h-5 text-pink-400" />}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-semibold truncate">{file.name}</div>
-                                    <div className="text-[10px] text-muted">{fileSizeMB} MB</div>
-                                </div>
-                                <button onClick={() => { setFile(null); setPreview(''); }} className="text-muted hover:text-red-400">
-                                    <X className="w-4 h-4" />
-                                </button>
+                                <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{file.name}</div><div className="text-[10px] text-muted">{fileSizeMB} MB</div></div>
+                                <button onClick={() => setFile(null)} className="text-muted hover:text-red-400"><X className="w-4 h-4" /></button>
                             </div>
                         ) : (
-                            <div
-                                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${dragOver ? 'border-pink-400/50 bg-pink-400/5' : 'border-card-border hover:border-pink-400/30'}`}
+                            <div className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${dragOver ? 'border-pink-400/50 bg-pink-400/5' : 'border-card-border hover:border-pink-400/30'}`}
                                 onClick={() => inputRef.current?.click()}
                                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                                 onDragLeave={() => setDragOver(false)}
-                                onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-                            >
+                                onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
                                 <Upload className="w-8 h-8 mx-auto mb-2 text-muted/30" />
                                 <p className="text-sm text-muted">Arrastra un video o audio</p>
                                 <p className="text-[10px] text-muted/40 mt-1">MP4, MP3, WAV, WEBM, M4A, MOV</p>
                             </div>
                         )}
-                        <input ref={inputRef} type="file" accept="video/*,audio/*,.mp4,.mp3,.wav,.webm,.m4a,.mov,.avi,.mkv,.ogg" className="hidden"
-                            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                        <input ref={inputRef} type="file" accept="video/*,audio/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
 
-                        {/* Language */}
                         <div className="text-[10px] font-bold uppercase tracking-widest text-muted">Idioma</div>
                         <div className="grid grid-cols-3 gap-2">
-                            {[
-                                { value: 'es', label: 'Español' },
-                                { value: 'en', label: 'English' },
-                                { value: 'auto', label: 'Auto' },
-                            ].map(l => (
+                            {[{ value: 'es', label: 'Español' }, { value: 'en', label: 'English' }, { value: 'auto', label: 'Auto' }].map(l => (
                                 <button key={l.value} onClick={() => setLanguage(l.value)}
-                                    className={`py-2 rounded-lg border text-[11px] font-semibold transition-all ${language === l.value ? 'bg-pink-400/10 border-pink-400/30 text-pink-400' : 'border-card-border text-muted'}`}>
-                                    {l.label}
-                                </button>
+                                    className={`py-2 rounded-lg border text-[11px] font-semibold transition-all ${language === l.value ? 'bg-pink-400/10 border-pink-400/30 text-pink-400' : 'border-card-border text-muted'}`}>{l.label}</button>
                             ))}
                         </div>
 
-                        {/* Error */}
-                        {error && (
-                            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-sm text-red-400">
-                                <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-                            </div>
-                        )}
+                        {error && <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-[11px] text-red-400"><AlertCircle className="w-4 h-4 shrink-0" />{error}</div>}
 
-                        {/* Transcribe button */}
-                        <button onClick={handleTranscribe}
-                            disabled={!file || transcribing}
+                        <button onClick={handleTranscribe} disabled={!file || transcribing}
                             className="w-full py-3 bg-pink-500 hover:bg-pink-600 disabled:bg-muted/10 disabled:text-muted/40 text-white rounded-xl font-bold text-[11px] uppercase tracking-wider transition-all shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2">
-                            {transcribing ? <><Loader2 className="w-4 h-4 animate-spin" /> Transcribiendo...</> : <><Mic className="w-4 h-4" /> Transcribir</>}
+                            {transcribing ? <><Loader2 className="w-4 h-4 animate-spin" />{progress || 'Transcribiendo...'}</> : <><Mic className="w-4 h-4" />Transcribir</>}
                         </button>
                     </div>
 
-                    {/* History */}
                     {history.length > 0 && (
                         <div className="bg-card border border-card-border rounded-2xl p-4">
                             <div className="text-[10px] font-bold uppercase tracking-widest text-muted mb-3">Historial</div>
@@ -194,11 +181,10 @@ export default function TranscriberTab() {
                     )}
                 </div>
 
-                {/* Right: Transcript result */}
+                {/* Right: Result */}
                 <div className="lg:col-span-2">
                     {activeTranscript ? (
                         <div className="bg-card border border-card-border rounded-2xl overflow-hidden">
-                            {/* Header */}
                             <div className="flex items-center justify-between px-5 py-3 border-b border-card-border">
                                 <div>
                                     <div className="text-sm font-bold">{activeTranscript.filename}</div>
@@ -207,19 +193,14 @@ export default function TranscriberTab() {
                                 <div className="flex items-center gap-2">
                                     <button onClick={handleCopy}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${copied ? 'bg-emerald-400/15 text-emerald-400' : 'bg-pink-500/10 text-pink-400 hover:bg-pink-500/20'}`}>
-                                        {copied ? <><Check className="w-3.5 h-3.5" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                                        {copied ? <><Check className="w-3.5 h-3.5" />Copiado</> : <><Copy className="w-3.5 h-3.5" />Copiar</>}
                                     </button>
-                                    <button onClick={handleDownload}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-card border border-card-border rounded-lg text-[11px] font-bold text-muted hover:text-foreground transition-all">
-                                        <Download className="w-3.5 h-3.5" /> .txt
+                                    <button onClick={handleDownload} className="flex items-center gap-1.5 px-3 py-1.5 bg-card border border-card-border rounded-lg text-[11px] font-bold text-muted hover:text-foreground transition-all">
+                                        <Download className="w-3.5 h-3.5" />.txt
                                     </button>
-                                    <button onClick={() => { setHistory(prev => prev.filter(h => h.id !== activeTranscript.id)); setActiveTranscript(null); }}
-                                        className="p-1.5 text-muted hover:text-red-400 transition-all">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    <button onClick={() => { setHistory(prev => prev.filter(h => h.id !== activeTranscript.id)); setActiveTranscript(null); }} className="p-1.5 text-muted hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
                                 </div>
                             </div>
-                            {/* Transcript text */}
                             <div className="p-5">
                                 <div className="bg-background border border-card-border rounded-xl p-5 max-h-[65vh] overflow-y-auto">
                                     <div className="text-sm leading-relaxed whitespace-pre-wrap select-all">{activeTranscript.transcript}</div>
@@ -230,7 +211,7 @@ export default function TranscriberTab() {
                         <div className="bg-card border border-card-border rounded-2xl p-16 text-center">
                             <FileText className="w-12 h-12 mx-auto mb-3 text-muted/15" />
                             <p className="text-sm text-muted/40">Sube un video o audio para transcribir</p>
-                            <p className="text-[10px] text-muted/25 mt-1">Gemini AI · Español, Inglés, Auto-detectar</p>
+                            <p className="text-[10px] text-muted/25 mt-1">Gemini AI · Español, Inglés, Auto</p>
                         </div>
                     )}
                 </div>
