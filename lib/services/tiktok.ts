@@ -142,6 +142,7 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         optimization_goal: config.optimizationGoal || 'CLICK',
         billing_event: config.billingEvent || 'OCPM',
         bid_type: config.bidType || 'BID_TYPE_NO_BID',
+        schedule_type: 'SCHEDULE_FROM_NOW',
         schedule_start_time: config.scheduleStartTime,
         location_ids: config.locationIds,
     };
