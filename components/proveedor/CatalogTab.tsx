@@ -5,6 +5,7 @@ import {
     Plus, Trash2, Edit3, Search, Package, Tag, Store, X, Check,
     RefreshCw, Zap, AlertTriangle, ChevronDown,
 } from 'lucide-react';
+import { calculateRepurchaseMetrics, type ProductRepurchaseMetrics } from '@/lib/calculations/repurchaseMetrics';
 import {
     CatalogProduct, CatalogBrand, ProductCatalogData,
     generateProductId, saveProduct, deleteProduct,
@@ -485,6 +486,28 @@ export default function CatalogTab({ catalog, userId, onUpdate, dropiOrders = []
 
     const dropiProducts = useMemo(() => extractDropiProducts(dropiOrders, catalog), [dropiOrders, catalog]);
     const dropiStores = useMemo(() => extractDropiStores(dropiOrders, catalog.brands), [dropiOrders, catalog.brands]);
+
+    // Repurchase metrics per product
+    const repurchaseData = useMemo(() => {
+        if (!dropiOrders || dropiOrders.length === 0) return null;
+        return calculateRepurchaseMetrics(dropiOrders);
+    }, [dropiOrders]);
+
+    const getRepurchase = (product: CatalogProduct): ProductRepurchaseMetrics | null => {
+        if (!repurchaseData) return null;
+        // Match by Dropi product IDs
+        for (const dropiId of product.dropiProductIds) {
+            const found = repurchaseData.byProduct.find(r =>
+                r.productId === String(dropiId) || r.productName.toLowerCase().includes(product.name.toLowerCase().slice(0, 15))
+            );
+            if (found) return found;
+        }
+        // Fallback: match by name
+        return repurchaseData.byProduct.find(r =>
+            r.productName.toLowerCase().includes(product.name.toLowerCase().slice(0, 15)) ||
+            product.name.toLowerCase().includes(r.productName.toLowerCase().slice(0, 15))
+        ) || null;
+    };
     const notInCatalog = dropiProducts.filter(p => !p.inCatalog);
 
     const findBrandForStore = (storeName: string) => {
@@ -648,11 +671,12 @@ export default function CatalogTab({ catalog, userId, onUpdate, dropiOrders = []
                             <thead><tr className="bg-hover-bg/50 text-[10px] font-black text-muted uppercase tracking-widest border-b border-card-border">
                                 <th className="px-4 py-3">Producto</th><th className="px-4 py-3">Marca</th><th className="px-4 py-3">Tipo</th>
                                 <th className="px-4 py-3 text-right">Costo</th><th className="px-4 py-3 text-right">Precio</th><th className="px-4 py-3 text-right">Margen</th>
+                                <th className="px-4 py-3 text-right">Recompra</th><th className="px-4 py-3 text-right">Repeat</th><th className="px-4 py-3 text-right">Días</th>
                                 <th className="px-4 py-3 text-center">ID Dropi</th><th className="px-4 py-3 w-20"></th>
                             </tr></thead>
                             <tbody className="divide-y divide-card-border">
                                 {filteredProducts.length === 0 ? (
-                                    <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-muted">
+                                    <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-muted">
                                         {catalog.products.length === 0 ? 'Catálogo vacío. Sincroniza desde Dropi o crea marcas primero.' : 'Sin resultados.'}
                                     </td></tr>
                                 ) : filteredProducts.map(p => {
@@ -670,6 +694,27 @@ export default function CatalogTab({ catalog, userId, onUpdate, dropiOrders = []
                                             <td className="px-4 py-3 text-right font-mono text-sm text-muted">{fmtCOP(p.costPrice)}</td>
                                             <td className="px-4 py-3 text-right font-mono text-sm">{fmtCOP(p.salePrice)}</td>
                                             <td className="px-4 py-3 text-right"><span className={`font-mono text-sm font-bold ${margin >= 40 ? 'text-emerald-400' : margin >= 20 ? 'text-amber-400' : 'text-red-400'}`}>{margin.toFixed(1)}%</span></td>
+                                            {(() => {
+                                                const rep = getRepurchase(p);
+                                                if (!rep) return (<><td className="px-4 py-3 text-right text-muted text-xs">—</td><td className="px-4 py-3 text-right text-muted text-xs">—</td><td className="px-4 py-3 text-right text-muted text-xs">—</td></>);
+                                                const rColor = rep.healthLevel === 'excellent' ? 'text-emerald-400' : rep.healthLevel === 'good' ? 'text-blue-400' : rep.healthLevel === 'average' ? 'text-amber-400' : 'text-red-400';
+                                                return (<>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <div className="flex items-center justify-end gap-1.5">
+                                                            <span className={`font-mono text-sm font-bold ${rColor}`}>{rep.repurchaseRate}%</span>
+                                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded uppercase ${rep.healthLevel === 'excellent' ? 'bg-emerald-400/15 text-emerald-400' : rep.healthLevel === 'good' ? 'bg-blue-400/15 text-blue-400' : rep.healthLevel === 'average' ? 'bg-amber-400/15 text-amber-400' : 'bg-red-400/15 text-red-400'}`}>
+                                                                {rep.healthLevel === 'excellent' ? '★' : rep.healthLevel === 'good' ? '●' : rep.healthLevel === 'average' ? '◐' : '○'}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <span className="font-mono text-xs text-muted">{rep.repeatCustomers}/{rep.uniqueCustomers}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right">
+                                                        <span className="font-mono text-xs text-muted">{rep.avgDaysBetweenPurchases > 0 ? `${rep.avgDaysBetweenPurchases}d` : '—'}</span>
+                                                    </td>
+                                                </>);
+                                            })()}
                                             <td className="px-4 py-3 text-center"><div className="flex flex-wrap gap-1 justify-center">{p.dropiProductIds.map((id, i) => (
                                                 <span key={i} className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[10px] font-mono">{id}</span>
                                             ))}</div></td>

@@ -512,10 +512,8 @@ export const Lanzador: React.FC = () => {
                         advertiserId,
                         campaignId,
                         name: `${campaignName} - AdGroup`,
-                        // CBO: budget at campaign level, ad group doesn't set budget
-                        // ABO: budget at ad group level
-                        budgetMode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_DAY',
-                        budget: isCBO ? undefined : ttBudget,
+                        budgetMode: 'BUDGET_MODE_DAY',
+                        budget: ttBudget,
                         optimizationGoal: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'CONVERT' : 'CLICK',
                         billingEvent: 'OCPM',
                         bidType: 'BID_TYPE_NO_BID',

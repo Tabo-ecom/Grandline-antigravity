@@ -145,13 +145,9 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         schedule_start_time: config.scheduleStartTime,
         location_ids: config.locationIds,
     };
-    // Budget: ABO sets daily budget at ad group, CBO inherits from campaign
-    if (config.budget) {
-        body.budget_mode = 'BUDGET_MODE_DAY';
-        body.budget = config.budget;
-    } else {
-        body.budget_mode = 'BUDGET_MODE_DYNAMIC_DAILY_BUDGET';
-    }
+    // TikTok always requires budget_mode + budget on ad groups
+    body.budget_mode = 'BUDGET_MODE_DAY';
+    body.budget = config.budget || 50000; // Fallback minimum
     if (config.ageGroups?.length) body.age_groups = config.ageGroups;
     if (config.gender) body.gender = config.gender;
     // TikTok pixel_id must be numeric — skip if alphanumeric dataset ID
