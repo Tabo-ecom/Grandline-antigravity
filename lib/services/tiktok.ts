@@ -138,7 +138,6 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         campaign_id: config.campaignId,
         adgroup_name: config.name,
         placement_type: config.placementType || 'PLACEMENT_TYPE_AUTOMATIC',
-        budget_mode: config.budgetMode || 'BUDGET_MODE_INFINITE',
         optimization_goal: config.optimizationGoal || 'CLICK',
         billing_event: config.billingEvent || 'OCPM',
         bid_type: config.bidType || 'BID_TYPE_NO_BID',
@@ -146,7 +145,9 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         schedule_start_time: config.scheduleStartTime,
         location_ids: config.locationIds,
     };
-    if (config.budget && config.budgetMode === 'BUDGET_MODE_DAY') {
+    // Only set budget at ad group level for ABO (when budget is provided)
+    if (config.budget) {
+        body.budget_mode = 'BUDGET_MODE_DAY';
         body.budget = config.budget;
     }
     if (config.ageGroups?.length) body.age_groups = config.ageGroups;

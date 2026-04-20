@@ -498,7 +498,7 @@ export const Lanzador: React.FC = () => {
                         objectiveType: 'CONVERSIONS',
                         budgetMode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
                         budget: isCBO ? ttBudget : undefined,
-                        status: 'DISABLE', // Start paused
+                        status: 'DISABLE',
                     });
 
                     // Create ad group
@@ -512,8 +512,10 @@ export const Lanzador: React.FC = () => {
                         advertiserId,
                         campaignId,
                         name: `${campaignName} - AdGroup`,
-                        budgetMode: !isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
-                        budget: !isCBO ? ttBudget : undefined,
+                        // CBO: budget at campaign level, ad group doesn't set budget
+                        // ABO: budget at ad group level
+                        budgetMode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_DAY',
+                        budget: isCBO ? undefined : ttBudget,
                         optimizationGoal: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'CONVERT' : 'CLICK',
                         billingEvent: 'OCPM',
                         bidType: 'BID_TYPE_NO_BID',
