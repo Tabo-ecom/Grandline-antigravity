@@ -153,7 +153,7 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
     if (config.gender) body.gender = config.gender;
     if (config.pixelId) {
         body.pixel_id = config.pixelId;
-        body.optimization_event = config.optimizationEvent || 'COMPLETE_PAYMENT';
+        body.optimization_event = config.optimizationEvent || 'ON_WEB_ORDER';
     }
     const data = await ttApiCall('/adgroup/create/', token, body);
     return data.adgroup_id;

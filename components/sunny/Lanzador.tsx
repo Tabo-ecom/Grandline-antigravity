@@ -522,7 +522,7 @@ export const Lanzador: React.FC = () => {
                         ageGroups,
                         gender: ttGender,
                         pixelId: activeStore?.ttPixelId || undefined,
-                        optimizationEvent: activeStore?.pixelId ? 'COMPLETE_PAYMENT' : undefined,
+                        optimizationEvent: activeStore?.ttPixelId ? 'ON_WEB_ORDER' : undefined,
                     });
 
                     // Create ads
