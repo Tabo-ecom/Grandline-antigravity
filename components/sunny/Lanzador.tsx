@@ -944,7 +944,8 @@ export const Lanzador: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Launch failed:', error);
-            setLaunchError(error.message || 'Error desconocido al publicar la campaña.');
+            const details = error.details ? `\n\nDetalles: ${JSON.stringify(error.details)}` : '';
+            setLaunchError((error.message || 'Error desconocido al publicar la campaña.') + details);
         } finally {
             setIsLaunching(false);
         }

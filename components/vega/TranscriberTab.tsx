@@ -38,7 +38,7 @@ export default function TranscriberTab() {
     const inputRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
 
-    const MAX_SIZE_MB = 20; // Vercel Pro allows up to 50MB but Gemini inline is 20MB
+    const MAX_SIZE_MB = 25; // Files are sent as base64 JSON
 
     const handleFile = (f: File) => {
         const sizeMB = f.size / (1024 * 1024);
@@ -71,8 +71,18 @@ export default function TranscriberTab() {
             });
 
             if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || 'Error en la transcripción');
+                const errText = await res.text().catch(() => '');
+                let errMsg = 'Error en la transcripción';
+                try {
+                    const errJson = JSON.parse(errText);
+                    errMsg = errJson.error || errJson.message || errMsg;
+                } catch {
+                    if (errText.includes('FUNCTION_INVOCATION_TIMEOUT')) errMsg = 'Timeout: el archivo es muy largo. Prueba con uno más corto.';
+                    else if (errText.includes('FUNCTION_PAYLOAD_TOO_LARGE') || res.status === 413) errMsg = `Archivo muy grande para el servidor (${fileSizeMB}MB). Máximo ~4MB en plan Free de Vercel.`;
+                    else if (res.status === 504) errMsg = 'Timeout del servidor. Prueba con un archivo más corto.';
+                    else errMsg = `Error ${res.status}: ${errText.slice(0, 100)}`;
+                }
+                throw new Error(errMsg);
             }
 
             const data = await res.json();

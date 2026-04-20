@@ -111,7 +111,14 @@ async function ttApiCall(endpoint: string, _token: string, body: any): Promise<a
     });
     const data = await res.json();
     if (!res.ok) {
-        throw new Error(data.error || `TikTok API error`);
+        const err = new Error(data.error || `TikTok API error`) as any;
+        err.details = {
+            endpoint,
+            proxy_version: data.proxy_version,
+            sent_body: data.sent_body,
+            tt_code: data.tt_code,
+        };
+        throw err;
     }
     return data.data;
 }
