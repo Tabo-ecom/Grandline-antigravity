@@ -133,26 +133,32 @@ export async function createTikTokCampaign(token: string, config: TikTokCampaign
 }
 
 export async function createTikTokAdGroup(token: string, config: TikTokAdGroupConfig): Promise<string> {
+    const hasPixel = config.pixelId && /^\d+$/.test(config.pixelId);
+    const optGoal = hasPixel ? (config.optimizationGoal || 'CONVERT') : 'CLICK';
+
+    // billing_event must match optimization_goal
+    // CLICK → CPC, CONVERT → oCPM, REACH → CPM
+    const billingEvent = optGoal === 'CLICK' ? 'CPC' : optGoal === 'REACH' ? 'CPM' : 'OCPM';
+
     const body: any = {
         advertiser_id: config.advertiserId,
         campaign_id: config.campaignId,
         adgroup_name: config.name,
         placement_type: config.placementType || 'PLACEMENT_TYPE_AUTOMATIC',
         promotion_type: 'WEBSITE',
-        optimization_goal: config.optimizationGoal || 'CLICK',
-        billing_event: config.billingEvent || 'OCPM',
-        bid_type: config.bidType || 'BID_TYPE_NO_BID',
+        optimization_goal: optGoal,
+        billing_event: billingEvent,
+        bid_type: 'BID_TYPE_NO_BID',
+        pacing: 'PACING_MODE_SMOOTH',       // Required. SMOOTH is safe with NO_BID
+        budget_mode: 'BUDGET_MODE_DAY',
+        budget: config.budget || 50000,
         schedule_type: 'SCHEDULE_FROM_NOW',
         schedule_start_time: config.scheduleStartTime,
         location_ids: config.locationIds,
     };
-    // TikTok always requires budget_mode + budget on ad groups
-    body.budget_mode = 'BUDGET_MODE_DAY';
-    body.budget = config.budget || 50000; // Fallback minimum
     if (config.ageGroups?.length) body.age_groups = config.ageGroups;
     if (config.gender) body.gender = config.gender;
-    // TikTok pixel_id must be numeric — skip if alphanumeric dataset ID
-    if (config.pixelId && /^\d+$/.test(config.pixelId)) {
+    if (hasPixel) {
         body.pixel_id = config.pixelId;
         body.optimization_event = config.optimizationEvent || 'ON_WEB_ORDER';
     }
