@@ -89,7 +89,8 @@ interface TikTokAdConfig {
     landingPageUrl: string;
     identityType?: string;
     displayName?: string;
-    bcId?: string; // Business Center ID for advertisers under a BC
+    bcId?: string;
+    ttIdentityId?: string; // Real TikTok account ID (TT_USER)
 }
 
 export interface TikTokLaunchResult {
@@ -214,18 +215,31 @@ export async function getAdvertiserBcId(token: string, advertiserId: string): Pr
 }
 
 export async function createTikTokAd(token: string, config: TikTokAdConfig): Promise<string> {
-    const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store', config.bcId);
-
     const creative: any = {
         ad_name: config.name,
         ad_format: config.adFormat || 'SINGLE_VIDEO',
         ad_text: config.adText,
         landing_page_url: config.landingPageUrl,
         call_to_action: config.callToAction || 'SHOP_NOW',
-        identity_type: config.bcId ? 'CUSTOMIZED_USER' : 'AUTH_CODE',
-        identity_id: identityId,
     };
-    if (config.bcId) creative.identity_authorized_bc_id = config.bcId;
+
+    if (config.ttIdentityId) {
+        // Use real TikTok account linked to Business Center
+        creative.identity_type = 'TT_USER';
+        creative.identity_id = config.ttIdentityId;
+        if (config.bcId) creative.identity_authorized_bc_id = config.bcId;
+    } else if (config.bcId) {
+        // BC advertiser without TT account — try CUSTOMIZED_USER
+        const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store', config.bcId);
+        creative.identity_type = 'CUSTOMIZED_USER';
+        creative.identity_id = identityId;
+        creative.identity_authorized_bc_id = config.bcId;
+    } else {
+        // Non-BC advertiser — use AUTH_CODE
+        const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store');
+        creative.identity_type = 'AUTH_CODE';
+        creative.identity_id = identityId;
+    }
     if (config.videoId) creative.video_id = config.videoId;
     if (config.imageId) creative.image_ids = [config.imageId];
     if (config.displayName) creative.display_name = config.displayName;

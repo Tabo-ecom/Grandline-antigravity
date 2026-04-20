@@ -343,14 +343,26 @@ export const Connectivity: React.FC = () => {
                                         placeholder="Meta Page ID"
                                     />
                                 </div>
-                                <div className="border-t border-card-border pt-3 mt-3">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-pink-400 ml-1 mb-2 block">TikTok Pixel ID</label>
-                                    <input
-                                        className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-pink-500/50 outline-none font-mono"
-                                        value={editingProfile.ttPixelId || ''}
-                                        onChange={e => setEditingProfile({ ...editingProfile, ttPixelId: e.target.value })}
-                                        placeholder="TikTok Pixel ID"
-                                    />
+                                <div className="border-t border-card-border pt-3 mt-3 space-y-3">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-pink-400 ml-1 mb-2 block">TikTok Pixel ID</label>
+                                        <input
+                                            className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-pink-500/50 outline-none font-mono"
+                                            value={editingProfile.ttPixelId || ''}
+                                            onChange={e => setEditingProfile({ ...editingProfile, ttPixelId: e.target.value })}
+                                            placeholder="TikTok Pixel ID"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-pink-400 ml-1 mb-2 block">TikTok Identity ID (cuenta TT)</label>
+                                        <input
+                                            className="w-full bg-background border border-card-border rounded-lg px-3 py-2.5 text-xs text-foreground focus:border-pink-500/50 outline-none font-mono"
+                                            value={editingProfile.ttIdentityId || ''}
+                                            onChange={e => setEditingProfile({ ...editingProfile, ttIdentityId: e.target.value })}
+                                            placeholder="Ej: 7606257865548169217"
+                                        />
+                                        <p className="text-[9px] text-muted mt-1 ml-1">ID de cuenta TikTok vinculada al Business Center</p>
+                                    </div>
                                 </div>
                                 <div className="flex gap-2 pt-3">
                                     <button
@@ -360,6 +372,7 @@ export const Connectivity: React.FC = () => {
                                                 pixelId: editingProfile.pixelId,
                                                 pageId: editingProfile.pageId,
                                                 ttPixelId: editingProfile.ttPixelId,
+                                                ttIdentityId: editingProfile.ttIdentityId,
                                             });
                                             setEditingProfile(null);
                                         }}

@@ -562,6 +562,7 @@ export const Lanzador: React.FC = () => {
                             landingPageUrl: destinationUrl || 'https://example.com',
                             displayName: naming.product || 'Grand Line',
                             bcId,
+                            ttIdentityId: activeStore?.ttIdentityId,
                         });
                     }
 

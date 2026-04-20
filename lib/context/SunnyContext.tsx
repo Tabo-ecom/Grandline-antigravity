@@ -15,6 +15,7 @@ export interface StoreProfile {
     defaultAccountId?: string;
     // TikTok
     ttPixelId?: string;
+    ttIdentityId?: string;       // TikTok account ID for ad identity (TT_USER)
     ttDefaultAccountId?: string;
     // Shared
     currency: string;
