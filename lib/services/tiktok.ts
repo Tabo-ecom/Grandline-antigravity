@@ -151,7 +151,8 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
     }
     if (config.ageGroups?.length) body.age_groups = config.ageGroups;
     if (config.gender) body.gender = config.gender;
-    if (config.pixelId) {
+    // TikTok pixel_id must be numeric — skip if alphanumeric dataset ID
+    if (config.pixelId && /^\d+$/.test(config.pixelId)) {
         body.pixel_id = config.pixelId;
         body.optimization_event = config.optimizationEvent || 'ON_WEB_ORDER';
     }

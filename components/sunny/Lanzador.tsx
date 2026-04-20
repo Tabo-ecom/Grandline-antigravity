@@ -514,15 +514,15 @@ export const Lanzador: React.FC = () => {
                         name: `${campaignName} - AdGroup`,
                         budgetMode: !isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
                         budget: !isCBO ? ttBudget : undefined,
-                        optimizationGoal: activeStore?.ttPixelId ? 'CONVERT' : 'CLICK',
+                        optimizationGoal: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'CONVERT' : 'CLICK',
                         billingEvent: 'OCPM',
                         bidType: 'BID_TYPE_NO_BID',
                         scheduleStartTime: scheduleTime,
                         locationIds: [locationId],
                         ageGroups,
                         gender: ttGender,
-                        pixelId: activeStore?.ttPixelId || undefined,
-                        optimizationEvent: activeStore?.ttPixelId ? 'ON_WEB_ORDER' : undefined,
+                        pixelId: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? activeStore.ttPixelId : undefined,
+                        optimizationEvent: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'ON_WEB_ORDER' : undefined,
                     });
 
                     // Create ads
