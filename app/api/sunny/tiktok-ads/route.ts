@@ -24,6 +24,14 @@ export async function POST(req: NextRequest) {
 
         const { endpoint, body } = await req.json();
 
+        // Log for debugging deploy version
+        console.log('[TikTok Ads Proxy v3] endpoint:', endpoint, 'body identity_type:', body?.identity_type, 'body identity_authorized_bc_id:', body?.identity_authorized_bc_id);
+        // For ad/create, also log creatives
+        if (endpoint === '/ad/create/' && body?.creatives?.[0]) {
+            const c = body.creatives[0];
+            console.log('[TikTok Ads Proxy v3] creative identity_type:', c.identity_type, 'identity_id:', c.identity_id, 'bc_id:', c.identity_authorized_bc_id);
+        }
+
         // Whitelist allowed endpoints
         const allowedEndpoints = [
             '/campaign/create/',
@@ -50,6 +58,8 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({
                 error: data.message || `TikTok API error: ${data.code}`,
                 tt_code: data.code,
+                proxy_version: 'v3',
+                sent_body: endpoint === '/ad/create/' ? { identity_type: body?.creatives?.[0]?.identity_type, bc_id: body?.creatives?.[0]?.identity_authorized_bc_id } : undefined,
                 data: data.data,
             }, { status: 400 });
         }
