@@ -167,9 +167,7 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
 }
 
 export async function createTikTokAd(token: string, config: TikTokAdConfig): Promise<string> {
-    const body: any = {
-        advertiser_id: config.advertiserId,
-        adgroup_id: config.adGroupId,
+    const creative: any = {
         ad_name: config.name,
         ad_format: config.adFormat || 'SINGLE_VIDEO',
         ad_text: config.adText,
@@ -177,9 +175,15 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
         call_to_action: config.callToAction || 'SHOP_NOW',
         identity_type: config.identityType || 'CUSTOMIZED_USER',
     };
-    if (config.videoId) body.video_id = config.videoId;
-    if (config.imageId) body.image_ids = [config.imageId];
-    if (config.displayName) body.display_name = config.displayName;
+    if (config.videoId) creative.video_id = config.videoId;
+    if (config.imageId) creative.image_ids = [config.imageId];
+    if (config.displayName) creative.display_name = config.displayName;
+
+    const body: any = {
+        advertiser_id: config.advertiserId,
+        adgroup_id: config.adGroupId,
+        creatives: [creative],
+    };
     const data = await ttApiCall('/ad/create/', token, body);
     return data.ad_ids?.[0] || data.ad_id;
 }
