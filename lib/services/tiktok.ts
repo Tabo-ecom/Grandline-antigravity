@@ -138,6 +138,7 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         campaign_id: config.campaignId,
         adgroup_name: config.name,
         placement_type: config.placementType || 'PLACEMENT_TYPE_AUTOMATIC',
+        promotion_type: 'WEBSITE',
         optimization_goal: config.optimizationGoal || 'CLICK',
         billing_event: config.billingEvent || 'OCPM',
         bid_type: config.bidType || 'BID_TYPE_NO_BID',
