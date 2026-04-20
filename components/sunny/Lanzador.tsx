@@ -65,6 +65,7 @@ import {
     type TikTokLaunchResult,
 } from '@/lib/services/tiktok';
 import { useAuth } from '@/lib/context/AuthContext';
+import { authFetch } from '@/lib/api/client';
 import { PLAN_CAMPAIGN_LIMIT } from '@/lib/hooks/usePlanAccess';
 import { countSunnyCampaignsThisMonth, saveSunnyCampaign } from '@/lib/firebase/firestore';
 
@@ -464,6 +465,17 @@ export const Lanzador: React.FC = () => {
 
                 for (const acc of ttAccounts) {
                     const advertiserId = acc.advertiser_id || acc.id;
+
+                    // Get BC ID for this advertiser (needed for identity)
+                    let bcId: string | undefined;
+                    try {
+                        const bcRes = await authFetch(`/api/sunny/tiktok-advertiser-info?advertiser_id=${advertiserId}`);
+                        if (bcRes.ok) {
+                            const bcData = await bcRes.json();
+                            bcId = bcData.bc_id || undefined;
+                        }
+                    } catch { /* ignore */ }
+
                     setLaunchProgress(`Subiendo creativos a ${acc.name || advertiserId}...`);
 
                     // Upload creatives
@@ -549,6 +561,7 @@ export const Lanzador: React.FC = () => {
                             callToAction: 'SHOP_NOW',
                             landingPageUrl: destinationUrl || 'https://example.com',
                             displayName: naming.product || 'Grand Line',
+                            bcId,
                         });
                     }
 

@@ -87,8 +87,9 @@ interface TikTokAdConfig {
     adText: string;
     callToAction?: string;
     landingPageUrl: string;
-    identityType?: 'CUSTOMIZED_USER' | 'AUTH_CODE';
+    identityType?: string;
     displayName?: string;
+    bcId?: string; // Business Center ID for advertisers under a BC
 }
 
 export interface TikTokLaunchResult {
@@ -169,23 +170,38 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
 // Cache identity IDs per advertiser to avoid creating duplicates
 const identityCache = new Map<string, string>();
 
-async function getOrCreateIdentity(token: string, advertiserId: string, displayName: string): Promise<string> {
+async function getOrCreateIdentity(token: string, advertiserId: string, displayName: string, bcId?: string): Promise<string> {
     const cacheKey = `${advertiserId}_${displayName}`;
     if (identityCache.has(cacheKey)) return identityCache.get(cacheKey)!;
 
-    const data = await ttApiCall('/identity/create/', token, {
+    const body: any = {
         advertiser_id: advertiserId,
         display_name: displayName || 'Store',
         identity_type: 'AUTH_CODE',
-    });
+    };
+    if (bcId) body.identity_authorized_bc_id = bcId;
+
+    const data = await ttApiCall('/identity/create/', token, body);
     const id = data.identity_id;
     identityCache.set(cacheKey, id);
     return id;
 }
 
+/** Get the Business Center ID for an advertiser (if any) */
+export async function getAdvertiserBcId(token: string, advertiserId: string): Promise<string | undefined> {
+    try {
+        const { authFetch: af } = await import('@/lib/api/client');
+        const idsParam = encodeURIComponent(JSON.stringify([advertiserId]));
+        const fieldsParam = encodeURIComponent(JSON.stringify(["advertiser_id", "owner_bc_id"]));
+        const res = await af(`/api/sunny/tiktok-advertiser-info?advertiser_ids=${idsParam}&fields=${fieldsParam}`);
+        if (!res.ok) return undefined;
+        const data = await res.json();
+        return data.bc_id || undefined;
+    } catch { return undefined; }
+}
+
 export async function createTikTokAd(token: string, config: TikTokAdConfig): Promise<string> {
-    // Get or create identity for this advertiser
-    const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store');
+    const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store', config.bcId);
 
     const creative: any = {
         ad_name: config.name,
@@ -196,6 +212,7 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
         identity_type: 'AUTH_CODE',
         identity_id: identityId,
     };
+    if (config.bcId) creative.identity_authorized_bc_id = config.bcId;
     if (config.videoId) creative.video_id = config.videoId;
     if (config.imageId) creative.image_ids = [config.imageId];
     if (config.displayName) creative.display_name = config.displayName;
