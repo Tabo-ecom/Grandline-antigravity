@@ -79,11 +79,17 @@ export async function POST(req: NextRequest) {
             }, { status: 400 });
         }
 
-        const resultId = type === 'video'
-            ? ttData.data?.video_id
-            : ttData.data?.image_id;
+        // TikTok returns data as array or object depending on endpoint
+        const d = Array.isArray(ttData.data) ? ttData.data[0] : ttData.data;
 
-        return NextResponse.json({ success: true, id: resultId, type });
+        const resultId = type === 'video'
+            ? d?.video_id
+            : d?.image_id;
+
+        // For videos, also return the cover URL so client can use it as thumbnail
+        const coverUrl = type === 'video' ? d?.video_cover_url : undefined;
+
+        return NextResponse.json({ success: true, id: resultId, type, coverUrl });
     } catch (error: any) {
         console.error('[TikTok Upload] error:', error);
         return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });

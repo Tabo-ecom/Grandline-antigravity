@@ -52,12 +52,14 @@ import {
     resolveExclusionLocations,
     fetchMetaAdAccounts,
     createMetaMultiFormatAd,
-    MetaTokenExpiredError
+    MetaTokenExpiredError,
+    deleteMetaCampaign
 } from '@/lib/services/meta';
 import {
     createTikTokCampaign,
     createTikTokAdGroup,
     createTikTokAd,
+    deleteTikTokCampaign,
     uploadTikTokVideo,
     uploadTikTokImage,
     getTikTokLocationId,
@@ -125,6 +127,14 @@ export const Lanzador: React.FC = () => {
     const [isLaunching, setIsLaunching] = useState(false);
     const [launchError, setLaunchError] = useState<string | null>(null);
     const [launchProgress, setLaunchProgress] = useState('');
+    const [ttLaunchProgress, setTtLaunchProgress] = useState('');
+    const [fbLaunchProgress, setFbLaunchProgress] = useState('');
+
+    // Separate copy for "both" mode
+    const [ttCopy, setTtCopy] = useState('');
+    const [fbCopy, setFbCopy] = useState('');
+    const [fbTitle, setFbTitle] = useState('');
+    const [fbDescription, setFbDescription] = useState('');
     const [videoProgress, setVideoProgress] = useState<Map<string, number>>(new Map());
     const [launchResults, setLaunchResults] = useState<(MetaLaunchResult & { accountName: string })[]>([]);
     const [selectedExclusionId, setSelectedExclusionId] = useState<string | null>(null);
@@ -164,6 +174,17 @@ export const Lanzador: React.FC = () => {
     const [adsPerAdSet, setAdsPerAdSet] = useState<number>(0); // 0 = all in one ad set
     const [multiFormat, setMultiFormat] = useState(false);
     const [formatPairs, setFormatPairs] = useState<FormatPair[]>([]);
+
+    // TikTok-specific settings
+    const [ttAdsPerAdGroup, setTtAdsPerAdGroup] = useState<number>(0); // 0 = all in one
+    const [ttDuplicateAdGroups, setTtDuplicateAdGroups] = useState<number>(1);
+    const [ttAllowComments, setTtAllowComments] = useState(false);
+    const [ttAllowDownload, setTtAllowDownload] = useState(false);
+    const [ttAllowSharing, setTtAllowSharing] = useState(false);
+
+    // Separate budget for "both" mode
+    const [ttBudgetAmount, setTtBudgetAmount] = useState<number>(30000);
+    const [ttStrategy, setTtStrategy] = useState<'CBO' | 'ABO'>('CBO');
 
     const currencyConfig: Record<string, { min: number; max: number; step: number; presets: number[]; symbol: string }> = {
         COP: { min: 10000, max: 2000000, step: 5000, presets: [30000, 50000, 100000], symbol: '$' },
@@ -415,7 +436,8 @@ export const Lanzador: React.FC = () => {
             setLaunchError('Selecciona al menos una cuenta publicitaria de TikTok.');
             return;
         }
-        if (launchTt && copy.length > 100) {
+        const ttCopyToValidate = platform === 'both' ? ttCopy : copy;
+        if (launchTt && ttCopyToValidate.length > 100) {
             setLaunchError('El copy de TikTok no puede superar 100 caracteres.');
             return;
         }
@@ -455,11 +477,24 @@ export const Lanzador: React.FC = () => {
         setIsLaunching(true);
         setLaunchProgress('Preparando campaña...');
 
-        try {
-            let combinedResults: { campaignId: string; adSetId: string; adId: string; accountName: string }[] = [];
+        // Track created campaigns for rollback on error
+        const rollbackCampaigns: { platform: 'tt' | 'fb'; token: string; campaignId: string; advertiserId?: string }[] = [];
 
-            // ─── TikTok Launch Flow ─────────────────────────
+        setTtLaunchProgress('');
+        setFbLaunchProgress('');
+
+        try {
+            const promises: Promise<{ campaignId: string; adSetId: string; adId: string; accountName: string }[]>[] = [];
+
+            // Resolve effective copy for each platform
+            const effectiveTtCopy = platform === 'both' ? ttCopy : copy;
+            const effectiveFbCopy = platform === 'both' ? fbCopy : copy;
+            const effectiveFbTitle = platform === 'both' ? fbTitle : aiTitle;
+            const effectiveFbDescription = platform === 'both' ? fbDescription : aiDescription;
+
+            // ─── TikTok Launch Flow (async) ─────────────────────────
             if (launchTt) {
+                const ttPromise = (async (): Promise<{ campaignId: string; adSetId: string; adId: string; accountName: string }[]> => {
                 const token = ttToken!;
                 const allResults: (TikTokLaunchResult)[] = [];
 
@@ -476,20 +511,23 @@ export const Lanzador: React.FC = () => {
                         }
                     } catch { /* ignore */ }
 
-                    setLaunchProgress(`Subiendo creativos a ${acc.name || advertiserId}...`);
+                    setTtLaunchProgress(`Subiendo creativos a ${acc.name || advertiserId}...`);
 
                     // Upload creatives
-                    const videoFiles = uploadedFiles.filter(f => f.type === 'local' && f.file?.type.startsWith('video/'));
-                    const imageFiles = uploadedFiles.filter(f => f.type === 'local' && f.file && !f.file.type.startsWith('video/'));
+                    console.log('[TT Launch] uploadedFiles:', uploadedFiles.map(f => ({ name: f.name, type: f.type, mimeType: f.mimeType, fileType: f.file?.type, hasFile: !!f.file })));
+                    const isVideo = (f: typeof uploadedFiles[0]) => f.mimeType?.startsWith('video/') || f.file?.type.startsWith('video/') || /\.(mp4|mov|avi|webm)$/i.test(f.name);
+                    const videoFiles = uploadedFiles.filter(f => f.file && isVideo(f));
+                    const imageFiles = uploadedFiles.filter(f => f.file && !isVideo(f));
+                    console.log('[TT Launch] videoFiles:', videoFiles.length, 'imageFiles:', imageFiles.length);
 
-                    const ttVideoIds: string[] = [];
+                    const ttVideos: { videoId: string; coverId: string }[] = [];
                     const ttImageIds: string[] = [];
 
                     for (const vf of videoFiles) {
                         if (vf.file) {
-                            setLaunchProgress(`Subiendo video ${vf.name}...`);
-                            const vid = await uploadTikTokVideo(token, advertiserId, vf.file);
-                            ttVideoIds.push(vid);
+                            setTtLaunchProgress(`Subiendo video ${vf.name}...`);
+                            const result = await uploadTikTokVideo(token, advertiserId, vf.file);
+                            ttVideos.push(result);
                         }
                     }
                     for (const imgf of imageFiles) {
@@ -500,73 +538,101 @@ export const Lanzador: React.FC = () => {
                     }
 
                     // Create campaign
-                    setLaunchProgress(`Creando campaña TikTok en ${acc.name || advertiserId}...`);
-                    const isCBO = naming.strategy === 'CBO';
-                    const ttBudget = budget.amount; // TikTok uses actual currency value
+                    setTtLaunchProgress(`Creando campaña TikTok en ${acc.name || advertiserId}...`);
+                    const effectiveTtStrategy = platform === 'both' ? ttStrategy : (naming.strategy as 'CBO' | 'ABO');
+                    const effectiveTtBudget = platform === 'both' ? ttBudgetAmount : budget.amount;
+                    const isTtCBO = effectiveTtStrategy === 'CBO';
 
+                    const hasValidPixel = activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId);
                     const campaignId = await createTikTokCampaign(token, {
                         advertiserId,
                         name: campaignName,
-                        objectiveType: 'CONVERSIONS',
-                        budgetMode: isCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
-                        budget: isCBO ? ttBudget : undefined,
+                        objectiveType: hasValidPixel ? 'WEB_CONVERSIONS' : 'TRAFFIC',
+                        budgetMode: isTtCBO ? 'BUDGET_MODE_DAY' : 'BUDGET_MODE_INFINITE',
+                        budget: isTtCBO ? effectiveTtBudget : undefined,
                         status: 'DISABLE',
                     });
+                    rollbackCampaigns.push({ platform: 'tt', token, campaignId, advertiserId });
 
-                    // Create ad group
-                    setLaunchProgress('Creando ad group...');
-                    const scheduleTime = naming.date.toISOString().replace('T', ' ').slice(0, 19);
-                    const locationId = getTikTokLocationId(naming.country);
-                    const ageGroups = getTikTokAgeGroups(demographics.ageMin, demographics.ageMax);
-                    const ttGender = demographics.gender === 'male' ? 'GENDER_MALE' : demographics.gender === 'female' ? 'GENDER_FEMALE' : 'GENDER_UNLIMITED';
-
-                    const adGroupId = await createTikTokAdGroup(token, {
-                        advertiserId,
-                        campaignId,
-                        name: `${campaignName} - AdGroup`,
-                        budgetMode: 'BUDGET_MODE_DAY',
-                        budget: ttBudget,
-                        optimizationGoal: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'CONVERT' : 'CLICK',
-                        billingEvent: 'OCPM',
-                        bidType: 'BID_TYPE_NO_BID',
-                        scheduleStartTime: scheduleTime,
-                        locationIds: [locationId],
-                        ageGroups,
-                        gender: ttGender,
-                        pixelId: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? activeStore.ttPixelId : undefined,
-                        optimizationEvent: (activeStore?.ttPixelId && /^\d+$/.test(activeStore.ttPixelId)) ? 'ON_WEB_ORDER' : undefined,
-                    });
-
-                    // Create ads
-                    setLaunchProgress('Creando anuncios...');
-                    let lastAdId = '';
-                    const allCreatives = [...ttVideoIds.map(id => ({ type: 'video' as const, id })), ...ttImageIds.map(id => ({ type: 'image' as const, id }))];
-
+                    // Build all creatives
+                    const allCreatives = [
+                        ...ttVideos.map(v => ({ type: 'video' as const, id: v.videoId, coverId: v.coverId })),
+                        ...ttImageIds.map(id => ({ type: 'image' as const, id, coverId: '' })),
+                    ];
                     if (allCreatives.length === 0) {
                         throw new Error('Sube al menos un video o imagen para crear anuncios en TikTok.');
                     }
 
-                    for (let i = 0; i < allCreatives.length; i++) {
-                        const creative = allCreatives[i];
-                        const adName = uploadedFiles[i]?.name.replace(/\.[^/.]+$/, '') || `Ad ${i + 1}`;
-
-                        lastAdId = await createTikTokAd(token, {
-                            advertiserId,
-                            adGroupId,
-                            name: adName,
-                            adFormat: creative.type === 'video' ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
-                            videoId: creative.type === 'video' ? creative.id : undefined,
-                            imageId: creative.type === 'image' ? creative.id : undefined,
-                            adText: copy || naming.product,
-                            callToAction: 'SHOP_NOW',
-                            landingPageUrl: destinationUrl || 'https://example.com',
-                            displayName: naming.product || 'Grand Line',
-                            bcId,
-                            ttIdentityId: activeStore?.ttIdentityId,
-                        });
+                    // Split creatives into chunks per AdGroup
+                    const chunkSize = ttAdsPerAdGroup > 0 ? ttAdsPerAdGroup : allCreatives.length;
+                    const chunks: typeof allCreatives[] = [];
+                    for (let i = 0; i < allCreatives.length; i += chunkSize) {
+                        chunks.push(allCreatives.slice(i, i + chunkSize));
                     }
 
-                    allResults.push({ campaignId, adGroupId, adId: lastAdId, accountName: acc.name || advertiserId });
+                    // Create AdGroups (with optional duplicates)
+                    const scheduleTime = naming.date.toISOString().replace('T', ' ').slice(0, 19);
+                    const locationId = getTikTokLocationId(naming.country);
+                    const ageGroups = getTikTokAgeGroups(demographics.ageMin, demographics.ageMax);
+                    const ttGender = demographics.gender === 'male' ? 'GENDER_MALE' : demographics.gender === 'female' ? 'GENDER_FEMALE' : 'GENDER_UNLIMITED';
+                    let lastAdId = '';
+
+                    for (let dup = 0; dup < ttDuplicateAdGroups; dup++) {
+                        for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
+                            const chunk = chunks[chunkIdx];
+                            const suffix = chunks.length > 1 || ttDuplicateAdGroups > 1
+                                ? ` - AdGroup ${dup * chunks.length + chunkIdx + 1}`
+                                : ' - AdGroup';
+
+                            setTtLaunchProgress(`Creando ad group${suffix}...`);
+                            const adGroupId = await createTikTokAdGroup(token, {
+                                advertiserId,
+                                campaignId,
+                                name: `${campaignName}${suffix}`,
+                                placementType: 'PLACEMENT_TYPE_NORMAL',
+                                placements: ['PLACEMENT_TIKTOK'],
+                                budgetMode: 'BUDGET_MODE_DAY',
+                                budget: effectiveTtBudget,
+                                optimizationGoal: hasValidPixel ? 'CONVERT' : 'CLICK',
+                                billingEvent: 'OCPM',
+                                bidType: 'BID_TYPE_NO_BID',
+                                scheduleStartTime: scheduleTime,
+                                locationIds: [locationId],
+                                ageGroups,
+                                gender: ttGender,
+                                pixelId: hasValidPixel ? activeStore.ttPixelId : undefined,
+                                optimizationEvent: hasValidPixel ? 'ON_WEB_ORDER' : undefined,
+                                isCommentDisable: !ttAllowComments,
+                                videoDownloadDisabled: !ttAllowDownload,
+                                isSharingDisable: !ttAllowSharing,
+                            });
+
+                            // Create ads for this chunk
+                            setTtLaunchProgress(`Creando ${chunk.length} anuncios...`);
+                            for (let i = 0; i < chunk.length; i++) {
+                                const creative = chunk[i];
+                                const globalIdx = chunkIdx * chunkSize + i;
+                                const adName = uploadedFiles[globalIdx]?.name.replace(/\.[^/.]+$/, '') || `Ad ${globalIdx + 1}`;
+
+                                lastAdId = await createTikTokAd(token, {
+                                    advertiserId,
+                                    adGroupId,
+                                    name: adName,
+                                    adFormat: creative.type === 'video' ? 'SINGLE_VIDEO' : 'SINGLE_IMAGE',
+                                    videoId: creative.type === 'video' ? creative.id : undefined,
+                                    imageId: creative.type === 'image' ? creative.id : (creative.coverId || undefined),
+                                    adText: effectiveTtCopy || naming.product,
+                                    callToAction: 'SHOP_NOW',
+                                    landingPageUrl: destinationUrl || 'https://example.com',
+                                    displayName: naming.product || 'Grand Line',
+                                    bcId,
+                                    ttIdentityId: activeStore?.ttIdentityId,
+                                });
+                            }
+                        }
+                    }
+
+                    allResults.push({ campaignId, adGroupId: 'multiple', adId: lastAdId, accountName: acc.name || advertiserId });
                 }
 
                 const ttLaunchResults = allResults.map(r => ({ campaignId: r.campaignId, adSetId: r.adGroupId, adId: r.adId, accountName: `[TT] ${r.accountName}` }));
@@ -583,21 +649,15 @@ export const Lanzador: React.FC = () => {
                     setCampaignsUsed(prev => prev + allResults.length);
                 }
 
-                // If TikTok only, finish here
-                if (!launchFb) {
-                    setLaunchResults(ttLaunchResults);
-                    setLaunchProgress('');
-                    setIsLaunched(true);
-                    return;
-                }
-
-                // If both, continue to Facebook with accumulated results
-                setLaunchProgress('Continuando con Facebook...');
-                combinedResults = [...ttLaunchResults];
+                setTtLaunchProgress('TikTok completado');
+                return ttLaunchResults;
+                })();
+                promises.push(ttPromise);
             }
 
-            // ─── Facebook Launch Flow ───────────────────────
-            if (!launchFb) { return; } // safety — shouldn't reach here
+            // ─── Facebook Launch Flow (async) ───────────────────────
+            if (launchFb) {
+                const fbPromise = (async (): Promise<{ campaignId: string; adSetId: string; adId: string; accountName: string }[]> => {
             const token = metaToken!;
             const countryCode = getCountryCode(naming.country);
             const metaBudget = getBudgetForMeta(budget.amount, budget.currency);
@@ -607,7 +667,7 @@ export const Lanzador: React.FC = () => {
             const selectedExclusion = selectedExclusionId ? exclusionLists.find(l => l.id === selectedExclusionId) : null;
             let excludedGeoLocations: { cities?: { key: string }[]; regions?: { key: string }[] } | undefined;
             if (selectedExclusion && token) {
-                setLaunchProgress('Resolviendo ubicaciones de exclusión...');
+                setFbLaunchProgress('Resolviendo ubicaciones de exclusión...');
                 const locationNames = selectedExclusion.locations.split(',').map(l => l.trim()).filter(Boolean);
                 const resolved = await resolveExclusionLocations(token, locationNames);
                 if (resolved) {
@@ -616,12 +676,12 @@ export const Lanzador: React.FC = () => {
                     if (resolved.regions?.length) excludedGeoLocations.regions = resolved.regions;
                     if (resolved.unresolvedNames?.length > 0) {
                         console.warn('[SUNNY] No se encontraron estas ubicaciones en Meta:', resolved.unresolvedNames);
-                        setLaunchProgress(`⚠️ No se encontraron: ${resolved.unresolvedNames.join(', ')}. Continuando...`);
+                        setFbLaunchProgress(`⚠️ No se encontraron: ${resolved.unresolvedNames.join(', ')}. Continuando...`);
                         await new Promise(r => setTimeout(r, 2000));
                     }
                 } else {
                     console.warn('[SUNNY] Ninguna ubicación de exclusión fue resuelta');
-                    setLaunchProgress('⚠️ No se pudieron resolver las exclusiones. Continuando sin exclusiones...');
+                    setFbLaunchProgress('⚠️ No se pudieron resolver las exclusiones. Continuando sin exclusiones...');
                     await new Promise(r => setTimeout(r, 2000));
                 }
             }
@@ -633,7 +693,7 @@ export const Lanzador: React.FC = () => {
                 // Use the token mapped to this specific account (multi-connection support)
                 const token = fbTokenMap.get(acc.id) || metaToken!;
                 const accountId = acc.id.startsWith('act_') ? acc.id : `act_${acc.id}`;
-                setLaunchProgress(`Subiendo creativos a ${acc.name}...`);
+                setFbLaunchProgress(`Subiendo creativos a ${acc.name}...`);
 
                 // Upload all creatives — videos sequentially (chunked upload), images in parallel
                 // Track file names alongside hashes/ids for ad naming
@@ -693,7 +753,7 @@ export const Lanzador: React.FC = () => {
                 };
 
                 if (videoFiles.length > 0) {
-                    setLaunchProgress(`Subiendo ${videoFiles.length} video${videoFiles.length > 1 ? 's' : ''} (${Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length)} en paralelo)...`);
+                    setFbLaunchProgress(`Subiendo ${videoFiles.length} video${videoFiles.length > 1 ? 's' : ''} (${Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length)} en paralelo)...`);
                     await Promise.all(
                         Array.from({ length: Math.min(MAX_CONCURRENT_VIDEOS, videoFiles.length) }, () => uploadNextVideo())
                     );
@@ -727,13 +787,13 @@ export const Lanzador: React.FC = () => {
 
                 if (campaignMode === 'existing' && selectedCampaignByAccount[acc.id]) {
                     campaignId = selectedCampaignByAccount[acc.id];
-                    setLaunchProgress(`Usando campaña existente en ${acc.name}...`);
+                    setFbLaunchProgress(`Usando campaña existente en ${acc.name}...`);
 
                     const accountAdSetId = selectedAdSetByAccount[acc.id];
                     if (accountAdSetId) {
                         adSetId = accountAdSetId;
                     } else {
-                        setLaunchProgress(`Creando ad set en campaña existente...`);
+                        setFbLaunchProgress(`Creando ad set en campaña existente...`);
                         adSetId = await createMetaAdSet(token, {
                             ...baseAdSetConfig,
                             campaignId,
@@ -741,7 +801,7 @@ export const Lanzador: React.FC = () => {
                         });
                     }
                 } else {
-                    setLaunchProgress(`Creando campaña en ${acc.name}...`);
+                    setFbLaunchProgress(`Creando campaña en ${acc.name}...`);
 
                     const campaignConfig: MetaCampaignConfig = {
                         accountId,
@@ -755,6 +815,7 @@ export const Lanzador: React.FC = () => {
                     };
 
                     campaignId = await createMetaCampaign(token, campaignConfig);
+                    rollbackCampaigns.push({ platform: 'fb', token, campaignId });
 
                     adSetId = await createMetaAdSet(token, {
                         ...baseAdSetConfig,
@@ -764,7 +825,7 @@ export const Lanzador: React.FC = () => {
                 }
 
                 // Create ads
-                setLaunchProgress('Creando anuncios...');
+                setFbLaunchProgress('Creando anuncios...');
 
                 // Helper: get creative file name (without extension) for ad naming
                 const allCreativeNames = [...imageNames, ...videoNames];
@@ -779,7 +840,7 @@ export const Lanzador: React.FC = () => {
                 if (multiFormat && formatPairs.length > 0) {
                     // Multi-format: upload paired images and create ads with placement customization
                     const validPairs = formatPairs.filter(p => p.feed && p.story);
-                    setLaunchProgress(`Subiendo ${validPairs.length * 2} imágenes multi-formato...`);
+                    setFbLaunchProgress(`Subiendo ${validPairs.length * 2} imágenes multi-formato...`);
 
                     let lastAdId = '';
                     for (let i = 0; i < validPairs.length; i++) {
@@ -804,7 +865,7 @@ export const Lanzador: React.FC = () => {
                         }
 
                         const adName = pair.feed!.name.replace(/\.[^/.]+$/, '');
-                        setLaunchProgress(`Creando ad multi-formato ${i + 1}/${validPairs.length}...`);
+                        setFbLaunchProgress(`Creando ad multi-formato ${i + 1}/${validPairs.length}...`);
 
                         lastAdId = await createMetaMultiFormatAd(token, {
                             accountId,
@@ -815,9 +876,9 @@ export const Lanzador: React.FC = () => {
                             link: destinationUrl || 'https://example.com',
                             feedImageHash: feedHash,
                             storyImageHash: storyHash,
-                            message: copy || naming.product,
-                            title: aiTitle || undefined,
-                            description: aiDescription || undefined,
+                            message: effectiveFbCopy || naming.product,
+                            title: effectiveFbTitle || undefined,
+                            description: effectiveFbDescription || undefined,
                             callToAction: 'SHOP_NOW',
                         });
                     }
@@ -863,9 +924,9 @@ export const Lanzador: React.FC = () => {
                             status: 'ACTIVE',
                             creative: {
                                 pageId: activeStore.pageId,
-                                message: copy || naming.product,
-                                title: aiTitle || undefined,
-                                description: aiDescription || undefined,
+                                message: effectiveFbCopy || naming.product,
+                                title: effectiveFbTitle || undefined,
+                                description: effectiveFbDescription || undefined,
                                 link: destinationUrl || 'https://example.com',
                                 imageHash: i < imageHashes.length ? imageHashes[i] : undefined,
                                 videoId: i >= imageHashes.length ? videoIds[i - imageHashes.length] : undefined,
@@ -907,9 +968,9 @@ export const Lanzador: React.FC = () => {
                                 status: 'ACTIVE',
                                 creative: {
                                     pageId: activeStore.pageId,
-                                    message: copy || naming.product,
-                                    title: aiTitle || undefined,
-                                    description: aiDescription || undefined,
+                                    message: effectiveFbCopy || naming.product,
+                                    title: effectiveFbTitle || undefined,
+                                    description: effectiveFbDescription || undefined,
                                     link: destinationUrl || 'https://example.com',
                                     imageHash: !isVideo ? imageHashes[i] : undefined,
                                     videoId: isVideo ? videoIds[i - imageHashes.length] : undefined,
@@ -920,16 +981,13 @@ export const Lanzador: React.FC = () => {
                             lastAdId = await createMetaAd(token, adConfig);
                         }
 
-                        setLaunchProgress(`AdSet ${chunk + 1}/${numChunks} creado (${endIdx - startIdx} ads)...`);
+                        setFbLaunchProgress(`AdSet ${chunk + 1}/${numChunks} creado (${endIdx - startIdx} ads)...`);
                     }
                     allLaunchResults.push({ campaignId, adSetId, adId: lastAdId, accountName: acc.name });
                 }
             }
 
             const fbResults = allLaunchResults.map(r => ({ ...r, accountName: launchTt ? `[FB] ${r.accountName}` : r.accountName }));
-            setLaunchResults([...combinedResults, ...fbResults]);
-            setLaunchProgress('');
-            setIsLaunched(true);
 
             // Log campaigns to Firestore for limit tracking
             if (effectiveUid) {
@@ -943,8 +1001,32 @@ export const Lanzador: React.FC = () => {
                 }
                 setCampaignsUsed(prev => prev + allLaunchResults.length);
             }
+
+            setFbLaunchProgress('Facebook completado');
+            return fbResults;
+                })();
+                promises.push(fbPromise);
+            }
+
+            // Run TT and FB in parallel
+            const allResults = await Promise.all(promises);
+            const combinedResults = allResults.flat();
+            setLaunchResults(combinedResults);
+            setLaunchProgress('');
+            setIsLaunched(true);
         } catch (error: any) {
             console.error('Launch failed:', error);
+            // Rollback: delete any campaigns we created
+            if (rollbackCampaigns.length > 0) {
+                setLaunchProgress('Error detectado, eliminando campañas creadas...');
+                for (const rc of rollbackCampaigns) {
+                    if (rc.platform === 'tt' && rc.advertiserId) {
+                        await deleteTikTokCampaign(rc.token, rc.advertiserId, rc.campaignId);
+                    } else if (rc.platform === 'fb') {
+                        await deleteMetaCampaign(rc.token, rc.campaignId);
+                    }
+                }
+            }
             const details = error.details ? `\n\nDetalles: ${JSON.stringify(error.details)}` : '';
             setLaunchError((error.message || 'Error desconocido al publicar la campaña.') + details);
         } finally {
@@ -1162,7 +1244,9 @@ export const Lanzador: React.FC = () => {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Estrategia</label>
+                            <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">
+                                {platform === 'both' ? 'Estrategia FB' : 'Estrategia'}
+                            </label>
                             <select
                                 className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
                                 value={naming.strategy}
@@ -1177,11 +1261,25 @@ export const Lanzador: React.FC = () => {
                                     <>
                                         <option value="CBO">CBO (Campaign Budget Opt)</option>
                                         <option value="ABO">ABO (Ad Set Budget Opt)</option>
-                                        {platform === 'facebook' && <option value="ASC">ASC (Advantage+ Shopping)</option>}
+                                        {(platform === 'facebook' || platform === 'both') && <option value="ASC">ASC (Advantage+ Shopping)</option>}
                                     </>
                                 )}
                             </select>
                         </div>
+
+                        {platform === 'both' && (
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Estrategia TT</label>
+                                <select
+                                    className="w-full bg-background border border-card-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:border-accent/50 outline-none transition-colors"
+                                    value={ttStrategy}
+                                    onChange={e => setTtStrategy(e.target.value as 'CBO' | 'ABO')}
+                                >
+                                    <option value="CBO">CBO (Campaign Budget)</option>
+                                    <option value="ABO">ABO (Ad Group Budget)</option>
+                                </select>
+                            </div>
+                        )}
 
                         <div>
                             <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">País</label>
@@ -1496,7 +1594,7 @@ export const Lanzador: React.FC = () => {
                 </CollapsibleSection>}
 
                 {/* 5. Presupuesto */}
-                <CollapsibleSection title="Presupuesto" icon={DollarSign}>
+                <CollapsibleSection title={platform === 'both' ? 'Presupuesto Facebook' : 'Presupuesto'} icon={DollarSign}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-6">
                             <div>
@@ -1563,6 +1661,106 @@ export const Lanzador: React.FC = () => {
                         </div>
                     </div>
                 </CollapsibleSection>
+
+                {/* 5b. Presupuesto TikTok (solo en modo "both") */}
+                {platform === 'both' && (
+                    <CollapsibleSection title="Presupuesto TikTok" icon={DollarSign}>
+                        <div className="space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Presupuesto Diario TT</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-lg font-black text-muted">{activeCurrencyConfig.symbol}</span>
+                                    <input
+                                        type="number"
+                                        min={activeCurrencyConfig.min}
+                                        max={activeCurrencyConfig.max}
+                                        step={activeCurrencyConfig.step}
+                                        value={ttBudgetAmount}
+                                        onChange={e => {
+                                            const val = parseInt(e.target.value) || 0;
+                                            setTtBudgetAmount(Math.max(activeCurrencyConfig.min, Math.min(activeCurrencyConfig.max, val)));
+                                        }}
+                                        className="flex-1 bg-background border border-card-border rounded-xl px-4 py-3 text-2xl font-black italic text-foreground focus:border-accent/50 outline-none transition-colors font-mono"
+                                    />
+                                    <span className="text-sm font-bold text-accent">{budget.currency}</span>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                {activeCurrencyConfig.presets.map(val => (
+                                    <button
+                                        key={val}
+                                        onClick={() => setTtBudgetAmount(val)}
+                                        className={`py-2 rounded-xl text-xs font-black transition-all ${ttBudgetAmount === val ? 'bg-accent text-white' : 'bg-background text-muted hover:bg-hover-bg border border-card-border'}`}
+                                    >
+                                        {activeCurrencyConfig.symbol}{val.toLocaleString()}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </CollapsibleSection>
+                )}
+
+                {/* 5c. Configuración TikTok (placement, ads/adgroup, toggles) */}
+                {(platform === 'tiktok' || platform === 'both') && (
+                    <CollapsibleSection title="Configuración TikTok" icon={Layers}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Ads por AdGroup</label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={50}
+                                            value={ttAdsPerAdGroup}
+                                            onChange={(e) => setTtAdsPerAdGroup(Math.max(0, parseInt(e.target.value) || 0))}
+                                            className="w-16 bg-background border border-card-border rounded-lg px-2 py-1.5 text-center font-mono text-sm focus:border-accent focus:outline-none"
+                                        />
+                                        <span className="text-[10px] text-muted uppercase tracking-wider">
+                                            {ttAdsPerAdGroup === 0 ? 'Todos en 1 AdGroup' : `${uploadedFiles.length > 0 ? Math.ceil(uploadedFiles.length / ttAdsPerAdGroup) : '?'} AdGroups`}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-muted mb-2 block">Duplicar AdGroups</label>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={10}
+                                            value={ttDuplicateAdGroups}
+                                            onChange={(e) => setTtDuplicateAdGroups(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                                            className="w-16 bg-background border border-card-border rounded-lg px-2 py-1.5 text-center font-mono text-sm focus:border-accent focus:outline-none"
+                                        />
+                                        <span className="text-[10px] text-muted uppercase tracking-wider">
+                                            {ttDuplicateAdGroups === 1 ? 'Sin duplicados' : `${ttDuplicateAdGroups}x duplicados`}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-muted block">Opciones de Interacción</label>
+                                {[
+                                    { label: 'Comentarios', value: ttAllowComments, setter: setTtAllowComments },
+                                    { label: 'Descarga de video', value: ttAllowDownload, setter: setTtAllowDownload },
+                                    { label: 'Compartir video', value: ttAllowSharing, setter: setTtAllowSharing },
+                                ].map(opt => (
+                                    <button
+                                        key={opt.label}
+                                        onClick={() => opt.setter(!opt.value)}
+                                        className="w-full flex items-center justify-between p-3 bg-background border border-card-border rounded-xl hover:border-accent/20 transition-colors"
+                                    >
+                                        <span className="text-xs font-bold text-foreground">{opt.label}</span>
+                                        <div className={`w-10 h-5 rounded-full transition-colors flex items-center ${opt.value ? 'bg-accent justify-end' : 'bg-muted/30 justify-start'}`}>
+                                            <div className="w-4 h-4 bg-white rounded-full mx-0.5 shadow-sm" />
+                                        </div>
+                                    </button>
+                                ))}
+                                <p className="text-[9px] text-muted uppercase tracking-widest">Placement: Solo TikTok</p>
+                            </div>
+                        </div>
+                    </CollapsibleSection>
+                )}
 
                 {/* 6. Segmentación */}
                 <CollapsibleSection title="Segmentación" icon={Target} className={naming.strategy === 'ASC' ? 'opacity-40 pointer-events-none relative' : ''}>
@@ -1861,7 +2059,7 @@ export const Lanzador: React.FC = () => {
                                 <Wand2 className="w-4 h-4 text-purple-400" />
                                 <label className="text-[10px] font-black uppercase tracking-widest text-muted">Copywriting Engine</label>
                             </div>
-                            {copy.length > 100 && (
+                            {platform !== 'both' && copy.length > 100 && (
                                 <div className="flex items-center gap-2 px-3 py-1 bg-red-500/20 border border-red-500/30 rounded-full">
                                     <AlertCircle className="w-3 h-3 text-red-500" />
                                     <span className="text-[10px] font-black uppercase text-red-500">+100 chars</span>
@@ -1869,29 +2067,84 @@ export const Lanzador: React.FC = () => {
                             )}
                         </div>
 
-                        <div className="relative group mb-4">
-                            {(platform === 'tiktok' || platform === 'both') && (
-                                <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">
-                                    TikTok: máximo 100 caracteres para la descripción del anuncio
-                                </p>
-                            )}
-                            <textarea
-                                placeholder={platform === 'tiktok' ? 'Descripción del producto (máx 100 chars)...' : 'Escribe el copy principal aquí...'}
-                                className={`w-full bg-background border rounded-2xl p-5 text-sm font-medium text-foreground focus:border-accent/50 outline-none transition-all placeholder:text-muted resize-none ${
-                                    (platform === 'tiktok' || platform === 'both') ? 'min-h-[80px]' : 'min-h-[120px]'
-                                } ${(platform === 'tiktok' || platform === 'both') && copy.length > 100 ? 'border-red-500/50' : 'border-card-border'}`}
-                                value={copy}
-                                onChange={e => setCopy(e.target.value)}
-                                maxLength={platform === 'tiktok' ? 100 : undefined}
-                            />
-                            <div className="absolute bottom-4 right-4 flex gap-2">
-                                <div className={`flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs ${
-                                    (platform === 'tiktok' || platform === 'both') && copy.length > 100 ? 'text-red-400' : 'text-muted'
-                                }`}>
-                                    {copy.length}{(platform === 'tiktok' || platform === 'both') && '/100'}
+                        {platform === 'both' ? (
+                            /* Both mode: separate TT and FB copy fields */
+                            <div className="space-y-4 mb-4">
+                                {/* TikTok Copy */}
+                                <div>
+                                    <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">TikTok — Descripción (máx 100 chars)</p>
+                                    <div className="relative">
+                                        <textarea
+                                            placeholder="Descripción del producto para TikTok..."
+                                            className={`w-full bg-background border rounded-xl p-4 text-sm font-medium text-foreground focus:border-pink-500/50 outline-none transition-all placeholder:text-muted resize-none min-h-[70px] ${ttCopy.length > 100 ? 'border-red-500/50' : 'border-card-border'}`}
+                                            value={ttCopy}
+                                            onChange={e => setTtCopy(e.target.value)}
+                                            maxLength={100}
+                                        />
+                                        <span className={`absolute bottom-2 right-3 text-[10px] font-mono ${ttCopy.length > 100 ? 'text-red-400' : 'text-muted'}`}>{ttCopy.length}/100</span>
+                                    </div>
                                 </div>
-                        </div>
-                        </div>
+                                {/* Facebook Copy */}
+                                <div>
+                                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-2">Facebook — Copy Principal</p>
+                                    <textarea
+                                        placeholder="Escribe el copy principal para Facebook..."
+                                        className="w-full bg-background border border-card-border rounded-xl p-4 text-sm font-medium text-foreground focus:border-blue-500/50 outline-none transition-all placeholder:text-muted resize-none min-h-[100px]"
+                                        value={fbCopy}
+                                        onChange={e => setFbCopy(e.target.value)}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">Título FB (40 chars)</p>
+                                        <input
+                                            type="text"
+                                            placeholder="Título del anuncio..."
+                                            className="w-full bg-background border border-card-border rounded-xl px-3 py-2 text-sm text-foreground focus:border-blue-500/50 outline-none"
+                                            value={fbTitle}
+                                            onChange={e => setFbTitle(e.target.value)}
+                                            maxLength={40}
+                                        />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1">Descripción FB (90 chars)</p>
+                                        <input
+                                            type="text"
+                                            placeholder="Descripción del anuncio..."
+                                            className="w-full bg-background border border-card-border rounded-xl px-3 py-2 text-sm text-foreground focus:border-blue-500/50 outline-none"
+                                            value={fbDescription}
+                                            onChange={e => setFbDescription(e.target.value)}
+                                            maxLength={90}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Single platform mode */
+                            <div className="relative group mb-4">
+                                {platform === 'tiktok' && (
+                                    <p className="text-[10px] font-bold text-pink-400 uppercase tracking-widest mb-2">
+                                        TikTok: máximo 100 caracteres
+                                    </p>
+                                )}
+                                <textarea
+                                    placeholder={platform === 'tiktok' ? 'Descripción del producto (máx 100 chars)...' : 'Escribe el copy principal aquí...'}
+                                    className={`w-full bg-background border rounded-2xl p-5 text-sm font-medium text-foreground focus:border-accent/50 outline-none transition-all placeholder:text-muted resize-none ${
+                                        platform === 'tiktok' ? 'min-h-[80px]' : 'min-h-[120px]'
+                                    } ${platform === 'tiktok' && copy.length > 100 ? 'border-red-500/50' : 'border-card-border'}`}
+                                    value={copy}
+                                    onChange={e => setCopy(e.target.value)}
+                                    maxLength={platform === 'tiktok' ? 100 : undefined}
+                                />
+                                <div className="absolute bottom-4 right-4 flex gap-2">
+                                    <div className={`flex items-center gap-2 mr-2 px-3 py-1.5 bg-card border border-card-border rounded-lg font-mono text-xs ${
+                                        platform === 'tiktok' && copy.length > 100 ? 'text-red-400' : 'text-muted'
+                                    }`}>
+                                        {copy.length}{platform === 'tiktok' && '/100'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* VEGA Instruction */}
                         <div className="mb-4">
@@ -2002,12 +2255,26 @@ export const Lanzador: React.FC = () => {
                     </div>
                 )}
 
-                {isLaunching && (videoProgress.size > 0 || launchProgress) && (
+                {isLaunching && (videoProgress.size > 0 || launchProgress || ttLaunchProgress || fbLaunchProgress) && (
                     <div className="p-3 bg-accent/10 border border-accent/20 rounded-xl space-y-2">
                         {launchProgress && (
                             <div className="flex items-center gap-3">
                                 <Loader2 className="w-4 h-4 text-accent animate-spin shrink-0" />
                                 <p className="text-xs text-accent font-bold">{launchProgress}</p>
+                            </div>
+                        )}
+                        {ttLaunchProgress && (
+                            <div className="flex items-center gap-3">
+                                <Loader2 className={`w-4 h-4 text-pink-400 shrink-0 ${ttLaunchProgress.includes('completado') ? '' : 'animate-spin'}`} />
+                                <span className="text-[9px] font-black uppercase tracking-widest text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded">TT</span>
+                                <p className="text-xs text-pink-400 font-bold">{ttLaunchProgress}</p>
+                            </div>
+                        )}
+                        {fbLaunchProgress && (
+                            <div className="flex items-center gap-3">
+                                <Loader2 className={`w-4 h-4 text-blue-400 shrink-0 ${fbLaunchProgress.includes('completado') ? '' : 'animate-spin'}`} />
+                                <span className="text-[9px] font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">FB</span>
+                                <p className="text-xs text-blue-400 font-bold">{fbLaunchProgress}</p>
                             </div>
                         )}
                         {videoProgress.size > 0 && (

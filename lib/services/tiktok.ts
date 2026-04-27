@@ -52,7 +52,7 @@ export async function disconnectTikTok(authFetch: (url: string, opts?: RequestIn
 interface TikTokCampaignConfig {
     advertiserId: string;
     name: string;
-    objectiveType: 'TRAFFIC' | 'CONVERSIONS' | 'REACH' | 'VIDEO_VIEWS';
+    objectiveType: 'TRAFFIC' | 'CONVERSIONS' | 'WEB_CONVERSIONS' | 'PRODUCT_SALES' | 'REACH' | 'VIDEO_VIEWS';
     budgetMode: 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL' | 'BUDGET_MODE_INFINITE';
     budget?: number; // in micro-currency (value * 1_000_000) for CBO
     status?: 'ENABLE' | 'DISABLE';
@@ -64,17 +64,21 @@ interface TikTokAdGroupConfig {
     name: string;
     placementType?: 'PLACEMENT_TYPE_AUTOMATIC' | 'PLACEMENT_TYPE_NORMAL';
     placements?: string[];
-    budget?: number; // daily budget in micro-currency for ABO
+    budget?: number;
     budgetMode?: 'BUDGET_MODE_DAY' | 'BUDGET_MODE_TOTAL' | 'BUDGET_MODE_INFINITE';
     optimizationGoal?: 'CONVERT' | 'CLICK' | 'REACH' | 'VIDEO_VIEW';
     billingEvent?: 'CPC' | 'CPM' | 'OCPM';
     bidType?: 'BID_TYPE_NO_BID' | 'BID_TYPE_CUSTOM';
-    scheduleStartTime: string; // "2026-04-07 05:00:00"
-    locationIds: string[]; // country codes ["CO", "MX"]
-    ageGroups?: string[]; // ["AGE_18_24", "AGE_25_34", ...]
+    scheduleStartTime: string;
+    locationIds: string[];
+    ageGroups?: string[];
     gender?: 'GENDER_UNLIMITED' | 'GENDER_MALE' | 'GENDER_FEMALE';
     pixelId?: string;
     optimizationEvent?: string;
+    // Ad-level toggles
+    isCommentDisable?: boolean;
+    videoDownloadDisabled?: boolean;
+    isSharingDisable?: boolean;
 }
 
 interface TikTokAdConfig {
@@ -118,6 +122,7 @@ async function ttApiCall(endpoint: string, _token: string, body: any): Promise<a
             proxy_version: data.proxy_version,
             sent_body: data.sent_body,
             tt_code: data.tt_code,
+            available_identities: data.available_identities,
         };
         throw err;
     }
@@ -141,6 +146,21 @@ export async function createTikTokCampaign(token: string, config: TikTokCampaign
     return data.campaign_id;
 }
 
+/**
+ * Delete a TikTok campaign (used for rollback on failed launches)
+ */
+export async function deleteTikTokCampaign(token: string, advertiserId: string, campaignId: string): Promise<void> {
+    try {
+        await ttApiCall('/campaign/status/update/', token, {
+            advertiser_id: advertiserId,
+            campaign_ids: [campaignId],
+            operation_status: 'DELETE',
+        });
+    } catch (e) {
+        console.error('[TikTok] Failed to delete campaign for rollback:', e);
+    }
+}
+
 export async function createTikTokAdGroup(token: string, config: TikTokAdGroupConfig): Promise<string> {
     const hasPixel = config.pixelId && /^\d+$/.test(config.pixelId);
     const optGoal = hasPixel ? (config.optimizationGoal || 'CONVERT') : 'CLICK';
@@ -153,20 +173,28 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
         advertiser_id: config.advertiserId,
         campaign_id: config.campaignId,
         adgroup_name: config.name,
-        placement_type: config.placementType || 'PLACEMENT_TYPE_AUTOMATIC',
+        placement_type: config.placementType || 'PLACEMENT_TYPE_NORMAL',
         promotion_type: 'WEBSITE',
         optimization_goal: optGoal,
         billing_event: billingEvent,
         bid_type: 'BID_TYPE_NO_BID',
-        pacing: 'PACING_MODE_SMOOTH',       // Required. SMOOTH is safe with NO_BID
+        pacing: 'PACING_MODE_SMOOTH',
         budget_mode: 'BUDGET_MODE_DAY',
         budget: config.budget || 50000,
         schedule_type: 'SCHEDULE_FROM_NOW',
         schedule_start_time: config.scheduleStartTime,
         location_ids: config.locationIds,
     };
+    // When using manual placement, specify TikTok only
+    if (body.placement_type === 'PLACEMENT_TYPE_NORMAL') {
+        body.placements = config.placements || ['PLACEMENT_TIKTOK'];
+    }
     if (config.ageGroups?.length) body.age_groups = config.ageGroups;
     if (config.gender) body.gender = config.gender;
+    // Comment/download/sharing toggles
+    if (config.isCommentDisable !== undefined) body.is_comment_disable = config.isCommentDisable ? 1 : 0;
+    if (config.videoDownloadDisabled !== undefined) body.video_download_disabled = config.videoDownloadDisabled ? 1 : 0;
+    if (config.isSharingDisable !== undefined) body.is_sharing_disable = config.isSharingDisable ? 1 : 0;
     if (hasPixel) {
         body.pixel_id = config.pixelId;
         body.optimization_event = config.optimizationEvent || 'ON_WEB_ORDER';
@@ -178,27 +206,51 @@ export async function createTikTokAdGroup(token: string, config: TikTokAdGroupCo
 // Cache identity IDs per advertiser to avoid creating duplicates
 const identityCache = new Map<string, string>();
 
-async function getOrCreateIdentity(token: string, advertiserId: string, displayName: string, bcId?: string): Promise<string> {
-    const cacheKey = `${advertiserId}_${bcId || 'no_bc'}`;
-    if (identityCache.has(cacheKey)) return identityCache.get(cacheKey)!;
+/**
+ * Fetch available identities for an advertiser from TikTok API (server-side proxy)
+ */
+async function fetchAvailableIdentities(advertiserId: string, identityType: string): Promise<any[]> {
+    try {
+        const { authFetch: af } = await import('@/lib/api/client');
+        const res = await af(`/api/sunny/tiktok-identities?advertiser_id=${advertiserId}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data.identities || []).filter((id: any) => id.identity_type === identityType);
+    } catch { return []; }
+}
 
-    const body: any = {
-        advertiser_id: advertiserId,
-        display_name: displayName || 'Store',
-    };
+/**
+ * Resolve the correct identity_id (UUID) for an advertiser.
+ * The ttIdentityId from store profile is the TikTok account numeric ID,
+ * NOT the Marketing API identity_id (which is a UUID).
+ */
+async function resolveIdentity(advertiserId: string, bcId?: string): Promise<{ identity_type: string; identity_id: string; bc_id?: string } | null> {
+    const cacheKey = `${advertiserId}_${bcId || 'no_bc'}`;
 
     if (bcId) {
-        // Advertiser under Business Center — use CUSTOMIZED_USER with bc_id
-        body.identity_type = 'CUSTOMIZED_USER';
-        body.identity_authorized_bc_id = bcId;
+        // BC advertiser — use BC_AUTH_TT
+        const identities = await fetchAvailableIdentities(advertiserId, 'BC_AUTH_TT');
+        const match = identities.find((id: any) => id.identity_authorized_bc_id === bcId && id.available_status === 'AVAILABLE');
+        if (match) {
+            identityCache.set(cacheKey, match.identity_id);
+            return { identity_type: 'BC_AUTH_TT', identity_id: match.identity_id, bc_id: bcId };
+        }
+        // Fallback: try TT_USER without bc_id
+        const ttUsers = await fetchAvailableIdentities(advertiserId, 'TT_USER');
+        if (ttUsers.length > 0 && ttUsers[0].available_status === 'AVAILABLE') {
+            identityCache.set(cacheKey, ttUsers[0].identity_id);
+            return { identity_type: 'TT_USER', identity_id: ttUsers[0].identity_id };
+        }
     } else {
-        body.identity_type = 'AUTH_CODE';
+        // Non-BC: try TT_USER first
+        const ttUsers = await fetchAvailableIdentities(advertiserId, 'TT_USER');
+        if (ttUsers.length > 0 && ttUsers[0].available_status === 'AVAILABLE') {
+            identityCache.set(cacheKey, ttUsers[0].identity_id);
+            return { identity_type: 'TT_USER', identity_id: ttUsers[0].identity_id };
+        }
     }
 
-    const data = await ttApiCall('/identity/create/', token, body);
-    const id = data.identity_id;
-    identityCache.set(cacheKey, id);
-    return id;
+    return null;
 }
 
 /** Get the Business Center ID for an advertiser (if any) */
@@ -223,25 +275,24 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
         call_to_action: config.callToAction || 'SHOP_NOW',
     };
 
-    if (config.ttIdentityId) {
-        // Use real TikTok account linked to Business Center
-        creative.identity_type = 'TT_USER';
-        creative.identity_id = config.ttIdentityId;
-        if (config.bcId) creative.identity_authorized_bc_id = config.bcId;
-    } else if (config.bcId) {
-        // BC advertiser without TT account — try CUSTOMIZED_USER
-        const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store', config.bcId);
-        creative.identity_type = 'CUSTOMIZED_USER';
-        creative.identity_id = identityId;
-        creative.identity_authorized_bc_id = config.bcId;
+    // Auto-resolve the correct identity (UUID) from TikTok API
+    const resolved = await resolveIdentity(config.advertiserId, config.bcId);
+    if (resolved) {
+        creative.identity_type = resolved.identity_type;
+        creative.identity_id = resolved.identity_id;
+        if (resolved.bc_id) creative.identity_authorized_bc_id = resolved.bc_id;
     } else {
-        // Non-BC advertiser — use AUTH_CODE
-        const identityId = await getOrCreateIdentity(token, config.advertiserId, config.displayName || 'Store');
-        creative.identity_type = 'AUTH_CODE';
-        creative.identity_id = identityId;
+        throw new Error('No se encontró una identidad TikTok disponible para este advertiser. Verifica que la cuenta TikTok esté vinculada en el Business Center.');
     }
-    if (config.videoId) creative.video_id = config.videoId;
-    if (config.imageId) creative.image_ids = [config.imageId];
+    if (config.videoId) {
+        creative.video_id = config.videoId;
+        // TikTok requires a thumbnail image for video ads
+        if (config.imageId) creative.image_ids = [config.imageId];
+    } else if (config.imageId) {
+        creative.image_ids = [config.imageId];
+    } else {
+        throw new Error('Se requiere un video_id o image_id para crear un anuncio en TikTok.');
+    }
     if (config.displayName) creative.display_name = config.displayName;
 
     const body: any = {
@@ -253,20 +304,17 @@ export async function createTikTokAd(token: string, config: TikTokAdConfig): Pro
     return data.ad_ids?.[0] || data.ad_id;
 }
 
-export async function uploadTikTokVideo(_token: string, advertiserId: string, file: File): Promise<string> {
+export async function uploadTikTokVideo(_token: string, advertiserId: string, file: File): Promise<{ videoId: string; coverId: string }> {
     // Upload to Firebase Storage first, then tell TikTok to download from URL
-    // This bypasses both Vercel 4.5MB limit AND TikTok CORS restrictions
     const { storage } = await import('@/lib/firebase/config');
     const { ref, uploadBytes, getDownloadURL, deleteObject } = await import('firebase/storage');
 
     const fileName = `tiktok-uploads/${Date.now()}-${file.name}`;
     const storageRef = ref(storage, fileName);
 
-    // Upload to Firebase Storage
     await uploadBytes(storageRef, file);
     const downloadUrl = await getDownloadURL(storageRef);
 
-    // Tell TikTok to download from URL via server proxy
     const { authFetch: af } = await import('@/lib/api/client');
     const res = await af('/api/sunny/tiktok-upload', {
         method: 'POST',
@@ -280,11 +328,28 @@ export async function uploadTikTokVideo(_token: string, advertiserId: string, fi
     });
     const data = await res.json();
 
-    // Clean up Firebase Storage
     deleteObject(storageRef).catch(() => {});
 
     if (!res.ok) throw new Error(data.error || 'Error uploading video to TikTok');
-    return data.id;
+    if (!data.id) throw new Error(`TikTok no devolvió video_id. Respuesta: ${JSON.stringify(data)}`);
+
+    // Upload the auto-generated video cover as thumbnail image
+    let coverId = '';
+    if (data.coverUrl) {
+        const coverRes = await af('/api/sunny/tiktok-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                advertiser_id: advertiserId,
+                type: 'image',
+                url: data.coverUrl,
+            }),
+        });
+        const coverData = await coverRes.json();
+        if (coverRes.ok && coverData.id) coverId = coverData.id;
+    }
+
+    return { videoId: data.id, coverId };
 }
 
 export async function uploadTikTokImage(_token: string, advertiserId: string, file: File): Promise<string> {

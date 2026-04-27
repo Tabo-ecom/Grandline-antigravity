@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
         // Whitelist allowed endpoints
         const allowedEndpoints = [
             '/campaign/create/',
+            '/campaign/status/update/',
             '/adgroup/create/',
             '/ad/create/',
             '/identity/create/',
@@ -55,11 +56,33 @@ export async function POST(req: NextRequest) {
         const data = await res.json();
 
         if (data.code !== 0) {
+            // On ad/create identity errors, fetch available identities for debugging
+            let available_identities: any[] | undefined;
+            if (endpoint === '/ad/create/' && data.code === 40002) {
+                try {
+                    const advId = body?.advertiser_id;
+                    const identities: any[] = [];
+                    for (const idType of ['TT_USER', 'BC_AUTH_TT', 'AUTH_CODE']) {
+                        const idRes = await fetch(`${TT_API_BASE}/identity/get/?advertiser_id=${advId}&identity_type=${idType}`, {
+                            headers: { 'Access-Token': token },
+                        });
+                        const idData = await idRes.json();
+                        if (idData.code === 0 && idData.data?.identity_list) {
+                            for (const id of idData.data.identity_list) {
+                                identities.push({ ...id, identity_type: idType });
+                            }
+                        }
+                    }
+                    available_identities = identities;
+                } catch { /* ignore */ }
+            }
+
             return NextResponse.json({
                 error: data.message || `TikTok API error: ${data.code}`,
                 tt_code: data.code,
-                proxy_version: 'v3',
-                sent_body: endpoint === '/ad/create/' ? { identity_type: body?.creatives?.[0]?.identity_type, bc_id: body?.creatives?.[0]?.identity_authorized_bc_id } : undefined,
+                proxy_version: 'v4',
+                sent_body: endpoint === '/ad/create/' ? body?.creatives?.[0] : undefined,
+                available_identities,
                 data: data.data,
             }, { status: 400 });
         }

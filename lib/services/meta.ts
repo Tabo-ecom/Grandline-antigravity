@@ -799,6 +799,21 @@ export async function createMetaCampaign(token: string, config: MetaCampaignConf
 }
 
 /**
+ * Delete a campaign on Meta (used for rollback on failed launches)
+ */
+export async function deleteMetaCampaign(token: string, campaignId: string): Promise<void> {
+    try {
+        await fetch(`https://graph.facebook.com/${META_API_VERSION}/${campaignId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ access_token: token }).toString(),
+        });
+    } catch (e) {
+        console.error('[Meta] Failed to delete campaign for rollback:', e);
+    }
+}
+
+/**
  * Create an Ad Set on Meta
  */
 export async function createMetaAdSet(token: string, config: MetaAdSetConfig): Promise<string> {
